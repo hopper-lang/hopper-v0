@@ -63,6 +63,7 @@ library
                       ,profunctors
                       ,bytes
                       ,mtl
+                      ,z3 >=4.1.0 && < 4.2
 
   -- Directories containing source files.
   hs-source-dirs:      src
