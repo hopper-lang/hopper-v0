@@ -16,7 +16,15 @@ plus .... damnit, need dependent types to sanely treat crypto signed values
 
 why?
 because we dont know the commit id that a signed value in the result of a higher order transaction refers to until the parent computation is commited!
+
+
+ok, so for now we're going to do F_omega, plus some singleton indexing
+plus the kinda subtle "pubkey" "signed by"/"encrypted for" primitives that
 -}
 
 
+{-for now we're doing an STLC with a special pubkey type and some type level literals -}
 
+data Kinds = Star | KArr Kinds Kinds | LiftedPubKey
+
+data Types  a = Tarrow (Types a) (Types a) | Tapp (Types a) ()
