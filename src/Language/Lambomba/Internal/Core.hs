@@ -12,7 +12,9 @@ import Numeric.Natural
 import Prelude.Extras
 import Control.Applicative
 import Control.Monad
-
+import qualified  Data.Set as Set
+import qualified  Data.Map as Map
+import Data.Foldable (foldl')
 import Data.Traversable
 
 {- |  this iteration is essentially F_\omega, plus linear types,
@@ -56,7 +58,13 @@ wellKindedType tau = case tau of
   TLit tc -> Right $ deduceLitKind tc
   Tapp tarr tinput ->
       do  (KArr a b) <- wellKindedType tarr ; c <- wellKindedType tinput ;
-          if a == c then Right b else Left $   "Woops, kind mismatch " ++ show (a,c)
+          if a == c  {- this part will get tricky later :) -}
+              then Right b
+              else Left $   "Woops, kind mismatch " ++ show (a,c)
+
+collectFreeVars :: (Ord a, Traversable f) => f a -> Set.Set a
+collectFreeVars =   Set.fromList . foldl' (flip (:)) []
+
 
 
 
