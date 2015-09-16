@@ -64,6 +64,7 @@ library
                       ,bytes
                       ,mtl
                       ,z3 >=4.1.0 && < 4.2
+                      ,prelude-extras >= 0.4
 
   -- Directories containing source files.
   hs-source-dirs:      src
