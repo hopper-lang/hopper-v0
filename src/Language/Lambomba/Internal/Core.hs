@@ -65,6 +65,38 @@ wellKindedType tau = case tau of
 collectFreeVars :: (Ord a, Traversable f) => f a -> Set.Set a
 collectFreeVars =   Set.fromList . foldl' (flip (:)) []
 
+checkTerm :: forall a . (Ord a,Show a)=> Map.Map a Type -> Exp a -> Either String Type
+checkTerm env term = do
+                      missFVs <- Right $ collectFreeVars term `Set.difference` Map.keysSet env
+                      if missFVs == Set.empty
+                        then Right ()
+                        else Left $ "error, there were unaccounted free variables: " ++  show missFVs
+                      go env term
+
+    where
+      go :: Map.Map a Type -> Exp a -> Either String Type
+      go mp tm = deduceType $ fmap (mp Map.!) tm
+      deduceType :: Exp Type -> Either String Type
+      deduceType (V t) = Right t
+      deduceType (Lam t  scp)=  deduceType $ instantiate1 (V t) scp
+      deduceType (fn :@ arg) =
+          do   argTyp <- deduceType arg ;
+               fnTyp <- deduceType fn
+               case fnTyp of
+                  (Tapp (Tapp (TLit TArrow) from) to) ->
+                    if from == argTyp
+                      then Right to
+                      else Left $ "expected type " ++ show from
+                            ++ " received " ++ show argTyp
+
+                  _ -> Left $ "Expected Function type in application position, received :"
+                        ++ show fnTyp
+
+      {-
+        rough hacky(?) plan for now: change the types of Free variables from a to Type,
+        that way
+
+      -}
 
 
 
