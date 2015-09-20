@@ -34,9 +34,11 @@ inductive type :  nat-> HasImpred  -> Type :=
   | tyInteger : ∀ {n}, type n Pred 
   | typString : ∀ {n}, type n Pred 
   | impredUniversal : ∀ { hasimpA hasimpB},type  0 hasimpA ->type 0 hasimpB  -> type  0 Impred
- -- i do want impred, but will ignore for now
   | predUniversal : ∀ {n m},type  n Pred -> type m Pred -> type  (zeroOrPlusMax n m )  Pred 
+ -- i do want impred, but will ignore for now
+
 --   | predarr : ∀ {n m  hasImpA hasImpB}, type n Pred -> type m  Pred -> type n (meet hasImpA hasImpB)
-  with term  : ∀ {n himp}, type n himp -> Type :=
+/-  with term  : ∀ {n himp}, type n himp -> Type :=
   | tmBool : ∀ {n himp}, bool -> term (@tyBool n) 
  
+-/
