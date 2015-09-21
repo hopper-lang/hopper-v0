@@ -98,10 +98,19 @@ checkTerm env term = do
 
       -}
 
+-- | this model of Values and Closures doens't do the standard
+-- explicit environment model of substitution, but thats ok
+data Value  =   Closure (Scope () Exp Value )
+              | VLit Literal
+   deriving (Eq,Ord,Show)
 
+
+data Literal = Linteger Integer | LRational
+  deriving(Eq,Ord,Show,Read)
 
 data Exp a
   = V a
+  | ELit Literal
   | Exp a :@ Exp a
   | Lam Type  (Scope () Exp a)
   | Let Type  (Exp a)  (Scope () Exp a) --  [Scope Int Exp a] (Scope Int Exp a)
