@@ -100,12 +100,28 @@ checkTerm env term = do
 
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
-data Value  =   Closure (Scope () Exp Value )
-              | VLit Literal
+data Value  =  VPrimVal PrimitiveValue
+              | Thunk !(Exp Value) -- i dont know if we need this
+              | PartialApp [Arity]
+                           [Value]
+
    deriving (Eq,Ord,Show)
 
+data Arity = ArityBoxed --- for now our model of arity is boring and simple
+ deriving (Eq,Ord,Show)
 
-data Literal = Linteger Integer | LRational
+data PrimitiveValue =  Closure Arity !(Scope () Exp Value )
+              | VLit !Literal -- this may contain both primops and primvals
+          deriving (Eq,Ord,Show)
+
+closureArity :: Value -> Integer
+-- closureArity (Closure _ _)= 1
+closureArity (Thunk _) = 0
+-- closureArity (VLit _) = error "what is lit arity?!"
+                    {-   answer, its either a 0 arity value, or a prim op -}
+
+
+data Literal = Linteger !Integer | LRational !Rational
   deriving(Eq,Ord,Show,Read)
 
 data Exp a
