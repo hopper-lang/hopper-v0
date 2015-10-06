@@ -10,12 +10,14 @@ module Language.Lambomba.Internal.Core.STLC where
 import Bound
 import Numeric.Natural
 import Prelude.Extras
-import Control.Applicative
+-- import Control.Applicative
 import Control.Monad
 import qualified  Data.Set as Set
 import qualified  Data.Map as Map
 import Data.Foldable (foldl')
 import Data.Traversable
+import Data.Text (Text)
+-- import qualified Data.Text as T
 
 {- |  this iteration is essentially F_\omega, plus linear types,
 plus inductive data types obeying the positivity condition, plus "crypto signed" values,
@@ -43,14 +45,21 @@ data Type  {-a -}=  Tapp (Type) (Type) | TLit (TCon)
    deriving (Eq,Ord,Read,Show)
 
 
+{-
+a -> b
+
+Tapp (Tapp (TLit TArrow) a) b
+
+-}
+
 deduceLitKind :: TCon ->  Kind
 deduceLitKind tc = case tc of
           TUnit -> Star
           TInt -> Star
-          TArrow -> KArr Star Star
-          PubKey s -> LiftedPubKey
-          EncryptedFor -> KArr LiftedPubKey Star
-          SignedBy -> KArr LiftedPubKey Star
+          TArrow -> KArr Star (KArr Star Star)
+          PubKey _s -> LiftedPubKey
+          EncryptedFor -> KArr LiftedPubKey (KArr Star Star)
+          SignedBy -> KArr LiftedPubKey (KArr Star Star)
 
 
 wellKindedType :: Type -> Either String Kind
@@ -77,6 +86,8 @@ checkTerm env term = do
       go :: Map.Map a Type -> Exp a -> Either String Type
       go mp tm = deduceType $ fmap (mp Map.!) tm
       deduceType :: Exp Type -> Either String Type
+      -- deduceType (ELit x ) =
+      -- deduceType (Let a b c) =
       deduceType (V t) = Right t
       deduceType (Lam t  scp)=  deduceType $ instantiate1 (V t) scp
       deduceType (fn :@ arg) =
@@ -98,21 +109,23 @@ checkTerm env term = do
 
       -}
 
+
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
-data Value  =  VPrimVal PrimitiveValue
+data Value  =  VLit !Literal
               | Thunk !(Exp Value) -- i dont know if we need this
               | PartialApp [Arity]
-                           [Value]
+                           [Value] !(Closure Value)
+              | DirectClosure !(Closure Value)
 
    deriving (Eq,Ord,Show)
 
 data Arity = ArityBoxed --- for now our model of arity is boring and simple
- deriving (Eq,Ord,Show)
+ deriving (Eq,Ord,Show,Read)
 
-data PrimitiveValue =  Closure Arity !(Scope () Exp Value )
-              | VLit !Literal -- this may contain both primops and primvals
-          deriving (Eq,Ord,Show)
+data Closure a = MkClosure ![Arity] !(Scope [Text] Exp a)
+  deriving (Eq,Ord,Show,Read,Eq1,Ord1,Show1,Read1)
+
 
 closureArity :: Value -> Integer
 -- closureArity (Closure _ _)= 1
@@ -121,14 +134,14 @@ closureArity (Thunk _) = 0
                     {-   answer, its either a 0 arity value, or a prim op -}
 
 
-data Literal = Linteger !Integer | LRational !Rational
+data Literal = Linteger !Integer | LRational !Rational | LNatural !Natural
   deriving(Eq,Ord,Show,Read)
 
 data Exp a
   = V a
   | ELit Literal
   | Exp a :@ Exp a
-  | Lam Type  (Scope () Exp a)
+  | Lam Type  (Scope [Text] Exp a)
   | Let Type  (Exp a)  (Scope () Exp a) --  [Scope Int Exp a] (Scope Int Exp a)
   deriving (Eq,Ord,Show,Read,Eq1,Ord1,Show1,Read1)
 
@@ -147,7 +160,7 @@ instance Traversable Exp where
 
 
 instance Monad Exp where
-  return = V
+  -- return = V
   V a      >>= f = f a
   (x :@ y) >>= f = (x >>= f) :@ (y >>= f)
   Lam t  e    >>= f = Lam t (e >>>= f)

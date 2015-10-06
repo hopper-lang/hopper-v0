@@ -48,8 +48,9 @@ cabal-version:       >=1.10
 
 library
   -- Modules exported by the library.
-  exposed-modules: Language.Lambomba.Internal.Core.STLC
-                   Language.Lambomba.Internal.State
+  exposed-modules:  Language.Lambomba.Internal.Core.STLC
+                    Language.Lambomba.Internal.State
+                    Language.Lambomba.HBound
 
   -- Modules included in this library but not exported.
   -- other-modules:
@@ -67,8 +68,10 @@ library
                       ,mtl
                       ,hoopl
                       ,free
+                      ,comonad
                       ,z3 >=4.1.0 && < 4.2
                       ,prelude-extras >= 0.4
+                      ,text
 
   -- Directories containing source files.
   hs-source-dirs:      src
