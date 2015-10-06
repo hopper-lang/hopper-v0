@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 
 
-module Language.Lambomba.Internal.Core where
+module Language.Lambomba.Internal.Core.STLC where
 
 
 import Bound

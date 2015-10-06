@@ -6,9 +6,10 @@
 
 module Language.Lambomba.Internal.State where
 
-import Data.Bound
-import Data.Set
-import Control.Monad.Trans.Free
+-- import Bound
+-- import Data.Set
+-- import Control.Monad.Trans.Free
+-- import Prelude.Extras
 {-
 
 for our state triple rep, it looks roughly like
@@ -29,13 +30,19 @@ PostCOndition (Set (Pred a))  |  CommandBind (Command a) (Scope () CommandSequen
 
 -}
 
-data CommandMonad pred cmd a =
-      CommandPostCondition (Set (pred a))
+{-data CommandMonad pred cmd a =
+      CommandPostCondition  [(pred a)]
       | CommandBind !(cmd a) (Scope () (CommandMonad pred cmd) a)
-    deriving (Eq,Ord,Functor,Show,Traversable,Foldable)
+    deriving (Eq,Ord,Eq1,Ord1,Show1,Read1,Functor,Show,Traversable,Foldable)
 
 data Triple pred cmd a = Triple {
-                                _pre :: Set (pred a)
-                                _commandSequence :: CommandMonad pred cmd a
+                                _pre :: [pred a]
+                                , _commandSequence :: CommandMonad pred cmd a
                                 }
-            deriving (Eq,Ord,Show,Functor,Show,Traversable,Foldable)
+            deriving (Eq,Ord,Show,Show,Traversable,Foldable)-}
+
+{-
+
+
+
+-}
