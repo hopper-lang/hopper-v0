@@ -37,7 +37,7 @@ plus the kinda subtle "pubkey" "signed by"/"encrypted for" primitives that
 data Kind = Star | KArr Kind Kind | LiftedPubKey
   deriving (Eq,Ord,Read,Show)
 
-data TCon {-a -}=  TInt | TUnit | TArrow
+data TCon {-a -}=  TInteger | TNatural | TRational  | TUnit | TArrow
                 | EncryptedFor |  SignedBy
                 | PubKey String {- this is not how it'll work :) -}
     deriving (Eq,Ord,Read,Show )
@@ -55,11 +55,14 @@ Tapp (Tapp (TLit TArrow) a) b
 deduceLitKind :: TCon ->  Kind
 deduceLitKind tc = case tc of
           TUnit -> Star
-          TInt -> Star
+          TInteger -> Star
+          TNatural -> Star
+          TRational -> Star
           TArrow -> KArr Star (KArr Star Star)
           PubKey _s -> LiftedPubKey
           EncryptedFor -> KArr LiftedPubKey (KArr Star Star)
           SignedBy -> KArr LiftedPubKey (KArr Star Star)
+
 
 
 wellKindedType :: Type -> Either String Kind
@@ -85,6 +88,10 @@ checkTerm env term = do
     where
       go :: Map.Map a Type -> Exp a -> Either String Type
       go mp tm = deduceType $ fmap (mp Map.!) tm
+      deduceLitType :: Literal ->  Type
+      deduceLitType (LRational _)  = TLit TRational
+      deduceLitType (LNatural _) = TLit  TNatural
+      deduceLitType (LInteger _) = TLit  TInteger
       deduceType :: Exp Type -> Either String Type
       -- deduceType (ELit x ) =
       -- deduceType (Let a b c) =
@@ -134,7 +141,7 @@ closureArity (Thunk _) = 0
                     {-   answer, its either a 0 arity value, or a prim op -}
 
 
-data Literal = Linteger !Integer | LRational !Rational | LNatural !Natural
+data Literal = LInteger !Integer | LRational !Rational | LNatural !Natural
   deriving(Eq,Ord,Show,Read)
 
 data Exp a
