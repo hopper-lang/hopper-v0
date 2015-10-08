@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE KindSignatures #-}
 
 module Language.Lambomba.Internal.Core.STLC where
 
@@ -106,13 +107,14 @@ checkTerm env term = do
       -- deduceType (ELit x ) =
       -- deduceType (Let a b c) =
       deduceType (V t) = Right t
-      deduceType (ELit x) = _typeOfLit
-      deduceType (Let a b c ) = _elet
+      -- deduceType (ELit x) = _typeOfLit
+      -- deduceType (Let a b c ) = _elet
       deduceType (Lam t  scp)=
         let
-          mp = _mp t
-          linTys = _linTy t
-          zeroTys= _zeroTy t
+          mp = undefined
+          -- mp = _mp t
+          -- linTys = _linTy t
+          -- zeroTys= _zeroTy t
             in  deduceType $ instantiate (\x -> mp Map.! x) scp
       deduceType (fn :@ arg) =
           do   argTyp <- deduceType arg ;
@@ -136,22 +138,28 @@ checkTerm env term = do
 
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
-data Value  ty  =  VLit !Literal
-              | Thunk !(Exp ty (Value ty)) -- i dont know if we need this
+-- also this is the "pre type erasure" representation
+data Value  ty con v  =  VLit !Literal
+              | Constructor  (con (Value ty con v))
+              | Thunk !(Exp ty v {-(Value ty con v)-}) -- i dont know if we need this
               | PartialApp [Arity]
-                           [Value ty] !(Closure  ty (Value ty))
-              | DirectClosure !(Closure ty (Value ty))
+                           [Value ty con v] !(Closure  ty  v {- (Value ty con v) -})
+              | DirectClosure !(Closure ty v {- Value ty con v -})
 
-   deriving (Eq,Ord,Show)
+   deriving (Typeable,Functor,Foldable,Traversable)
+instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a) where
+
+
+
 
 data Arity = ArityBoxed --- for now our model of arity is boring and simple
- deriving (Eq,Ord,Show,Read)
+ deriving (Eq,Ord,Show,Read,Typeable,Data)
 
 data Closure ty a = MkClosure ![Arity] !(Scope [Text] (Exp ty) a)
-  deriving (Eq,Ord,Show,Read,Eq1,Ord1,Show1,Read1)
+  deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable)
+deriving instance (Eq1 (Closure ty))
 
-
-closureArity :: Value ty -> Integer
+closureArity :: Value ty con v-> Integer
 -- closureArity (Closure _ _)= 1
 closureArity (Thunk _) = 0
 -- closureArity (VLit _) = error "what is lit arity?!"
@@ -178,6 +186,7 @@ deriving instance (Eq ty) => Eq1 (Exp ty)
 deriving instance (Eq a,Eq ty) => Eq (Exp ty a)
 
 instance Functor (Exp ty)  where fmap       = fmapDefault
+
 instance Foldable (Exp ty) where foldMap    = foldMapDefault
 
 instance Applicative (Exp ty) where
