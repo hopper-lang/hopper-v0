@@ -20,6 +20,8 @@ import Data.Foldable (foldl')
 import Data.Traversable
 import Data.Text (Text)
 import Data.Data
+import qualified Data.Vector as V
+import Data.Word
 -- import qualified Data.Text as T
 
 {- |  this iteration is essentially F_\omega, plus linear types,
@@ -57,6 +59,12 @@ data Type ty  {-a -}=  Tapp (Type ty) (Type ty) | TLit (TCon) | TVar ty
 a -> b
 
 Tapp (Tapp (TLit TArrow) a) b
+
+
+EncryptedFor Bob Boolean
+
+
+SignedBy Alice Dollar
 
 -}
 
@@ -104,7 +112,7 @@ checkTerm env term = do
       deduceLitType (LInteger _) = TLit  TInteger
       deduceType :: Exp ty (Type ty) -> Either String (Type ty)
 
-      -- deduceType (ELit x ) =
+      deduceType (ELit x ) = Right $  deduceLitType x
       -- deduceType (Let a b c) =
       deduceType (V t) = Right t
       -- deduceType (ELit x) = _typeOfLit
@@ -135,19 +143,21 @@ checkTerm env term = do
 
       -}
 
+newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show)
+
 
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
 -- also this is the "pre type erasure" representation
-data Value  ty con v  =  VLit !Literal
-              | Constructor  (con (Value ty con v))
+data Value  ty  v  =  VLit !Literal
+              | Constructor  Tag  (V.Vector (Value ty  v))
               | Thunk !(Exp ty v {-(Value ty con v)-}) -- i dont know if we need this
               | PartialApp [Arity]
-                           [Value ty con v] !(Closure  ty  v {- (Value ty con v) -})
+                           [Value ty  v] !(Closure  ty  v {- (Value ty con v) -})
               | DirectClosure !(Closure ty v {- Value ty con v -})
 
    deriving (Typeable,Functor,Foldable,Traversable)
-instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a) where
+-- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
 
 
 
@@ -157,9 +167,9 @@ data Arity = ArityBoxed --- for now our model of arity is boring and simple
 
 data Closure ty a = MkClosure ![Arity] !(Scope [Text] (Exp ty) a)
   deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable)
-deriving instance (Eq1 (Closure ty))
+deriving instance Eq ty => (Eq1 (Closure ty))
 
-closureArity :: Value ty con v-> Integer
+closureArity :: Value ty  v-> Integer
 -- closureArity (Closure _ _)= 1
 closureArity (Thunk _) = 0
 -- closureArity (VLit _) = error "what is lit arity?!"
