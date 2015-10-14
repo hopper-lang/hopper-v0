@@ -6,7 +6,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE KindSignatures #-}
 
-module Language.Lambomba.Internal.Core.STLC where
+module Language.Hopper.Internal.Core.STLC where
 
 
 import Bound
