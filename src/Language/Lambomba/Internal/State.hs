@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 
 
-module Language.Lambomba.Internal.State where
+module Language.Hopper.Internal.State where
 
 -- import Bound
 -- import Data.Set

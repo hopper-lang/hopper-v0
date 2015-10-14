@@ -113,7 +113,7 @@ checkTerm env term = do
       deduceType :: Exp ty (Type ty) -> Either String (Type ty)
 
       deduceType (ELit x ) = Right $  deduceLitType x
-      -- deduceType (Let a b c) =
+      deduceType (Let a b c) = undefined
       deduceType (V t) = Right t
       -- deduceType (ELit x) = _typeOfLit
       -- deduceType (Let a b c ) = _elet

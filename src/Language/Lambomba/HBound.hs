@@ -3,7 +3,7 @@
 Higher order bound http://hpaste.org/73764 hpaste by kmett
 -}
 
-module Language.Lambomba.HBound where
+module Language.Hopper.HBound where
 
 import Control.Applicative
 import Control.Category
