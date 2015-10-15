@@ -5,6 +5,9 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DeriveGeneric #-}
+
+
 
 module Language.Hopper.Internal.Core.STLC where
 
@@ -22,6 +25,8 @@ import Data.Text (Text)
 import Data.Data
 import qualified Data.Vector as V
 import Data.Word
+import GHC.Generics (Generic)
+
 -- import qualified Data.Text as T
 
 {- |  this iteration is essentially F_\omega, plus linear types,
@@ -41,18 +46,18 @@ plus the kinda subtle "pubkey" "signed by"/"encrypted for" primitives that
 
 
 data RngModel = Zero | One | Omega
- deriving (Eq,Ord,Show,Read,Data,Typeable)
+ deriving (Eq,Ord,Show,Read,Data,Typeable,Generic)
 
 data Kind = Star | KArr Kind Kind | LiftedPubKey
-  deriving (Eq,Ord,Read,Show,Data,Typeable)
+  deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
 
 data TCon {-a -}=  TInteger | TNatural | TRational  | TUnit | TArrow
                 | EncryptedFor |  SignedBy
                 | PubKey String {- this is not how it'll work :) -}
                 | Linear
-    deriving (Eq,Ord,Read,Show ,Data,Typeable)
+    deriving (Eq,Ord,Read,Show ,Data,Typeable,Generic)
 data Type ty  {-a -}=  Tapp (Type ty) (Type ty) | TLit (TCon) | TVar ty
-   deriving (Eq,Ord,Read,Show,Data,Typeable,Functor,Foldable,Traversable)
+   deriving (Eq,Ord,Read,Show,Data,Typeable,Functor,Foldable,Traversable,Generic)
 
 
 {-
@@ -137,13 +142,14 @@ checkTerm env term = do
                   _ -> Left $ "Expected Function type in application position, received :"
                         ++ show fnTyp
 
+
       {-
         rough hacky(?) plan for now: change the types of Free variables from a to Type,
         that way
 
       -}
 
-newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show)
+newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Generic)
 
 
 -- | this model of Values and Closures doens't do the standard
@@ -156,17 +162,17 @@ data Value  ty  v  =  VLit !Literal
                            [Value ty  v] !(Closure  ty  v {- (Value ty con v) -})
               | DirectClosure !(Closure ty v {- Value ty con v -})
 
-   deriving (Typeable,Functor,Foldable,Traversable)
+   deriving (Typeable,Functor,Foldable,Traversable,Generic)
 -- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
 
 
 
 
 data Arity = ArityBoxed --- for now our model of arity is boring and simple
- deriving (Eq,Ord,Show,Read,Typeable,Data)
+ deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 data Closure ty a = MkClosure ![Arity] !(Scope [Text] (Exp ty) a)
-  deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable)
+  deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
 deriving instance Eq ty => (Eq1 (Closure ty))
 
 closureArity :: Value ty  v-> Integer
