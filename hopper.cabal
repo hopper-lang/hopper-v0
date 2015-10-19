@@ -51,6 +51,7 @@ library
   exposed-modules:  Language.Hopper.Internal.Core.STLC
                     Language.Hopper.Internal.State
                     Language.Hopper.HBound
+                    Language.Hopper.Utils.Swap
 
   -- Modules included in this library but not exported.
   -- other-modules:
@@ -74,6 +75,7 @@ library
                       ,z3 >=4.1.0 && < 4.2
                       ,prelude-extras >= 0.4
                       ,text
+                      ,bifunctors
 
   -- Directories containing source files.
   hs-source-dirs:      src

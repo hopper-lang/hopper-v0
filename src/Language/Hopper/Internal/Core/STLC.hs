@@ -27,6 +27,11 @@ import qualified Data.Vector as V
 import Data.Word
 import GHC.Generics (Generic)
 
+import Data.Bifunctor
+import Data.Bitraversable
+import Data.Bifoldable
+import Data.Biapplicative
+
 -- import qualified Data.Text as T
 
 {- |  this iteration is essentially F_\omega, plus linear types,
@@ -100,7 +105,13 @@ wellKindedType kenv tau = case tau of
 collectFreeVars :: (Ord a, Traversable f) => f a -> Set.Set a
 collectFreeVars =   Set.fromList . foldl' (flip (:)) []
 
-checkTerm :: forall a ty . (Ord a,Show a,Eq ty,Show ty)=> Map.Map a (Type ty) -> Exp ty a -> Either String (Type ty)
+
+{-
+should term checking check the "price" of the expression
+ie  -> (Rng, Type ty)
+-}
+checkTerm :: forall a ty . (Ord a,Show a,Eq ty,Show ty)=> Map.Map a (Type ty)
+              -> Exp ty a -> Either String (Type ty)
 checkTerm env term = do
                       missFVs <- Right $ collectFreeVars term `Set.difference` Map.keysSet env
                       if missFVs == Set.empty
@@ -148,7 +159,11 @@ checkTerm env term = do
         that way
 
       -}
+{-
+checkLinearity ::
 
+checkIrrelevance ::
+-}
 newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Generic)
 
 
