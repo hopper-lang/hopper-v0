@@ -50,16 +50,16 @@ plus the kinda subtle "pubkey" "signed by"/"encrypted for" primitives that
 {-for now we're doing an STLC with a special pubkey type and some type level literals -}
 
 
-data RngModel = Zero | One | Omega
+data RigModel = Zero | One | Omega
  deriving (Eq,Ord,Show,Read,Data,Typeable,Generic)
 
 data Kind = Star | KArr Kind Kind | LiftedPubKey
   deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
 
-data TCon {-a -}=  TInteger | TNatural | TRational  | TUnit | TArrow
+data TCon {-a -}=  TInteger | TNatural | TRational  | TUnit | TArrow RigModel
                 | EncryptedFor |  SignedBy
                 | PubKey String {- this is not how it'll work :) -}
-                | Linear
+                -- | Linear
     deriving (Eq,Ord,Read,Show ,Data,Typeable,Generic)
 data Type ty  {-a -}=  Tapp (Type ty) (Type ty) | TLit (TCon) | TVar ty
    deriving (Eq,Ord,Read,Show,Data,Typeable,Functor,Foldable,Traversable,Generic)
@@ -84,8 +84,8 @@ deduceLitKind tc = case tc of
           TInteger -> Star
           TNatural -> Star
           TRational -> Star
-          Linear -> KArr Star Star
-          TArrow -> KArr Star (KArr Star Star)
+          -- Linear -> KArr Star Star
+          TArrow _ -> KArr Star (KArr Star Star)
           PubKey _s -> LiftedPubKey
           EncryptedFor -> KArr LiftedPubKey (KArr Star Star)
           SignedBy -> KArr LiftedPubKey (KArr Star Star)
@@ -110,8 +110,8 @@ collectFreeVars =   Set.fromList . foldl' (flip (:)) []
 should term checking check the "price" of the expression
 ie  -> (Rng, Type ty)
 -}
-checkTerm :: forall a ty . (Ord a,Show a,Eq ty,Show ty)=> Map.Map a (Type ty)
-              -> Exp ty a -> Either String (Type ty)
+checkTerm :: forall a ty . (Ord a,Show a,Eq ty,Show ty)=> Map.Map a (RigModel,Type ty)
+              -> Exp ty a -> Either String (RigModel,Type ty)
 checkTerm env term = do
                       missFVs <- Right $ collectFreeVars term `Set.difference` Map.keysSet env
                       if missFVs == Set.empty
@@ -120,19 +120,33 @@ checkTerm env term = do
                       go env term
 
     where
-      go :: Map.Map a (Type ty) -> Exp ty a -> Either String (Type ty)
+      go :: Map.Map a (RigModel,Type ty) -> Exp ty a -> Either String (RigModel, Type ty)
+                  --- need to check that expression obeys rigmodel constraints
+                  --- on the free variables
       go mp tm = deduceType $ fmap (mp Map.!) tm
       deduceLitType :: Literal ->  Type ty
       deduceLitType (LRational _)  = TLit TRational
       deduceLitType (LNatural _) = TLit  TNatural
       deduceLitType (LInteger _) = TLit  TInteger
-      deduceType :: Exp ty (Type ty) -> Either String (Type ty)
 
-      deduceType (ELit x ) = Right $  deduceLitType x
+      {-
+    NOTE, ignoring type level substitution for now,
+    this is fine for STLC, but wrong :)
+
+    also need to split this into  synthesize and check directions
+
+    also need to add a nested??
+      -}
+      deduceType :: Exp ty (RigModel,Type ty) -> Either String (RigModel, Type ty)
+
+      deduceType (ELit x ) = Right $  (Omega, deduceLitType x)
       deduceType (Let a b c) = undefined
+
+      -- by induction we assume lineary/irrelevance is well behaved at this point
       deduceType (V t) = Right t
       -- deduceType (ELit x) = _typeOfLit
       -- deduceType (Let a b c ) = _elet
+      --- need to check that linearity is obeyed
       deduceType (Lam t  scp)=
         let
           mp = undefined
@@ -141,12 +155,19 @@ checkTerm env term = do
           -- zeroTys= _zeroTy t
             in  deduceType $ instantiate (\x -> mp Map.! x) scp
       deduceType (fn :@ arg) =
-          do   argTyp <- deduceType arg ;
-               fnTyp <- deduceType fn
+          do   (argRig , argTyp) <- deduceType arg ;
+               (_funRig ,fnTyp) <- deduceType fn
                case fnTyp of
-                  (Tapp (Tapp (TLit TArrow) from) to) ->
+                  (Tapp (Tapp (TLit (TArrow funArgRig)) from) to) ->
                     if from == argTyp
-                      then Right to
+                      then      ---Right to
+                        case (argRig,funArgRig) of
+                              (Zero,Zero)  -> ()
+                              (Zero,_) ->
+                                  Left $ "Irelevant input supplied to relevant function type " ++ show fnTyp
+                              (One,Omega) -> Left $ "Linear input applied to standard functiont type" ++ show fnTyp
+                              (One,x) -> ()
+                              (Omega,x)  -> ()
                       else Left $ "expected type " ++ show from
                             ++ " received " ++ show argTyp
 
@@ -204,8 +225,8 @@ data Exp ty a
   = V  a
   | ELit Literal
   | Exp ty a :@ Exp ty a
-  | Lam [(Text,Type ty,RngModel)] (Scope Text (Exp ty) a)
-  | Let (Text,Type ty,RngModel)  (Exp ty a)  (Scope Text (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
+  | Lam [(Text,Type ty,RigModel)] (Scope Text (Exp ty) a)
+  | Let (Text,Type ty,RigModel)  (Exp ty a)  (Scope Text (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
   deriving (Typeable,Data)
 deriving instance (Read a, Read ty) => Read (Exp ty a)
 deriving instance (Read ty) => Read1 (Exp ty)
