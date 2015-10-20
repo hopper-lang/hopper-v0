@@ -1,4 +1,11 @@
-{-# LANGUAGE GADTs, Rank2Types, KindSignatures, ScopedTypeVariables, TypeOperators, DataKinds, PolyKinds, MultiParamTypeClasses, FlexibleInstances, TypeFamilies, RecursiveDo, ExtendedDefaultRules #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE Rank2Types, KindSignatures #-}
+{-# LANGUAGE ScopedTypeVariables, TypeOperators, DataKinds, PolyKinds #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RecursiveDo, ExtendedDefaultRules #-}
+
+
 {-
 Higher order bound http://hpaste.org/73764 hpaste by kmett
 -}
@@ -20,16 +27,24 @@ import Prelude hiding ((.),id)
 
 infixl 1 >>>-, >>-
 
+{- Nat is a Natural transformation from functor f to functor g
+a la category theory
+-}
 type Nat f g = forall x. f x -> g x
 
+-- | 'HFunctor' lifts a natural transformation into
 class HFunctor t where
+  -- | think of hmap as being
+  -- (forall x , f x -> g x) -> (forall y  , t f y -> t g y )
   hmap :: Nat f g -> Nat (t f) (t g)
 
 class HFunctor t => HTraversable t where
   htraverse :: Applicative m => (forall x. f x -> m (g x)) -> t f a -> m (t g a)
 
 class HFunctor t => HMonad t where
+  -- | hreturn :: forall x , f x -> t f x
   hreturn :: Nat f (t f)
+  -- | >>- == hbind :: t f a -> (forall x , f  x -> t g x ) -> t g a
   (>>-)   :: t f a -> Nat f (t g) -> t g a
 
 infixr 1 -<<
@@ -37,9 +52,11 @@ infixr 1 -<<
 f -<< m = m >>- f
 
 class HBound s where
+  -- | >>>- == hsubst :: s t f a -> (forall x , f x -> t g x) -> s t g a
   (>>>-) :: HMonad t => s t f a -> Nat f (t g) -> s t g a
 
 class HMonadTrans s where
+  -- | hlift :: hmonad t => (forall x , t f  x -> s t f x )
   hlift :: HMonad t => Nat (t f) (s t f)
 
 data Var b f a where
@@ -59,6 +76,7 @@ instance HMonad (Var b) where
   B b >>- _ = B b
   F a >>- f = f a
 
+-- | 'Scope' bvar texp freevar type
 newtype Scope b t f a = Scope { unscope :: t (Var b (t f)) a }
 
 instance HFunctor t => HFunctor (Scope b t) where
