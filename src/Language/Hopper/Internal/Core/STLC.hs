@@ -27,10 +27,10 @@ import qualified Data.Vector as V
 import Data.Word
 import GHC.Generics (Generic)
 
-import Data.Bifunctor
-import Data.Bitraversable
-import Data.Bifoldable
-import Data.Biapplicative
+-- import Data.Bifunctor
+-- import Data.Bitraversable
+-- import Data.Bifoldable
+-- import Data.Biapplicative
 
 -- import qualified Data.Text as T
 
@@ -109,7 +109,7 @@ collectFreeVars =   Set.fromList . foldl' (flip (:)) []
 {-
 should term checking check the "price" of the expression
 ie  -> (Rng, Type ty)
--}
+-}{-
 checkTerm :: forall a ty . (Ord a,Show a,Eq ty,Show ty)=> Map.Map a (RigModel,Type ty)
               -> Exp ty a -> Either String (RigModel,Type ty)
 checkTerm env term = do
@@ -174,7 +174,7 @@ checkTerm env term = do
                   _ -> Left $ "Expected Function type in application position, received :"
                         ++ show fnTyp
 
-
+-}
       {-
         rough hacky(?) plan for now: change the types of Free variables from a to Type,
         that way
@@ -191,12 +191,21 @@ newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Gener
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
 -- also this is the "pre type erasure" representation
-data Value  ty  v  =  VLit !Literal
-              | Constructor  Tag  (V.Vector (Value ty  v))
-              | Thunk !(Exp ty v {-(Value ty con v)-}) -- i dont know if we need this
+--  values at runtime will roughly look like  Val = Free  (Value ref ty)
+-- because the underlying expressions will themselves have "values" in variable
+-- positions?
+data Value  ref ty  v  =  VLit !Literal
+              | Constructor  Tag  (V.Vector (Value ref ty  v))
+              | Thunk !(Exp ty v )
               | PartialApp [Arity]
-                           [Value ty  v] !(Closure  ty  v {- (Value ty con v) -})
-              | DirectClosure !(Closure ty v {- Value ty con v -})
+                           [Value ref ty  v] !(Closure  ty  v {- (Value ty con v) -})
+              | DirectClosure !(Closure ty v )
+              | Ref ref --- refs are so we can have  exlpicit  sharing
+                        --- in a manner thats parametric in the choice
+                        -- of execution  semantics
+                        --
+
+
 
    deriving (Typeable,Functor,Foldable,Traversable,Generic)
 -- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
@@ -207,13 +216,22 @@ data Value  ty  v  =  VLit !Literal
 data Arity = ArityBoxed --- for now our model of arity is boring and simple
  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
+--- | 'Closure' should
 data Closure ty a = MkClosure ![Arity] !(Scope [Text] (Exp ty) a)
   deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
 deriving instance Eq ty => (Eq1 (Closure ty))
 
-closureArity :: Value ty  v-> Integer
+--- when we check closure arity, we're also gonna collaps indirected refernces
+--- on the outside, also we're presuming
+--- this may be the wrong name (maybe valueArity?), and or it shoudl only be on
+---
+closureArity :: Value ref ty  v -> (ref -> Value ref ty v)-> Integer
 -- closureArity (Closure _ _)= 1
-closureArity (Thunk _) = 0
+closureArity val resolve = go val
+    where
+        go :: Value ref ty v -> (Maybe ref, Integer)
+        go (DirectClosure (MkClosure arr bdy)) = (Nothing,length )
+
 -- closureArity (VLit _) = error "what is lit arity?!"
                     {-   answer, its either a 0 arity value, or a prim op -}
 
@@ -224,6 +242,9 @@ data Literal = LInteger !Integer | LRational !Rational | LNatural !Natural
 data Exp ty a
   = V  a
   | ELit Literal
+  | Force (Exp ty a)  --- Force is a Noop on evaluate values,
+                      --- otherwise reduces expression to applicable normal form
+  | Delay (Exp ty a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
   | Exp ty a :@ Exp ty a
   | Lam [(Text,Type ty,RigModel)] (Scope Text (Exp ty) a)
   | Let (Text,Type ty,RigModel)  (Exp ty a)  (Scope Text (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
@@ -247,6 +268,9 @@ instance Applicative (Exp ty) where
 
 instance Traversable (Exp ty) where
   traverse f (V a)      = V <$> f a
+  traverse _f (ELit e) = pure $ ELit e
+  traverse f (Force e) = Force <$> traverse f e
+  traverse f (Delay e) = Delay <$> traverse f e
   traverse f (x :@ y)   = (:@) <$> traverse f x <*> traverse f y
   traverse f (Lam t e)    = Lam  t <$> traverse f e
   traverse f (Let t bs b) = Let  t <$>  (traverse f) bs <*> traverse f b
@@ -254,8 +278,11 @@ instance Traversable (Exp ty) where
 
 instance Monad (Exp ty) where
   -- return = V
-  V a      >>= f = f a
-  (x :@ y) >>= f = (x >>= f) :@ (y >>= f)
+  V a         >>= f = f a
+  Delay e     >>= f = Delay $ e >>= f
+  Force e     >>= f = Force $ e >>= f
+  ELit e      >>= _f = ELit e -- this could also safely be a coerce?
+  (x :@ y)    >>= f = (x >>= f) :@ (y >>= f)
   Lam t  e    >>= f = Lam t (e >>>= f)
   Let t bs  b >>= f = Let t (  bs >>= f)  (b >>>= f)
 
