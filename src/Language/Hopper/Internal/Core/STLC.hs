@@ -18,7 +18,7 @@ import Prelude.Extras
 -- import Control.Applicative
 import Control.Monad
 import qualified  Data.Set as Set
-import qualified  Data.Map as Map
+import qualified  Data.Map.Strict as Map
 import Data.Foldable (foldl')
 import Data.Traversable
 import Data.Text (Text)
@@ -27,6 +27,8 @@ import qualified Data.Vector as V
 import Data.Word
 import Data.Int
 import GHC.Generics (Generic)
+import  Control.Monad.Trans.State.Strict (StateT(..))
+import qualified Control.Monad.Trans.State.Strict as State
 
 -- import Data.Bifunctor
 -- import Data.Bitraversable
@@ -210,9 +212,7 @@ data Value  ty  v  =  VLit !Literal
                         -- of execution  semantics
                         --
 
-
-
-   deriving (Typeable,Functor,Foldable,Traversable,Generic)
+   deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
 -- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
 
 
@@ -245,6 +245,21 @@ closureArity val resolve = go  5 val -- there really should only be like 1-2 ref
                       | otherwise = error $ "abort: deep ref cycle in application position " ++ show r
 
 
+-- initHeap :: Ord a => Map a (Value ty a) -> Set a -> Map Ref (Value ty Ref)
+
+-- evaluateWHNF ::
+
+
+data CounterAndHeap ty v =  CntAndHeap {
+                                        _extractCounterCAH :: !Integer
+                                        ,_extractHeapCAH :: !(Map.Map Ref (Value ty v)) }
+                            deriving (Data
+                                      ,Typeable
+                                      ,Show
+                                      ,Generic
+                                      ,Eq,Ord)
+
+newtype HeapStepCounterM ty v a = HSCM {_xtractHSCM :: State.State (CounterAndHeap ty v) a}
 
 -- closureArity (VLit _) = error "what is lit arity?!"
                     {-   answer, its either a 0 arity value, or a prim op -}
