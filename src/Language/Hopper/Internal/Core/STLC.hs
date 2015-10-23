@@ -25,6 +25,7 @@ import Data.Text (Text)
 import Data.Data
 import qualified Data.Vector as V
 import Data.Word
+import Data.Int
 import GHC.Generics (Generic)
 
 -- import Data.Bifunctor
@@ -185,8 +186,11 @@ checkLinearity ::
 
 checkIrrelevance ::
 -}
+
+-- | 'Tag' is a constructor tag sum
 newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Generic)
 
+newtype Ref = HeapRef {refPointer :: Word64} deriving  (Eq, Show,Ord,Data,Typeable,Generic)
 
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
@@ -194,13 +198,14 @@ newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Gener
 --  values at runtime will roughly look like  Val = Free  (Value ref ty)
 -- because the underlying expressions will themselves have "values" in variable
 -- positions?
-data Value  ref ty  v  =  VLit !Literal
-              | Constructor  Tag  (V.Vector (Value ref ty  v))
+data Value  ty  v  =  VLit !Literal
+              | Constructor  !Tag  !(V.Vector (Value  ty  v))
               | Thunk !(Exp ty v )
-              | PartialApp [Arity]
-                           [Value ref ty  v] !(Closure  ty  v {- (Value ty con v) -})
+              | PartialApp ![Arity] -- ^ args left to consume?
+                           ![Value  ty  v]  -- ^  this will need to be reversed??
+                           !(Closure  ty  v {- (Value ty con v) -})
               | DirectClosure !(Closure ty v )
-              | Ref ref --- refs are so we can have  exlpicit  sharing
+              | VRef !Ref --- refs are so we can have  exlpicit  sharing
                         --- in a manner thats parametric in the choice
                         -- of execution  semantics
                         --
@@ -216,21 +221,30 @@ data Value  ref ty  v  =  VLit !Literal
 data Arity = ArityBoxed --- for now our model of arity is boring and simple
  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
---- | 'Closure' should
+--- | 'Closure' may need some rethinking ... later
 data Closure ty a = MkClosure ![Arity] !(Scope [Text] (Exp ty) a)
   deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
 deriving instance Eq ty => (Eq1 (Closure ty))
 
 --- when we check closure arity, we're also gonna collaps indirected refernces
 --- on the outside, also we're presuming
---- this may be the wrong name (maybe valueArity?), and or it shoudl only be on
----
-closureArity :: Value ref ty  v -> (ref -> Value ref ty v)-> Integer
+--- this may be the wrong name (maybe valueArity?),
+--- either way, this sin't quite what we should have at the end, but
+--- it'll work for now
+closureArity :: forall m ty v  .  Monad m => Value  ty  v -> (Ref -> m (Value ty v))-> m  Word64
 -- closureArity (Closure _ _)= 1
-closureArity val resolve = go val
+closureArity val resolve = go  5 val -- there really should only be like 1-2 refs indirection
     where
-        go :: Value ref ty v -> (Maybe ref, Integer)
-        go (DirectClosure (MkClosure arr bdy)) = (Nothing,length )
+        go :: Int64 ->  Value ty v -> m  Word64
+        go _ (DirectClosure (MkClosure arr _bdy)) = return $ fromIntegral  $ length arr
+        go _ (VLit _) = return 0
+        go _ (Constructor _ _) = return 0
+        go _ (Thunk _e) = return 0
+        go _ (PartialApp arr _accum _clos) = return $ fromIntegral $ length arr
+        go n (VRef r) | n  >= 0 =  do v <- resolve r ; go (n-1) v --- NB: this doesn't handle cycles currently!!!!
+                      | otherwise = error $ "abort: deep ref cycle in application position " ++ show r
+
+
 
 -- closureArity (VLit _) = error "what is lit arity?!"
                     {-   answer, its either a 0 arity value, or a prim op -}
