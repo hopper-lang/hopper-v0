@@ -27,7 +27,7 @@ import qualified Data.Vector as V
 import Data.Word
 import Data.Int
 import GHC.Generics (Generic)
-import  Control.Monad.Trans.State.Strict (StateT(..))
+-- import  Control.Monad.Trans.State.Strict (StateT(..))
 import qualified Control.Monad.Trans.State.Strict as State
 
 -- import Data.Bifunctor
@@ -200,6 +200,7 @@ newtype Ref = HeapRef {refPointer :: Word64} deriving  (Eq, Show,Ord,Data,Typeab
 --  values at runtime will roughly look like  Val = Free  (Value ref ty)
 -- because the underlying expressions will themselves have "values" in variable
 -- positions?
+-- or just make it polymorphic in ref/Ref
 data Value  ty  v  =  VLit !Literal
               | Constructor  !Tag  !(V.Vector (Value  ty  v))
               | Thunk !(Exp ty v )
@@ -248,6 +249,25 @@ closureArity val resolve = go  5 val -- there really should only be like 1-2 ref
 -- initHeap :: Ord a => Map a (Value ty a) -> Set a -> Map Ref (Value ty Ref)
 
 -- evaluateWHNF ::
+{-
+
+-}
+
+{- Evaluation Contexts: theses are essentially the explicit control stack of the associated interpreter,
+for Lazy Evaluation, we only push onto the control stack when evaluating a thunk,
+everything else is definitionally a tail call per se (in terms of the naive lazy evaluation strategy)
+
+for Strict Evaluation, we push onto the control stack when evaluating first the control position,
+then when evaluating the argument position
+
+the syntactic definition of a general tail call for strict evaluation corresponds with being the
+last expression value in ANF or CPS transformed coded (ie every implicit intermediate value is named)
+respresentations
+
+-}
+
+
+
 
 
 data CounterAndHeap ty v =  CntAndHeap {
