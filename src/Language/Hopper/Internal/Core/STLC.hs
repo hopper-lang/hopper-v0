@@ -266,8 +266,13 @@ respresentations
 
 -}
 
+data LazyContext ty v = LCEmpty | LCThunkEval () !(Exp ty v) !(LazyContext ty v)
+   deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
 
-
+data StrictContext ty v = SCEmpty
+                        | SCArgEVal !(Value ty v) () !(StrictContext ty v)
+                        | SCFunEval () !(Exp ty v) !(StrictContext ty v)
+   deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
 
 
 data CounterAndHeap ty v =  CntAndHeap {
