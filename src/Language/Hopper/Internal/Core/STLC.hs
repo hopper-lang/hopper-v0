@@ -275,16 +275,48 @@ data StrictContext ty v = SCEmpty
    deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
 
 
-data CounterAndHeap ty v =  CntAndHeap {
-                                        _extractCounterCAH :: !Integer
-                                        ,_extractHeapCAH :: !(Map.Map Ref (Value ty v)) }
+--- This model implementation of the heap is kinda a hack --- Namely that
+--- _minMaxFreshRef acts as a kinda heap pointer that
+data Heap ty v = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (Value ty v)) }
                             deriving (Data
                                       ,Typeable
                                       ,Show
                                       ,Generic
-                                      ,Eq,Ord)
+                                      ,Eq
+                                      ,Ord
+                                      ,Foldable
+                                      ,Traversable
+                                      ,Functor)
+
+data CounterAndHeap ty v =  CntAndHeap {
+                                        _extractCounterCAH :: !Natural -- this should be a Natural
+                                        ,_extractHeapCAH :: !(Heap ty v) }
+                            deriving (Data
+                                      ,Typeable
+                                      ,Show
+                                      ,Generic
+                                      ,Eq
+                                      ,Ord
+                                      ,Foldable
+                                      ,Traversable
+                                      ,Functor)
+
+extractHeapCAH :: Functor f => ((Heap ty v) ->  f (Heap ty' v'))
+                  -> CounterAndHeap ty v -> f (CounterAndHeap ty' v')
+extractHeapCAH fun cnh = fmap (\mp' -> cnh{_extractHeapCAH=mp'}) $ fun $ _extractHeapCAH cnh
+
+extractCounterCAH :: Functor f => (Natural -> f Natural )-> (CounterAndHeap ty v -> f (CounterAndHeap ty v))
+extractCounterCAH  fun cnh = fmap (\i' -> cnh{_extractCounterCAH=i'}) $ fun $ _extractCounterCAH cnh
 
 newtype HeapStepCounterM ty v a = HSCM {_xtractHSCM :: State.State (CounterAndHeap ty v) a}
+   deriving (Typeable,Functor,Generic)
+instance Applicative (HeapStepCounterM ty v) where
+    pure  = \v ->  HSCM $ pure v
+    (<*>) = \ (HSCM f) (HSCM v) -> HSCM $ f <*> v
+instance Monad (HeapStepCounterM ty v) where
+    return = pure
+    (>>=)= \ (HSCM mv) f -> HSCM (mv  >>= (_xtractHSCM. f))
+-- heapAllocate :: v -> HeapStepCounterM ty v Ref
 
 -- closureArity (VLit _) = error "what is lit arity?!"
                     {-   answer, its either a 0 arity value, or a prim op -}
@@ -299,6 +331,7 @@ data Exp ty a
   | Force (Exp ty a)  --- Force is a Noop on evaluate values,
                       --- otherwise reduces expression to applicable normal form
   | Delay (Exp ty a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
+                      --- note: may need to change their semantics later?!
   | Exp ty a :@ Exp ty a
   | Lam [(Text,Type ty,RigModel)] (Scope Text (Exp ty) a)
   | Let (Text,Type ty,RigModel)  (Exp ty a)  (Scope Text (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
