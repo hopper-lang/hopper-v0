@@ -192,7 +192,7 @@ checkIrrelevance ::
 -- | 'Tag' is a constructor tag sum
 newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Generic)
 
-newtype Ref = HeapRef {refPointer :: Word64} deriving  (Eq, Show,Ord,Data,Typeable,Generic)
+newtype Ref = Ref {refPointer :: Natural} deriving  (Eq, Show,Ord,Data,Typeable,Generic)
 
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
@@ -201,19 +201,27 @@ newtype Ref = HeapRef {refPointer :: Word64} deriving  (Eq, Show,Ord,Data,Typeab
 -- because the underlying expressions will themselves have "values" in variable
 -- positions?
 -- or just make it polymorphic in ref/Ref
-data Value  ty  v  =  VLit !Literal
-              | Constructor  !Tag  !(V.Vector (Value  ty  v))
-              | Thunk !(Exp ty v )
+data Value  ty   =  VLit !Literal
+              | Constructor  !Tag  !(V.Vector (Value  ty  ))
+              | Thunk !(Exp ty (Value ty ) )
               | PartialApp ![Arity] -- ^ args left to consume?
-                           ![Value  ty  v]  -- ^  this will need to be reversed??
-                           !(Closure  ty  v {- (Value ty con v) -})
-              | DirectClosure !(Closure ty v )
+                           ![Value  ty  ]  -- ^  this will need to be reversed??
+                           !(Closure  ty  (Value ty) {- (Value ty con v) -})
+              | DirectClosure !(Closure ty (Value ty))
               | VRef !Ref --- refs are so we can have  exlpicit  sharing
                         --- in a manner thats parametric in the choice
                         -- of execution  semantics
                         --
 
-   deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
+   deriving (Typeable
+    --,Functor
+    --,Foldable
+    --,Traversable
+    ,Generic
+    ,Data
+    ,Eq
+    ,Ord
+    ,Show)
 -- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
 
 
@@ -232,11 +240,11 @@ deriving instance Eq ty => (Eq1 (Closure ty))
 --- this may be the wrong name (maybe valueArity?),
 --- either way, this sin't quite what we should have at the end, but
 --- it'll work for now
-closureArity :: forall m ty v  .  Monad m => Value  ty  v -> (Ref -> m (Value ty v))-> m  Word64
+closureArity :: forall m ty v  .  Monad m => Value  ty   -> (Ref -> m (Value ty ))-> m  Word64
 -- closureArity (Closure _ _)= 1
 closureArity val resolve = go  5 val -- there really should only be like 1-2 refs indirection
     where
-        go :: Int64 ->  Value ty v -> m  Word64
+        go :: Int64 ->  Value ty  -> m  Word64
         go _ (DirectClosure (MkClosure arr _bdy)) = return $ fromIntegral  $ length arr
         go _ (VLit _) = return 0
         go _ (Constructor _ _) = return 0
@@ -266,57 +274,94 @@ respresentations
 
 -}
 
-data LazyContext ty v = LCEmpty | LCThunkEval () !(Exp ty v) !(LazyContext ty v)
-   deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
+data LazyContext ty = LCEmpty | LCThunkEval () !(Exp ty (Value ty)) !(LazyContext ty )
+   deriving (Typeable
+    --,Functor
+    --,Foldable
+    --,Traversable
+    ,Generic
+    ,Data
+    ,Eq
+    ,Ord
+    ,Show)
 
-data StrictContext ty v = SCEmpty
-                        | SCArgEVal !(Value ty v) () !(StrictContext ty v)
-                        | SCFunEval () !(Exp ty v) !(StrictContext ty v)
-   deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
+data StrictContext ty  = SCEmpty
+                        | SCArgEVal !(Value ty) () !(StrictContext ty )
+                        | SCFunEval () !(Exp ty (Value ty)) !(StrictContext ty )
+   deriving (Typeable
+    --,Functor
+    --,Foldable
+    --,Traversable
+    ,Generic
+    ,Data
+    ,Eq
+    ,Ord
+    ,Show)
 
 
 --- This model implementation of the heap is kinda a hack --- Namely that
---- _minMaxFreshRef acts as a kinda heap pointer that
-data Heap ty v = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (Value ty v)) }
+--- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
+data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (Value ty )) }
                             deriving (Data
                                       ,Typeable
                                       ,Show
                                       ,Generic
                                       ,Eq
                                       ,Ord
-                                      ,Foldable
-                                      ,Traversable
-                                      ,Functor)
+                                      --,Foldable
+                                      --,Traversable
+                                      --,Functor
+                                      )
 
-data CounterAndHeap ty v =  CntAndHeap {
+heapRefLookup :: Heap ty  -> Ref -> Maybe (Value ty )
+heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
+
+heapAllocateValue :: Heap ty  -> Value ty  -> (Ref,Heap ty )
+heapAllocateValue hp val = (_minMaxFreshRef hp
+                            , Heap (Ref $ refPointer minmax +1) newMap)
+  where
+      minmax = _minMaxFreshRef hp
+      newMap = Map.insert minmax  val (_theHeap hp)
+
+data CounterAndHeap ty =  CntAndHeap {
                                         _extractCounterCAH :: !Natural -- this should be a Natural
-                                        ,_extractHeapCAH :: !(Heap ty v) }
+                                        ,_extractHeapCAH :: !(Heap ty) }
                             deriving (Data
                                       ,Typeable
                                       ,Show
                                       ,Generic
                                       ,Eq
                                       ,Ord
-                                      ,Foldable
-                                      ,Traversable
-                                      ,Functor)
+                                      --,Foldable
+                                      --,Traversable
+                                      --,Functor
+                                      )
 
-extractHeapCAH :: Functor f => ((Heap ty v) ->  f (Heap ty' v'))
-                  -> CounterAndHeap ty v -> f (CounterAndHeap ty' v')
+extractHeapCAH :: Functor f => ((Heap ty ) ->  f (Heap ty' ))
+                  -> CounterAndHeap ty  -> f (CounterAndHeap ty' )
 extractHeapCAH fun cnh = fmap (\mp' -> cnh{_extractHeapCAH=mp'}) $ fun $ _extractHeapCAH cnh
 
-extractCounterCAH :: Functor f => (Natural -> f Natural )-> (CounterAndHeap ty v -> f (CounterAndHeap ty v))
+extractCounterCAH :: Functor f => (Natural -> f Natural )-> (CounterAndHeap ty  -> f (CounterAndHeap ty ))
 extractCounterCAH  fun cnh = fmap (\i' -> cnh{_extractCounterCAH=i'}) $ fun $ _extractCounterCAH cnh
 
-newtype HeapStepCounterM ty v a = HSCM {_xtractHSCM :: State.State (CounterAndHeap ty v) a}
+newtype HeapStepCounterM ty  a = HSCM {_xtractHSCM :: State.State (CounterAndHeap ty) a}
    deriving (Typeable,Functor,Generic)
-instance Applicative (HeapStepCounterM ty v) where
+instance Applicative (HeapStepCounterM ty ) where
     pure  = \v ->  HSCM $ pure v
     (<*>) = \ (HSCM f) (HSCM v) -> HSCM $ f <*> v
-instance Monad (HeapStepCounterM ty v) where
+instance Monad (HeapStepCounterM ty ) where
     return = pure
     (>>=)= \ (HSCM mv) f -> HSCM (mv  >>= (_xtractHSCM. f))
--- heapAllocate :: v -> HeapStepCounterM ty v Ref
+
+getHSCM :: HeapStepCounterM ty (CounterAndHeap ty)
+getHSCM  = HSCM State.get
+
+setHSCM :: CounterAndHeap ty  -> HeapStepCounterM ty ()
+setHSCM v = HSCM $ State.put  v
+
+ --heapAllocate :: Value ty -> HeapStepCounterM ty  Ref
+ --heapAllocate val =
+
 
 -- closureArity (VLit _) = error "what is lit arity?!"
                     {-   answer, its either a 0 arity value, or a prim op -}
