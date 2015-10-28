@@ -63,20 +63,20 @@ library
   build-depends:       base >=4.8.1 && <4.9
                       ,bound >= 1.0 && < 1.1
                       ,containers
-                      ,transformers
-                      ,profunctors
+                      ,transformers >= 0.3 && < 0.5
+                      ,profunctors >= 5.1 && < 5.2
                       ,bytes
-                      ,mtl
+                      ,mtl >= 2.2 && < 2.3
                       -- ,hoopl
-                      ,free
+                      ,free >= 4.12 && < 4.13
                       ,comonad
                       ,vector >= 0.11 && < 0.12
                       ,primitive >= 0.6 && < 0.7
                       -- ,z3 >=4.1.0 && < 4.2
                       ,prelude-extras >= 0.4
                       ,text
-                      ,bifunctors
-                      ,lens >= 4.12
+                      ,bifunctors >= 5 &&  < 5.2
+                      ,lens >= 4.12 && < 4.14
 
   -- Directories containing source files.
   hs-source-dirs:      src

@@ -6,8 +6,13 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE CPP #-}
 
 
+#include "MachDeps.h"
+#if WORD_SIZE_IN_BITS < 64
+#error "this code base only supports 64-bit haskell because certain mapping data structures are keyed by Int"
+#endif
 
 module Language.Hopper.Internal.Core.STLC where
 
@@ -27,6 +32,8 @@ import qualified Data.Vector as V
 import Data.Word
 import Data.Int
 import GHC.Generics (Generic)
+import Control.Lens
+-- import qualified  Data.Bits as Bits
 -- import  Control.Monad.Trans.State.Strict (StateT(..))
 import qualified Control.Monad.Trans.State.Strict as State
 
@@ -192,7 +199,51 @@ checkIrrelevance ::
 -- | 'Tag' is a constructor tag sum
 newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Generic)
 
-newtype Ref = Ref {refPointer :: Natural} deriving  (Eq, Show,Ord,Data,Typeable,Generic)
+-- | current theres no pointer tagging in 'Ref' but eventually that will
+-- probably change
+newtype Ref = Ref {refPointer :: Word64} deriving  (Eq, Show,Ord,Data,Typeable,Generic)
+
+
+instance Bounded Ref where
+   minBound = Ref minBound
+   maxBound = Ref maxBound
+
+-- | interface for doing queries on bitwise representation and inspecting it
+-- this could eg be used to query the upper 16 bits if we were to use a pointer
+-- tagging scheme or the like. No such tagging scheme for now though :)
+refRepLens :: Functor f =>(Word64 -> f a) -> Ref -> f a
+refRepLens = \ f (Ref r) -> f r
+
+-- | interface for doing bitwise transformations that yield a new ref
+refTransform :: Functor f => (Word64 -> f Word64) -> Ref -> f Ref
+refTransform = \ f (Ref r) -> Ref <$> f r
+
+absoluteDistance  :: Ref -> Ref -> Word64
+absoluteDistance = \(Ref a) (Ref b) -> if a > b then a - b else b - a
+
+instance Enum Ref where
+  succ rf@(Ref w) | rf < maxBound = Ref (1+ w)
+                  | otherwise = error $ "succ: Ref overflow"
+  pred rf@(Ref w) | rf > minBound = Ref (w - 1)
+                  | otherwise = error $ "pred: Ref underflow"
+  fromEnum (Ref w)
+                | w < fromIntegral (maxBound :: Int) = fromIntegral w
+                | otherwise =
+                          error "fromEnum: any Ref that is larger than 2^63 -1  is unrepresentable as Int64"
+  toEnum n | n >= 0 = Ref $ fromIntegral n
+           | otherwise = error "toEnum: Cant represent negative locations in a Ref"
+{-
+NOTE: Ref should be replaced with Word64 / Int / Int64 so that more
+efficient indexing data structures can be used.
+Int is kinda weird for this, but because most of the naive upgrades
+in terms of data structures that are available key on Int, will probably do that
+
+Unless we use Ed's word Map, which WOULD be the most performant of those out there
+with the best worst case  and average perf for the workload we can reasonable anticipate
+
+Short of moving to explicit heap as an (un?)boxed array per generation or block of memory 
+
+-}
 
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
@@ -227,7 +278,9 @@ data Value  ty   =  VLit !Literal
 
 
 
-data Arity = ArityBoxed --- for now our model of arity is boring and simple
+data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of arity is boring and simple
+                              -- for now lets keep the variable names?
+                              -- it'll keep the debugging simpler (maybe?)
  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 --- | 'Closure' may need some rethinking ... later
@@ -388,7 +441,10 @@ or can i just assume that any refs must be strictly descending?
 runHSCM :: Natural -> HeapStepCounterM ty a -> (a,CounterAndHeap ty)
 runHSCM cnt (HSCM m) = State.runState m (CounterAndHeap cnt $ Heap (Ref 1) Map.empty)
 
+{-
+need to add Partial App and multi arg lambdas to eval/apply later this week :)
 
+-}
 evalLazy :: LazyContext ty -> Exp ty (Value ty) -> HeapStepCounterM ty (Value ty)
 evalLazy ctxt (V val) = applyLazy ctxt val
 evalLazy ctxt (Force e)= evalLazy ctxt e
@@ -399,20 +455,24 @@ evalLazy ctxt (Let (_txt,_typ,_rig) lexp scp) =
         do rf <- heapAllocate (Thunk lexp) ; evalLazy ctxt $ instantiate1 (V $ VRef rf) scp
                  -- | rig `elem` [Zero,One,Omega]  = undefined
 evalLazy ctxt (fexp :@ argExp) = evalLazy (LCThunkEval ()  argExp $ ctxt) fexp
-evalLazy ctxt (Lam (_txt,_typ,_rig) scp) = applyLazy ctxt $ DirectClosure $ MkClosure [ArityBoxed] scp
+evalLazy ctxt (Lam ls scp) = applyLazy ctxt $ DirectClosure $ MkClosure (map (ArityBoxed . view  _1 ) ls) scp
 
 
+-- | for 'applyLazy'  ctx  v,  v is the "function" and ctx carries the thunk evaluation context stack
+-- so
 applyLazy :: LazyContext ty -> Value ty -> HeapStepCounterM ty (Value ty)
 applyLazy LCEmpty v = return v
-applyLazy ctxt@(LCThunkEval () exp  rest)  v =
+applyLazy ctxt@(LCThunkEval () expr  rest)  v =
       case v of
         (VRef ref) ->
             do  (Just reValue) <-  heapLookup  ref
                 case reValue of
-                  (Ref ref') -> error $ "double indirection in heap "++ show ref'
+                  (VRef ref') -> error $ "double indirection in heap "++ show ref'
                   val -> applyLazy ctxt val
         (Thunk e)-> error "didn't implement heap heapUpdate yet! "
-        (DirectClosure (Closure [x] scp) -> do ref <- heapAllocate (Thunk)
+
+
+        -- (DirectClosure (Closure [x] scp) -> do ref <- heapAllocate (Thunk)
 {-
 need to finish the rest of the cases
 -}
@@ -432,7 +492,7 @@ data Exp ty a
   | Delay (Exp ty a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
                       --- note: may need to change their semantics later?!
   | Exp ty a :@ Exp ty a
-  | Lam (Text,Type ty,RigModel) {-[(Text,Type ty,RigModel)] -} -- droppin >1 arity for now
+  | Lam [(Text,Type ty,RigModel)] -- do we want to allow arity == 0, or just >= 1?
         (Scope Text (Exp ty) a)
   | Let (Text,Type ty,RigModel)  (Exp ty a)  (Scope Text (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
   deriving (Typeable,Data)
