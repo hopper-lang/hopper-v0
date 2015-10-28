@@ -67,15 +67,16 @@ library
                       ,profunctors
                       ,bytes
                       ,mtl
-                      ,hoopl
+                      -- ,hoopl
                       ,free
                       ,comonad
                       ,vector >= 0.11 && < 0.12
                       ,primitive >= 0.6 && < 0.7
-                      ,z3 >=4.1.0 && < 4.2
+                      -- ,z3 >=4.1.0 && < 4.2
                       ,prelude-extras >= 0.4
                       ,text
                       ,bifunctors
+                      ,lens >= 4.12
 
   -- Directories containing source files.
   hs-source-dirs:      src
