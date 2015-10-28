@@ -231,7 +231,7 @@ data Arity = ArityBoxed --- for now our model of arity is boring and simple
  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 --- | 'Closure' may need some rethinking ... later
-data Closure ty a = MkClosure ![Arity] !(Scope [Text] (Exp ty) a)
+data Closure ty a = MkClosure ![Arity] !(Scope Text (Exp ty) a)
   deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
 deriving instance Eq ty => (Eq1 (Closure ty))
 
@@ -240,7 +240,7 @@ deriving instance Eq ty => (Eq1 (Closure ty))
 --- this may be the wrong name (maybe valueArity?),
 --- either way, this sin't quite what we should have at the end, but
 --- it'll work for now
-closureArity :: forall m ty v  .  Monad m => Value  ty   -> (Ref -> m (Value ty ))-> m  Word64
+closureArity :: forall m ty   .  Monad m => Value  ty   -> (Ref -> m (Value ty ))-> m  Word64
 -- closureArity (Closure _ _)= 1
 closureArity val resolve = go  5 val -- there really should only be like 1-2 refs indirection
     where
@@ -316,6 +316,11 @@ data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (Value ty
 heapRefLookup :: Heap ty  -> Ref -> Maybe (Value ty )
 heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
 
+heapRefUpdate :: Ref -> Value ty -> Heap ty -> Heap ty
+heapRefUpdate ref val (Heap ct mp)
+        | ref < ct = Heap ct $ Map.insert ref val mp
+        | otherwise = error $ "impossible heap ref greater than heap max " ++ show ref
+
 heapAllocateValue :: Heap ty  -> Value ty  -> (Ref,Heap ty )
 heapAllocateValue hp val = (_minMaxFreshRef hp
                             , Heap (Ref $ refPointer minmax +1) newMap)
@@ -323,8 +328,10 @@ heapAllocateValue hp val = (_minMaxFreshRef hp
       minmax = _minMaxFreshRef hp
       newMap = Map.insert minmax  val (_theHeap hp)
 
-data CounterAndHeap ty =  CntAndHeap {
-                                        _extractCounterCAH :: !Natural -- this should be a Natural
+data CounterAndHeap ty =  CounterAndHeap {
+                                        _extractCounterCAH :: !Natural
+                                        -- this should be a Natural, represents  number of
+                                        -- steps left
                                         ,_extractHeapCAH :: !(Heap ty) }
                             deriving (Data
                                       ,Typeable
@@ -356,12 +363,59 @@ instance Monad (HeapStepCounterM ty ) where
 getHSCM :: HeapStepCounterM ty (CounterAndHeap ty)
 getHSCM  = HSCM State.get
 
-setHSCM :: CounterAndHeap ty  -> HeapStepCounterM ty ()
+setHSCM :: CounterAndHeap ty  -> HeapStepCounterM ty  ()
 setHSCM v = HSCM $ State.put  v
 
- --heapAllocate :: Value ty -> HeapStepCounterM ty  Ref
- --heapAllocate val =
 
+--- note, this should also decrement the counter!
+heapAllocate :: Value ty -> HeapStepCounterM ty  Ref
+heapAllocate val = do   cah <-  getHSCM
+                        (rf,hp) <- pure $ heapAllocateValue (_extractHeapCAH cah) val
+                        cah' <- pure $ cah{_extractHeapCAH = hp}
+                        setHSCM cah'
+                        return rf
+
+heapLookup :: Ref -> HeapStepCounterM ty (Maybe (Value ty))
+heapLookup rf =  (flip heapRefLookup rf . _extractHeapCAH) <$> getHSCM
+
+--heapUpdate :: Ref -> Value ty ->
+{-
+need to think about possible cycles in references :(
+or can i just assume that any refs must be strictly descending?
+-}
+
+
+runHSCM :: Natural -> HeapStepCounterM ty a -> (a,CounterAndHeap ty)
+runHSCM cnt (HSCM m) = State.runState m (CounterAndHeap cnt $ Heap (Ref 1) Map.empty)
+
+
+evalLazy :: LazyContext ty -> Exp ty (Value ty) -> HeapStepCounterM ty (Value ty)
+evalLazy ctxt (V val) = applyLazy ctxt val
+evalLazy ctxt (Force e)= evalLazy ctxt e
+evalLazy ctxt (Delay e) = do rf <- heapAllocate (Thunk e); applyLazy ctxt  (VRef rf)
+evalLazy ctxt (ELit l ) = applyLazy ctxt (VLit l)
+evalLazy ctxt (Let (_txt,_typ,_rig) lexp scp) =
+  -- could optimize substitution based on rig info
+        do rf <- heapAllocate (Thunk lexp) ; evalLazy ctxt $ instantiate1 (V $ VRef rf) scp
+                 -- | rig `elem` [Zero,One,Omega]  = undefined
+evalLazy ctxt (fexp :@ argExp) = evalLazy (LCThunkEval ()  argExp $ ctxt) fexp
+evalLazy ctxt (Lam (_txt,_typ,_rig) scp) = applyLazy ctxt $ DirectClosure $ MkClosure [ArityBoxed] scp
+
+
+applyLazy :: LazyContext ty -> Value ty -> HeapStepCounterM ty (Value ty)
+applyLazy LCEmpty v = return v
+applyLazy ctxt@(LCThunkEval () exp  rest)  v =
+      case v of
+        (VRef ref) ->
+            do  (Just reValue) <-  heapLookup  ref
+                case reValue of
+                  (Ref ref') -> error $ "double indirection in heap "++ show ref'
+                  val -> applyLazy ctxt val
+        (Thunk e)-> error "didn't implement heap heapUpdate yet! "
+        (DirectClosure (Closure [x] scp) -> do ref <- heapAllocate (Thunk)
+{-
+need to finish the rest of the cases
+-}
 
 -- closureArity (VLit _) = error "what is lit arity?!"
                     {-   answer, its either a 0 arity value, or a prim op -}
@@ -378,7 +432,8 @@ data Exp ty a
   | Delay (Exp ty a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
                       --- note: may need to change their semantics later?!
   | Exp ty a :@ Exp ty a
-  | Lam [(Text,Type ty,RigModel)] (Scope Text (Exp ty) a)
+  | Lam (Text,Type ty,RigModel) {-[(Text,Type ty,RigModel)] -} -- droppin >1 arity for now
+        (Scope Text (Exp ty) a)
   | Let (Text,Type ty,RigModel)  (Exp ty a)  (Scope Text (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
   deriving (Typeable,Data)
 deriving instance (Read a, Read ty) => Read (Exp ty a)
