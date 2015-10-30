@@ -263,8 +263,8 @@ data Value  ty   =  VLit !Literal
                         --- in a manner thats parametric in the choice
                         -- of execution  semantics
                         --
-
-   deriving (Typeable
+   deriving
+   (Typeable
     --,Functor
     --,Foldable
     --,Traversable
@@ -273,6 +273,43 @@ data Value  ty   =  VLit !Literal
     ,Eq
     ,Ord
     ,Show)
+
+
+data ValueF ty v =    VLitF !Literal
+              | ConstructorF  !Tag  !(V.Vector v)
+              | ThunkF !(Exp ty v )
+              | PartialAppF ![Arity] -- ^ args left to consume?
+                           ![v  ]  -- ^  this will need to be reversed??
+                           !(Closure  ty  v {- (Value ty con v) -})
+              | DirectClosureF !(Closure ty v)
+              | VRefF !Ref --- refs are so we can have  exlpicit  sharing
+                        --- in a manner thats parametric in the choice
+                        -- of execution  semantics
+   deriving
+     (Typeable
+      ,Functor
+      ,Foldable
+      ,Traversable
+      ,Generic
+      ,Data
+      ,Eq
+      ,Ord
+      ,Show
+      -- ,Eq1 -- ,Show1   -- ,Read1    -- ,Ord1   -- ,Eq2  -- ,Ord2  -- ,Read2   -- ,Show2
+      )
+
+instance Eq ty => Eq1 (ValueF ty) where
+   (VLitF a) ==# (VLitF b) = a == b
+   (VLitF _) ==# _ = False
+   (ConstructorF tg1 v1) ==# (ConstructorF tg2 v2) = tg1 == tg2 && v1 == v2
+   (ConstructorF _ _) ==# _ = False
+   (ThunkF e1) ==# (ThunkF e2) = e1 == e2
+   (ThunkF _) ==# _ = False
+   (PartialAppF rem1 papp1 clo1) ==# (PartialAppF rem2 papp2 clo2) = rem1 == rem2 && papp1 == papp2
+
+
+
+
 -- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
 
 
