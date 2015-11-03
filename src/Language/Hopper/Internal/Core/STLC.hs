@@ -10,7 +10,7 @@
 
 
 #include "MachDeps.h"
-#if WORD_SIZE_IN_BITS < 64
+#if WORD_SIZE_IN_BITS != 64
 #error "this code base only supports 64-bit haskell because certain mapping data structures are keyed by Int"
 #endif
 
@@ -36,6 +36,8 @@ import Control.Lens
 -- import qualified  Data.Bits as Bits
 -- import  Control.Monad.Trans.State.Strict (StateT(..))
 import qualified Control.Monad.Trans.State.Strict as State
+
+import  Control.Monad.Free
 
 -- import Data.Bifunctor
 -- import Data.Bitraversable
@@ -232,18 +234,7 @@ instance Enum Ref where
                           error "fromEnum: any Ref that is larger than 2^63 -1  is unrepresentable as Int64"
   toEnum n | n >= 0 = Ref $ fromIntegral n
            | otherwise = error "toEnum: Cant represent negative locations in a Ref"
-{-
-NOTE: Ref should be replaced with Word64 / Int / Int64 so that more
-efficient indexing data structures can be used.
-Int is kinda weird for this, but because most of the naive upgrades
-in terms of data structures that are available key on Int, will probably do that
 
-Unless we use Ed's word Map, which WOULD be the most performant of those out there
-with the best worst case  and average perf for the workload we can reasonable anticipate
-
-Short of moving to explicit heap as an (un?)boxed array per generation or block of memory 
-
--}
 
 -- | this model of Values and Closures doens't do the standard
 -- explicit environment model of substitution, but thats ok
@@ -252,7 +243,7 @@ Short of moving to explicit heap as an (un?)boxed array per generation or block 
 -- because the underlying expressions will themselves have "values" in variable
 -- positions?
 -- or just make it polymorphic in ref/Ref
-data Value  ty   =  VLit !Literal
+data Value ty = VLit !Literal
               | Constructor  !Tag  !(V.Vector (Value  ty  ))
               | Thunk !(Exp ty (Value ty ) )
               | PartialApp ![Arity] -- ^ args left to consume?
@@ -275,6 +266,11 @@ data Value  ty   =  VLit !Literal
     ,Show)
 
 
+type ValRec ty  = Free (ValueF ty) Ref
+
+
+type HeapTop ty = ValueF ty (ValRec ty)
+
 data ValueF ty v =    VLitF !Literal
               | ConstructorF  !Tag  !(V.Vector v)
               | ThunkF !(Exp ty v )
@@ -282,7 +278,9 @@ data ValueF ty v =    VLitF !Literal
                            ![v  ]  -- ^  this will need to be reversed??
                            !(Closure  ty  v {- (Value ty con v) -})
               | DirectClosureF !(Closure ty v)
-              | VRefF !Ref --- refs are so we can have  exlpicit  sharing
+              | BlackHoleF
+
+              -- | VRefF !Ref --- refs are so we can have  exlpicit  sharing
                         --- in a manner thats parametric in the choice
                         -- of execution  semantics
    deriving
@@ -297,7 +295,9 @@ data ValueF ty v =    VLitF !Literal
       ,Show
       -- ,Eq1 -- ,Show1   -- ,Read1    -- ,Ord1   -- ,Eq2  -- ,Ord2  -- ,Read2   -- ,Show2
       )
-
+{-
+this is basically a definitional equality
+-}
 instance Eq ty => Eq1 (ValueF ty) where
    (VLitF a) ==# (VLitF b) = a == b
    (VLitF _) ==# _ = False
@@ -305,8 +305,7 @@ instance Eq ty => Eq1 (ValueF ty) where
    (ConstructorF _ _) ==# _ = False
    (ThunkF e1) ==# (ThunkF e2) = e1 == e2
    (ThunkF _) ==# _ = False
-   (PartialAppF rem1 papp1 clo1) ==# (PartialAppF rem2 papp2 clo2) = rem1 == rem2 && papp1 == papp2
-
+   (PartialAppF rem1 papp1 clo1) ==# (PartialAppF rem2 papp2 clo2) = rem1 == rem2 && papp1 == papp2 && clo2 == clo1
 
 
 
@@ -376,8 +375,8 @@ data LazyContext ty = LCEmpty | LCThunkEval () !(Exp ty (Value ty)) !(LazyContex
     ,Show)
 
 data StrictContext ty  = SCEmpty
-                        | SCArgEVal !(Value ty) () !(StrictContext ty )
-                        | SCFunEval () !(Exp ty (Value ty)) !(StrictContext ty )
+                        | SCArgEVal !(Value ty) !() !(StrictContext ty )
+                        | SCFunEval !() !(Exp ty (Value ty)) !(StrictContext ty )
    deriving (Typeable
     --,Functor
     --,Foldable
@@ -406,6 +405,8 @@ data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (Value ty
 heapRefLookup :: Heap ty  -> Ref -> Maybe (Value ty )
 heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
 
+
+-- this
 heapRefUpdate :: Ref -> Value ty -> Heap ty -> Heap ty
 heapRefUpdate ref val (Heap ct mp)
         | ref < ct = Heap ct $ Map.insert ref val mp
@@ -509,6 +510,7 @@ applyLazy ctxt@(LCThunkEval () expr  rest)  v =
         (Thunk e)-> error "didn't implement heap heapUpdate yet! "
 
 
+
         -- (DirectClosure (Closure [x] scp) -> do ref <- heapAllocate (Thunk)
 {-
 need to finish the rest of the cases
@@ -526,6 +528,8 @@ data Exp ty a
   | ELit Literal
   | Force (Exp ty a)  --- Force is a Noop on evaluate values,
                       --- otherwise reduces expression to applicable normal form
+                      -- should force be more like seq a b, cause pure
+
   | Delay (Exp ty a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
                       --- note: may need to change their semantics later?!
   | Exp ty a :@ Exp ty a
