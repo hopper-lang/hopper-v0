@@ -250,6 +250,7 @@ data Value ty = VLit !Literal
                            ![Value  ty  ]  -- ^  this will need to be reversed??
                            !(Closure  ty  (Value ty) {- (Value ty con v) -})
               | DirectClosure !(Closure ty (Value ty))
+              | BlackHole
               | VRef !Ref --- refs are so we can have  exlpicit  sharing
                         --- in a manner thats parametric in the choice
                         -- of execution  semantics
@@ -269,7 +270,7 @@ data Value ty = VLit !Literal
 type ValRec ty  = Free (ValueF ty) Ref
 
 
-type HeapTop ty = ValueF ty (ValRec ty)
+type HeapVal ty = ValueF ty (ValRec ty)
 
 data ValueF ty v =    VLitF !Literal
               | ConstructorF  !Tag  !(V.Vector v)
@@ -301,13 +302,16 @@ this is basically a definitional equality
 instance Eq ty => Eq1 (ValueF ty) where
    (VLitF a) ==# (VLitF b) = a == b
    (VLitF _) ==# _ = False
+   BlackHoleF ==# BlackHoleF = True
+   BlackHoleF ==# _ = False
+   (PartialAppF a1 b1 c1) ==# (PartialAppF a2 b2 c2) = a1 == a2 && b2 == b1 && c1 == c2
+   (PartialAppF _ _ _) ==# _  = False
+   (DirectClosureF a) ==# (DirectClosureF b) = a == b
+   (DirectClosureF _) ==# _ = False
    (ConstructorF tg1 v1) ==# (ConstructorF tg2 v2) = tg1 == tg2 && v1 == v2
    (ConstructorF _ _) ==# _ = False
    (ThunkF e1) ==# (ThunkF e2) = e1 == e2
    (ThunkF _) ==# _ = False
-   (PartialAppF rem1 papp1 clo1) ==# (PartialAppF rem2 papp2 clo2) = rem1 == rem2 && papp1 == papp2 && clo2 == clo1
-
-
 
 -- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
 
@@ -363,26 +367,28 @@ respresentations
 
 -}
 
-data LazyContext ty = LCEmpty | LCThunkEval () !(Exp ty (Value ty)) !(LazyContext ty )
+data LazyContext ty = LCEmpty |   LCThunkUpdate !Ref !(LazyContext ty)
+                              | LCThunkEval () !(ValRec ty) !(LazyContext ty )
    deriving (Typeable
     --,Functor
     --,Foldable
     --,Traversable
     ,Generic
-    ,Data
+    -- ,Data
     ,Eq
     ,Ord
     ,Show)
 
 data StrictContext ty  = SCEmpty
-                        | SCArgEVal !(Value ty) !() !(StrictContext ty )
-                        | SCFunEval !() !(Exp ty (Value ty)) !(StrictContext ty )
+                        | SCArgEVal !(ValRec ty) !() !(StrictContext ty )
+                        | SCFunEval !() !(Exp ty (ValRec ty)) !(StrictContext ty )
+                         -- lets also add strict context thunk heap update here?
    deriving (Typeable
     --,Functor
     --,Foldable
     --,Traversable
     ,Generic
-    ,Data
+    -- ,Data
     ,Eq
     ,Ord
     ,Show)
@@ -390,9 +396,10 @@ data StrictContext ty  = SCEmpty
 
 --- This model implementation of the heap is kinda a hack --- Namely that
 --- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
-data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (Value ty )) }
-                            deriving (Data
-                                      ,Typeable
+data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (HeapVal ty )) }
+                            deriving (
+                              -- Data
+                                      Typeable
                                       ,Show
                                       ,Generic
                                       ,Eq
@@ -402,17 +409,17 @@ data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (Value ty
                                       --,Functor
                                       )
 
-heapRefLookup :: Heap ty  -> Ref -> Maybe (Value ty )
+heapRefLookup :: Heap ty  -> Ref -> Maybe (HeapVal ty )
 heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
 
 
 -- this
-heapRefUpdate :: Ref -> Value ty -> Heap ty -> Heap ty
+heapRefUpdate :: Ref -> HeapVal ty -> Heap ty -> Heap ty
 heapRefUpdate ref val (Heap ct mp)
         | ref < ct = Heap ct $ Map.insert ref val mp
         | otherwise = error $ "impossible heap ref greater than heap max " ++ show ref
 
-heapAllocateValue :: Heap ty  -> Value ty  -> (Ref,Heap ty )
+heapAllocateValue :: Heap ty  -> HeapVal ty  -> (Ref,Heap ty )
 heapAllocateValue hp val = (_minMaxFreshRef hp
                             , Heap (Ref $ refPointer minmax +1) newMap)
   where
@@ -424,8 +431,9 @@ data CounterAndHeap ty =  CounterAndHeap {
                                         -- this should be a Natural, represents  number of
                                         -- steps left
                                         ,_extractHeapCAH :: !(Heap ty) }
-                            deriving (Data
-                                      ,Typeable
+                            deriving (
+
+                                      Typeable
                                       ,Show
                                       ,Generic
                                       ,Eq
@@ -458,15 +466,20 @@ setHSCM :: CounterAndHeap ty  -> HeapStepCounterM ty  ()
 setHSCM v = HSCM $ State.put  v
 
 
+unsafeHeapUpdate :: Ref -> HeapVal ty -> HeapStepCounterM ty ()
+unsafeHeapUpdate rf val = do  cah <- getHSCM
+                              x <- return $ heapRefUpdate rf val (_extractHeapCAH cah)
+                              x `seq` setHSCM $ cah{_extractHeapCAH =x }
+
 --- note, this should also decrement the counter!
-heapAllocate :: Value ty -> HeapStepCounterM ty  Ref
+heapAllocate :: HeapVal ty -> HeapStepCounterM ty  Ref
 heapAllocate val = do   cah <-  getHSCM
                         (rf,hp) <- pure $ heapAllocateValue (_extractHeapCAH cah) val
                         cah' <- pure $ cah{_extractHeapCAH = hp}
                         setHSCM cah'
                         return rf
 
-heapLookup :: Ref -> HeapStepCounterM ty (Maybe (Value ty))
+heapLookup :: Ref -> HeapStepCounterM ty (Maybe (HeapVal ty))
 heapLookup rf =  (flip heapRefLookup rf . _extractHeapCAH) <$> getHSCM
 
 --heapUpdate :: Ref -> Value ty ->
@@ -483,7 +496,75 @@ runHSCM cnt (HSCM m) = State.runState m (CounterAndHeap cnt $ Heap (Ref 1) Map.e
 need to add Partial App and multi arg lambdas to eval/apply later this week :)
 
 -}
-evalLazy :: LazyContext ty -> Exp ty (Value ty) -> HeapStepCounterM ty (Value ty)
+
+
+-- because we're not doing let normal form yet, we need to thunkify if needed
+argThunkify :: Exp ty (ValRec ty) -> HeapStepCounterM ty  Ref
+argThunkify (V (Pure ref)) = pure ref
+argThunkify (V (Free e)) = heapAllocate e
+argThunkify (Delay e) = heapAllocate $ ThunkF e  -- this shrinks expression slightly, maybe remove later
+argThunkify e = heapAllocate $ ThunkF e
+
+
+-- evalLazyValue :: LazyContext ty -> ValRec ty -> HeapStepCounterM (ValRec ty)
+-- evalLazyValue ctxt (Free )
+
+
+{-
+BURN WITH FIRE AFTER MOVING TO ANF for evaluation syntax
+
+
+-}
+
+-- evalLazy :: LazyContext ty -> Exp ty (ValRec ty) -> HeapStepCounterM ty (ValRec ty)
+-- -- evalLazy (LCThunkUpdate tuRef rest) (V ())
+
+-- evalLazy (LCThunkUpdate ref rest) (V (Pure ref))
+-- evalLazy ctxt (V (Pure ref)) = do
+--         mhv <- heapLookup ref
+--         case mhv of
+--           Nothing -> error $ "bad heap ref " ++ show ref
+--           (Just (ThunkF e)) -> do
+--               unsafeHeapUpdate ref BlackHoleF
+--               evalLazy (LCThunkUpdate ref ctxt) e
+--           (Just BlackHoleF) -> error  $"BOOOOOOM, halp i'm trapped in a black hole ref " ++ show ref
+--           (Just val) -> applyLazy ctxt $ Free  val
+-- evalLazy ctxt (V (Free (ThunkF e)))  --- note that with ANF assumption for values, can't really happen i think ...
+--                                     -- this is somehow an unshared thunk
+--                                     = evalLazy ctxt e
+-- evalLazy (LCThunkUpdate ref rest) (V  (Free val)) = do unsafeHeapUpdate ref val ;
+-- evalLazy ctxt (V  valf@(Free _)) = applyLazy ctxt valf
+-- evalLazy ctxt (Force e)= evalLazy ctxt e
+-- evalLazy ctxt (Delay e) = do rf <- heapAllocate (ThunkF e); applyLazy ctxt  (Pure rf)
+-- evalLazy ctxt (ELit l ) = applyLazy ctxt ( Free $ VLitF l)
+-- evalLazy ctxt (Let (_txt,_typ,_rig) lexp scp) =
+--   -- could optimize substitution based on rig info
+--         do rf <- heapAllocate (ThunkF lexp) ; evalLazy ctxt $ instantiate1 (V $ Pure  rf) scp
+--                  -- | rig `elem` [Zero,One,Omega]  = undefined
+-- evalLazy ctxt (fexp :@ argExp) = do aref <- argThunkify argExp ;  evalLazy (LCThunkEval ()  (Pure aref) $ ctxt) fexp
+-- evalLazy ctxt (Lam ls scp) = applyLazy  ctxt  $ Free {- ??? -} $ DirectClosureF $ MkClosure (map (ArityBoxed . view  _1 ) ls) scp
+
+
+
+
+-- | for 'applyLazy'  ctx  v,  v is the "function" and ctx carries the thunk evaluation context stack
+-- -- so
+-- applyLazy ::  LazyContext ty -> ValRec ty {- NEEDS TO BE A REF in naive semantics -} -> HeapStepCounterM ty (ValRec ty)
+-- applyLazy LCEmpty v = return v -- undefined --return v
+-- applyLazy (LCThunkUpdate ref rest) (Pure refVal) = do
+--       hc <- heapLookup refVal
+
+
+-- applyLazy ctxt@(LCThunkEval () expr rest) v =
+--       case v of
+--         (VRef ref) ->
+--             do  (Just reValue) <-  heapLookup  ref
+--                 case reValue of
+--                   (VRef ref') -> error $ "double indirection in heap "++ show ref'
+--                   val -> applyLazy ctxt val
+--         (Thunk e)-> do unsafeHeapUpdate _ref BlackHole ;  evalLazy (LCThunkUpdate _ref ctxt) e  --- wait, do we need to push a "unblackhole the ref" operation?
+
+{-evalLazy :: LazyContext ty -> HeapVal ty -> HeapStepCounterM ty (HeapVal ty)
 evalLazy ctxt (V val) = applyLazy ctxt val
 evalLazy ctxt (Force e)= evalLazy ctxt e
 evalLazy ctxt (Delay e) = do rf <- heapAllocate (Thunk e); applyLazy ctxt  (VRef rf)
@@ -498,17 +579,17 @@ evalLazy ctxt (Lam ls scp) = applyLazy ctxt $ DirectClosure $ MkClosure (map (Ar
 
 -- | for 'applyLazy'  ctx  v,  v is the "function" and ctx carries the thunk evaluation context stack
 -- so
-applyLazy :: LazyContext ty -> Value ty -> HeapStepCounterM ty (Value ty)
+applyLazy :: LazyContext ty -> Ref {- NEEDS TO BE A REF in naive semantics -} -> HeapStepCounterM ty (Value ty)
 applyLazy LCEmpty v = return v
-applyLazy ctxt@(LCThunkEval () expr  rest)  v =
+applyLazy ctxt@(LCThunkEval () expr rest) v =
       case v of
         (VRef ref) ->
             do  (Just reValue) <-  heapLookup  ref
                 case reValue of
                   (VRef ref') -> error $ "double indirection in heap "++ show ref'
                   val -> applyLazy ctxt val
-        (Thunk e)-> error "didn't implement heap heapUpdate yet! "
-
+        (Thunk e)-> do unsafeHeapUpdate _ref BlackHole ;  evalLazy (LCThunkUpdate _ref ctxt) e  --- wait, do we need to push a "unblackhole the ref" operation?
+-}
 
 
         -- (DirectClosure (Closure [x] scp) -> do ref <- heapAllocate (Thunk)
@@ -522,10 +603,27 @@ need to finish the rest of the cases
 data Literal = LInteger !Integer | LRational !Rational | LNatural !Natural
   deriving(Eq,Ord,Show,Read,Data,Typeable)
 
+data Atom ty  a = AtomVar !a
+    | AtomicLit !Literal
+    | AtomLam ![(Text,Type ty,RigModel)] -- do we want to allow arity == 0, or just >= 1?
+                !(Scope Text (Anf ty) a)
+  -- deriving(Eq,Ord,Functor,Foldable,Traversable,Eq,Ord)
+
+data Anf ty a
+    = ReturnNF (Atom ty a)
+    | ELitNF Literal
+    | ForceNF a
+    | Atom ty a :@@ Atom ty a
+    | LetDerivedNF a a (Scope () (Anf ty) a)
+
+    -- |
+  -- deriving (Eq,Ord,Functor,Foldable,Traversable,Eq,Ord)
+
 
 data Exp ty a
   = V  a
   | ELit Literal
+  --  PrimApp a [Atomic a]
   | Force (Exp ty a)  --- Force is a Noop on evaluate values,
                       --- otherwise reduces expression to applicable normal form
                       -- should force be more like seq a b, cause pure
