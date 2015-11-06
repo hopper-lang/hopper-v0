@@ -243,7 +243,7 @@ instance Enum Ref where
 -- because the underlying expressions will themselves have "values" in variable
 -- positions?
 -- or just make it polymorphic in ref/Ref
-data Value ty = VLit !Literal
+{-data Value ty = VLit !Literal
               | Constructor  !Tag  !(V.Vector (Value  ty  ))
               | Thunk !(Exp ty (Value ty ) )
               | PartialApp ![Arity] -- ^ args left to consume?
@@ -265,20 +265,20 @@ data Value ty = VLit !Literal
     ,Eq
     ,Ord
     ,Show)
+-}
+
+type ValRec  ty  = Free (ValueF  ty) Ref
 
 
-type ValRec ty  = Free (ValueF ty) Ref
+type HeapVal  ty = ValueF  ty (ValRec   ty)
 
-
-type HeapVal ty = ValueF ty (ValRec ty)
-
-data ValueF ty v =    VLitF !Literal
+data ValueF  ty v =    VLitF !Literal
               | ConstructorF  !Tag  !(V.Vector v)
-              | ThunkF !(Exp ty v )
+              | ThunkF !(ANF ty v )
               | PartialAppF ![Arity] -- ^ args left to consume?
                            ![v  ]  -- ^  this will need to be reversed??
                            !(Closure  ty  v {- (Value ty con v) -})
-              | DirectClosureF !(Closure ty v)
+              | DirectClosureF !(Closure  ty v)
               | BlackHoleF
 
               -- | VRefF !Ref --- refs are so we can have  exlpicit  sharing
@@ -299,19 +299,20 @@ data ValueF ty v =    VLitF !Literal
 {-
 this is basically a definitional equality
 -}
-instance Eq ty => Eq1 (ValueF ty) where
-   (VLitF a) ==# (VLitF b) = a == b
-   (VLitF _) ==# _ = False
-   BlackHoleF ==# BlackHoleF = True
-   BlackHoleF ==# _ = False
-   (PartialAppF a1 b1 c1) ==# (PartialAppF a2 b2 c2) = a1 == a2 && b2 == b1 && c1 == c2
-   (PartialAppF _ _ _) ==# _  = False
-   (DirectClosureF a) ==# (DirectClosureF b) = a == b
-   (DirectClosureF _) ==# _ = False
-   (ConstructorF tg1 v1) ==# (ConstructorF tg2 v2) = tg1 == tg2 && v1 == v2
-   (ConstructorF _ _) ==# _ = False
-   (ThunkF e1) ==# (ThunkF e2) = e1 == e2
-   (ThunkF _) ==# _ = False
+instance (Eq ty  ) => Eq1 (ValueF ty)
+--where
+--   (VLitF a) ==# (VLitF b) = a == b
+--   (VLitF _) ==# _ = False
+--   BlackHoleF ==# BlackHoleF = True
+--   BlackHoleF ==# _ = False
+--   (PartialAppF a1 b1 c1) ==# (PartialAppF a2 b2 c2) = a1 == a2 && b2 == b1 && c1 == c2
+--   (PartialAppF _ _ _) ==# _  = False
+--   (DirectClosureF a) ==# (DirectClosureF b) = a == b
+--   (DirectClosureF _) ==# _ = False
+--   (ConstructorF tg1 v1) ==# (ConstructorF tg2 v2) = tg1 == tg2 && v1 == v2
+--   (ConstructorF _ _) ==# _ = False
+--   (ThunkF e1) ==# (ThunkF e2) = e1 == e2
+--   (ThunkF _) ==# _ = False
 
 -- deriving instance(Eq1 con,Eq a,Eq ty) => Eq (Value ty con a)
 
@@ -324,7 +325,7 @@ data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of ar
  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 --- | 'Closure' may need some rethinking ... later
-data Closure ty a = MkClosure ![Arity] !(Scope Text (Exp ty) a)
+data Closure  ty a = MkClosure ![Arity] !(Scope Text (ANF ty) a)
   deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
 deriving instance Eq ty => (Eq1 (Closure ty))
 
@@ -333,17 +334,17 @@ deriving instance Eq ty => (Eq1 (Closure ty))
 --- this may be the wrong name (maybe valueArity?),
 --- either way, this sin't quite what we should have at the end, but
 --- it'll work for now
-closureArity :: forall m ty   .  Monad m => Value  ty   -> (Ref -> m (Value ty ))-> m  Word64
+closureArity :: forall m ty   .  Monad m => ValRec ty   -> (Ref -> m (HeapVal ty ))-> m  Word64
 -- closureArity (Closure _ _)= 1
 closureArity val resolve = go  5 val -- there really should only be like 1-2 refs indirection
     where
-        go :: Int64 ->  Value ty  -> m  Word64
-        go _ (DirectClosure (MkClosure arr _bdy)) = return $ fromIntegral  $ length arr
-        go _ (VLit _) = return 0
-        go _ (Constructor _ _) = return 0
-        go _ (Thunk _e) = return 0
-        go _ (PartialApp arr _accum _clos) = return $ fromIntegral $ length arr
-        go n (VRef r) | n  >= 0 =  do v <- resolve r ; go (n-1) v --- NB: this doesn't handle cycles currently!!!!
+        go :: Int64 ->  ValRec ty  -> m  Word64
+        go _ (Free (DirectClosureF (MkClosure arr _bdy))) = return $ fromIntegral  $ length arr
+        go _ (Free (VLitF _)) = return 0
+        go _ (Free (ConstructorF _ _)) = return 0
+        go _ (Free (ThunkF _e)) = return 0
+        go _ (Free (PartialAppF arr _accum _clos)) = return $ fromIntegral $ length arr
+        go n (Pure r) | n  >= 0 =  do v <- resolve r ; go (n-1) v --- NB: this doesn't handle cycles currently!!!!
                       | otherwise = error $ "abort: deep ref cycle in application position " ++ show r
 
 
@@ -379,9 +380,9 @@ data LazyContext ty = LCEmpty |   LCThunkUpdate !Ref !(LazyContext ty)
     ,Ord
     ,Show)
 
-data StrictContext ty  = SCEmpty
-                        | SCArgEVal !(ValRec ty) !() !(StrictContext ty )
-                        | SCFunEval !() !(Exp ty (ValRec ty)) !(StrictContext ty )
+data StrictContext  ty  = SCEmpty
+                        | SCArgEVal !(ValRec   ty) !() !(StrictContext ty )
+                        | SCFunEval !() !(ANF ty (ValRec ty)) !(StrictContext ty )
                          -- lets also add strict context thunk heap update here?
    deriving (Typeable
     --,Functor
@@ -600,24 +601,31 @@ need to finish the rest of the cases
 -- closureArity (VLit _) = error "what is lit arity?!"
                     {-   answer, its either a 0 arity value, or a prim op -}
 
-data Literal = LInteger !Integer | LRational !Rational | LNatural !Natural
-  deriving(Eq,Ord,Show,Read,Data,Typeable)
+
 
 data Atom ty  a = AtomVar !a
     | AtomicLit !Literal
     | AtomLam ![(Text,Type ty,RigModel)] -- do we want to allow arity == 0, or just >= 1?
-                !(Scope Text (Anf ty) a)
+                !(Scope Text (ANF ty) a)
   -- deriving(Eq,Ord,Functor,Foldable,Traversable,Eq,Ord)
 
-data Anf ty a
-    = ReturnNF (Atom ty a)
-    | ELitNF Literal
-    | ForceNF a
-    | Atom ty a :@@ Atom ty a
-    | LetDerivedNF a a (Scope () (Anf ty) a)
+data ANF ty a
+    = ReturnNF !(Atom ty a)
+    | ELitNF !Literal
+    | ForceNF !a !a
+    | !(Atom ty a) :@@ !(Atom ty a)
+    | LetDerivedNF a a (Scope () (ANF ty) a)
 
     -- |
-  -- deriving (Eq,Ord,Functor,Foldable,Traversable,Eq,Ord)
+   deriving (
+    Ord,
+    Functor,
+    Foldable,
+    Traversable,
+    Data,
+    Eq,
+    Show
+    )
 
 
 data Exp ty a
