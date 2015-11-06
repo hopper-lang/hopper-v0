@@ -14,6 +14,7 @@ import Language.Hopper.Internal.Core.Literal
 import Data.Text (Text)
 import Data.Data
 
+import  Control.Monad
 import Prelude.Extras
 import Bound
 
@@ -27,12 +28,26 @@ instance Show ty => Show1 (Atom ty)
 instance Ord ty => Ord1 (Atom ty)
 instance Read ty => Read1 (Atom ty)
 
+instance Eq2 Atom
+instance Show2 Atom
+instance Ord2 Atom
+instance Read2 Atom
+
+--instance Applicative (Atom ty) where
+--  pure = AtomVar
+--  (<*>)= ap
+
+--instance Monad (Atom ty) where
+--  (AtomVar a) >>= f =  f a
+--  (AtomicLit l) >>=  _f =AtomicLit l
+--  (AtomLam bs bod) >>= f = AtomLam bs (bod >>>= f)
+
 data ANF ty a
     = ReturnNF !(Atom ty a)
-    | ELitNF !Literal
+    -- | ELitNF !Literal
     | ForceNF !a !a
     | !(Atom  ty a) :@@ !(Atom  ty a)
-    | LetDerivedNF a a (Scope () (ANF ty) a)
+    | LetApp (Atom ty a) (Atom ty a) (Scope () (ANF ty) a)
 
     -- |
    deriving (
@@ -49,6 +64,25 @@ instance Show ty => Show1 (ANF ty)
 instance Ord ty => Ord1 (ANF ty)
 instance Read ty => Read1 (ANF ty)
 
-instance Monad (ANF ty)
+instance Eq2 ANF
+instance Show2 ANF
+instance Ord2 ANF
+instance Read2 ANF
 
-instance Applicative (ANF ty)
+
+instance Applicative (ANF ty) where
+  pure  = \x -> ReturnNF (AtomVar x)
+  (<*>) = ap
+
+instance Monad (ANF ty) where
+  (ReturnNF (AtomVar a)) >>=f = f a
+
+  -- return = V
+  --V a         >>= f = f a
+  --Delay e     >>= f = Delay $ e >>= f
+  --Force e     >>= f = Force $ e >>= f
+  --ELit e      >>= _f = ELit e -- this could also safely be a coerce?
+  --(x :@ y)    >>= f = (x >>= f) :@ (y >>= f)
+  --Lam t  e    >>= f = Lam t (e >>>= f)
+  --Let t bs  b >>= f = Let t (  bs >>= f)  (b >>>= f)
+
