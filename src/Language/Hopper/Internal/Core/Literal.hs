@@ -6,4 +6,6 @@ import Data.Typeable
 import Data.Data
 
 data Literal = LInteger !Integer | LRational !Rational | LNatural !Natural
+
+-- should we add primop namessss?
   deriving(Eq,Ord,Show,Read,Data,Typeable)

@@ -2,10 +2,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
-{-# LANGUAGE StandaloneDeriving #-}
+-- {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE DeriveGeneric #-}
+-- {-# LANGUAGE KindSignatures #-}
+-- {-# LANGUAGE DeriveGeneric #-}
 
 module Language.Hopper.Internal.Core.ANF  where
 
@@ -18,11 +18,13 @@ import  Control.Monad
 import Prelude.Extras
 import Bound
 
-data Atom  ty a = AtomVar !a
+data Atom  ty a =
+    AtomVar !a
     | AtomicLit !Literal
     | AtomLam ![(Text,Type ty,RigModel)] -- do we want to allow arity == 0, or just >= 1?
                 !(Scope Text (ANF ty)  a)
    deriving(Eq,Ord,Functor,Foldable,Traversable,Data,Show,Read)
+
 instance Eq ty => Eq1 (Atom ty)
 instance Show ty => Show1 (Atom ty)
 instance Ord ty => Ord1 (Atom ty)
@@ -33,14 +35,10 @@ instance Show2 Atom
 instance Ord2 Atom
 instance Read2 Atom
 
---instance Applicative (Atom ty) where
---  pure = AtomVar
---  (<*>)= ap
 
---instance Monad (Atom ty) where
---  (AtomVar a) >>= f =  f a
---  (AtomicLit l) >>=  _f =AtomicLit l
---  (AtomLam bs bod) >>= f = AtomLam bs (bod >>>= f)
+--data AnfRHS ty a = PrimApp | FunApp |
+
+data ArgANF ty a = ArgVar a | ArgLit !Literal
 
 data ANF ty a
     = ReturnNF !(Atom ty a)
@@ -50,11 +48,7 @@ data ANF ty a
     | LetApp (Atom ty a) (Atom ty a) (Scope () (ANF ty) a)
 
     -- |
-   deriving (
-    Ord,
-    Functor,
-    Foldable,
-    Traversable,
+   deriving ( Ord, Functor, Foldable, Traversable,
     Data,
     Eq,
     Read,
@@ -76,6 +70,9 @@ instance Applicative (ANF ty) where
 
 instance Monad (ANF ty) where
   (ReturnNF (AtomVar a)) >>=f = f a
+  (ReturnNF (AtomicLit l)) >>= _f = ReturnNF $ AtomicLit l
+  (ReturnNF (AtomLam bs bod)) >>= f = ReturnNF $ AtomLam bs (bod >>>= f)
+  --( ( ) :@@ )
 
   -- return = V
   --V a         >>= f = f a
@@ -85,4 +82,3 @@ instance Monad (ANF ty) where
   --(x :@ y)    >>= f = (x >>= f) :@ (y >>= f)
   --Lam t  e    >>= f = Lam t (e >>>= f)
   --Let t bs  b >>= f = Let t (  bs >>= f)  (b >>>= f)
-
