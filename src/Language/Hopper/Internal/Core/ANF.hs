@@ -41,13 +41,13 @@ instance Read2 Atom
 
 
 -- at runtime 'ConstrId' is mapped to a tag???
-newtype ConstrId = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Typeable,Ord,Read)
+newtype ConstrId  = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Typeable,Ord,Read)
 
 -- | the right hand side of a let, aka 'AnfRHS' is the point where heap allocation of thunks happens
 -- the only other
-data AnfRHS ty a = PrimApp !Text ![Atom ty a]
-                 | FunApp a [Atom ty a]
-                 | ConstrApp !ty ConstrId [Atom ty a]
+data AnfRHS ty a = PrimApp !Text ![ a]
+                 | FunApp a [ a]
+                 | ConstrApp !ty ConstrId {- tshould that be a???-}  [ a]
                  | SharedLiteral !Literal -- we currently do not have any fixed size literal types
                                           -- so for now all literals are heap allocated
                                           -- this will change once we add support for stuff like
@@ -83,9 +83,9 @@ instance Read2 AnfRHS
 
 
 data ANF ty a
-    = ReturnNF !(Atom ty a)
+    = ReturnNF  !a -- !(Atom ty a)
     -- | !(Atom  ty a) :@@ ![(Atom  ty a)]
-    | Let  !(AnfRHS ty a) (Scope () (ANF ty) a)
+    | Let  !(AnfRHS ty a) !(Scope () (ANF ty) a)
     -- future thing will have | LetRec maybe?
 
     -- |
@@ -108,17 +108,29 @@ instance Show2 ANF
 instance Ord2 ANF
 instance Read2 ANF
 
-withinANF :: (ANF ty a) -> (ANF ty a -> ANF ty a) -> ANF ty a
-withinANF
+l2rJoinANF :: forall ty a .  (ANF ty (ANF ty a)) -> (ANF ty a)
+l2rJoinANF (ReturnNF a)= a
+l2rJoinANF (Let rhs scope) = let
+        bod ::  ANF ty (Var () (ANF ty (ANF ty a)))  -- _wat -- ANF ty (Var () (ANF ty a))
+        bod = unscope scope
+        in l2rCanonicalRHS rhs (Scope $ fmap (fmap l2rJoinANF) bod)
 
+
+l2rCanonicalRHS :: AnfRHS ty (ANF ty a)
+                  -> (   (Scope () (ANF ty) a)  -> ANF ty a)
+l2rCanonicalRHS (AllocateThunk e) scp = Let (AllocateThunk $ l2rJoinANF e) scp
+l2rCanonicalRHS (SharedLiteral l) scp = Let (SharedLiteral l) scp
+l2rCanonicalRHS (AllocateClosure ls bod) scp = Let (AllocateClosure ls $ Scope $ fmap (fmap l2rJoinANF) $ unscope bod) scp
 
 instance Applicative (ANF ty) where
-  pure  = \x -> ReturnNF (AtomVar x)
+  pure  = \x -> ReturnNF  x
   (<*>) = ap
 
 instance Monad (ANF ty) where
-  (ReturnNF (AtomVar a)) >>= f = f a
-  (afun :@@ aargs) >>= f =
+  (ReturnNF var) >>= f = f var
+
+
+ {- (afun :@@ aargs) >>= f =
         let subst'dArgs :: forall a b .  (a -> ANF ty b) -> [Atom ty a]-> [ANF ty b]
             subst'dArgs  g  ls = fmap (unVar . fmap g) ls
             foldrList :: forall a b . (a -> b -> b) -> b -> [a] -> b
@@ -127,7 +139,7 @@ instance Monad (ANF ty) where
             cps'dArgs = foldrList  cpsStacking id  (subst'dArgs f aargs)
             -- cpsStacking :: forall  a  . ( ) -> (a -> ANF ty a) -> (a -> ANF ty a)
             cpsStacking = _lalala
-        in  (f $ unVar $ afun) `cpsStacking` cps'dArgs
+        in  (f $ unVar $ afun) `cpsStacking` cps'dArgs-}
   -- (Let aRHS aBod) >>= f = _dderp
   -- (ReturnNF (AtomicLit l)) >>= _f = ReturnNF $ AtomicLit l
   -- (ReturnNF (AtomLam bs bod)) >>= f = ReturnNF $ AtomLam bs (bod >>>= f)
