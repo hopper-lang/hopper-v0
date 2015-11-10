@@ -45,23 +45,24 @@ newtype ConstrId  = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Type
 
 -- | the right hand side of a let, aka 'AnfRHS' is the point where heap allocation of thunks happens
 -- the only other
-data AnfRHS ty a = PrimApp !Text ![ a]
-                 | FunApp a [ a]
-                 | ConstrApp !ty ConstrId {- tshould that be a???-}  [ a]
-                 | SharedLiteral !Literal -- we currently do not have any fixed size literal types
+data AnfRHS ty a
+                --  = PrimApp !Text ![ a]
+                --  | FunApp a [ a]
+                --  | ConstrApp !ty ConstrId {- tshould that be a???-}  [ a]
+                 = SharedLiteral !Literal -- we currently do not have any fixed size literal types
                                           -- so for now all literals are heap allocated
                                           -- this will change once we add support for stuff like
                                           -- Double or Word64
                  | AllocateThunk !(ANF ty a) -- Thunks share their evaluations
-                 | EvaluateThunk !a       -- Thunk evaluation is a special
-                                          -- no arg lambda plus sharing
-
+                --  | EvaluateThunk !a       -- Thunk evaluation is a special
+                --                           -- no arg lambda plus sharing
                  | AllocateClosure ![(Text,Type ty,RigModel)] -- arity >=0
                                    !(Scope Text (ANF ty)  a)  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
+                 | NonTailCall !(AppANF ty a)
                   {- AllocateClosure {env :: [(Text,a)], codeBod :: CodeIdentifier } ???  -}
 
-   deriving ( Ord,
+   deriving (Ord,
     Functor,
     Foldable,
     Traversable,
@@ -82,22 +83,45 @@ instance Read2 AnfRHS
 -- data ArgANF ty a = ArgVar a | ArgLit !Literal
 
 
+data AppANF ty a = EnterThunk !a
+                 | ConstrApp !ty !ConstrId ![a]
+                 | FunApp !a ![a]
+                 | PrimApp !Text ![a]
+        deriving ( Ord,
+         Functor,
+         Foldable,
+         Traversable,
+         Typeable,
+         Data,
+         Eq,
+         Read,
+         Show)
+
+instance Eq ty => Eq1 (AppANF ty)
+instance Show ty => Show1 (AppANF ty)
+instance Ord ty => Ord1 (AppANF ty)
+instance Read ty => Read1 (AppANF ty)
+
+instance Eq2 AppANF
+instance Show2 AppANF
+instance Ord2 AppANF
+instance Read2 AppANF
+
+
 data ANF ty a
     = ReturnNF  !a -- !(Atom ty a)
-    -- | !(Atom  ty a) :@@ ![(Atom  ty a)]
-    | Let  !(AnfRHS ty a) !(Scope () (ANF ty) a)
+    | Let !(AnfRHS ty a) !(Scope () (ANF ty) a)
+    | TailCallANF !(AppANF ty a)
     -- future thing will have | LetRec maybe?
-
-    -- |
-   deriving ( Ord,
-    Functor,
-    Foldable,
-    Traversable,
-    Typeable,
-    Data,
-    Eq,
-    Read,
-    Show)
+    deriving (Ord,
+      Functor,
+      Foldable,
+      Traversable,
+      Typeable,
+      Data,
+      Eq,
+      Read,
+      Show)
 instance Eq ty => Eq1 (ANF ty)
 instance Show ty => Show1 (ANF ty)
 instance Ord ty => Ord1 (ANF ty)
@@ -108,16 +132,13 @@ instance Show2 ANF
 instance Ord2 ANF
 instance Read2 ANF
 
-l2rJoinANF :: forall ty a .  (ANF ty (ANF ty a)) -> (ANF ty a)
-l2rJoinANF (ReturnNF a)= a
-l2rJoinANF (Let rhs scope) = let
-        bod ::  ANF ty (Var () (ANF ty (ANF ty a)))  -- _wat -- ANF ty (Var () (ANF ty a))
-        bod = unscope scope
-        in l2rCanonicalRHS rhs (Scope $ fmap (fmap l2rJoinANF) bod)
-
+l2rJoinANF :: forall ty a . (ANF ty (ANF ty a)) -> (ANF ty a)
+l2rJoinANF (ReturnNF a) = a
+l2rJoinANF (Let rhs bod) = l2rCanonicalRHS rhs (Scope $ fmap (fmap l2rJoinANF) $ unscope bod)
 
 l2rCanonicalRHS :: AnfRHS ty (ANF ty a)
-                  -> (   (Scope () (ANF ty) a)  -> ANF ty a)
+                -> ((Scope () (ANF ty) a)
+                -> ANF ty a)
 l2rCanonicalRHS (AllocateThunk e) scp = Let (AllocateThunk $ l2rJoinANF e) scp
 l2rCanonicalRHS (SharedLiteral l) scp = Let (SharedLiteral l) scp
 l2rCanonicalRHS (AllocateClosure ls bod) scp = Let (AllocateClosure ls $ Scope $ fmap (fmap l2rJoinANF) $ unscope bod) scp
