@@ -20,24 +20,24 @@ import Prelude.Extras
 import Bound
 -- import Language.Hopper.Internal.Core.Value (Tag)
 
-newtype Atom  ty a = AtomVar {unVar :: a}
-
-    -- | AtomicLit !Literal
-  -- lambdas need a heap allocation to do the closure allocation in general
-  -- even if they are on the left hand side of an application, UNLESS they are fully applied at that use site
-  --  | AtomLam ![(Text,Type ty,RigModel)] -- do we want to allow arity == 0, or just >= 1?
-  --             !(Scope Text (ANF ty)  a)
-   deriving(Eq,Ord,Functor,Foldable,Traversable,Data,Show,Read,Typeable)
-
-instance Eq ty => Eq1 (Atom ty)
-instance Show ty => Show1 (Atom ty)
-instance Ord ty => Ord1 (Atom ty)
-instance Read ty => Read1 (Atom ty)
-
-instance Eq2 Atom
-instance Show2 Atom
-instance Ord2 Atom
-instance Read2 Atom
+-- newtype Atom  ty a = AtomVar {unVar :: a}
+--
+--     -- | AtomicLit !Literal
+--   -- lambdas need a heap allocation to do the closure allocation in general
+--   -- even if they are on the left hand side of an application, UNLESS they are fully applied at that use site
+--   --  | AtomLam ![(Text,Type ty,RigModel)] -- do we want to allow arity == 0, or just >= 1?
+--   --             !(Scope Text (ANF ty)  a)
+--    deriving(Eq,Ord,Functor,Foldable,Traversable,Data,Show,Read,Typeable)
+--
+-- instance Eq ty => Eq1 (Atom ty)
+-- instance Show ty => Show1 (Atom ty)
+-- instance Ord ty => Ord1 (Atom ty)
+-- instance Read ty => Read1 (Atom ty)
+--
+-- instance Eq2 Atom
+-- instance Show2 Atom
+-- instance Ord2 Atom
+-- instance Read2 Atom
 
 
 -- at runtime 'ConstrId' is mapped to a tag???
@@ -59,7 +59,9 @@ data AnfRHS ty a
                  | AllocateClosure ![(Text,Type ty,RigModel)] -- arity >=0
                                    !(Scope Text (ANF ty)  a)  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
-                 | NonTailCall !(AppANF ty a)
+
+                 | NonTailCallApp !(AppANF ty a) -- control stack allocation; possibly heap allocation
+
                   {- AllocateClosure {env :: [(Text,a)], codeBod :: CodeIdentifier } ???  -}
 
    deriving (Ord,
@@ -142,6 +144,20 @@ l2rCanonicalRHS :: AnfRHS ty (ANF ty a)
 l2rCanonicalRHS (AllocateThunk e) scp = Let (AllocateThunk $ l2rJoinANF e) scp
 l2rCanonicalRHS (SharedLiteral l) scp = Let (SharedLiteral l) scp
 l2rCanonicalRHS (AllocateClosure ls bod) scp = Let (AllocateClosure ls $ Scope $ fmap (fmap l2rJoinANF) $ unscope bod) scp
+
+
+
+danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
+danvyANF (ReturnNF a) = a
+danvyANF (TailCallANF app) = danvyCallANF app  TailCallANF
+danvyANF (Let rhs bod) = danvyRHS rhs (\r -> Let r $  Scope $ (fmap $ fmap danvyANF) $ unscope bod)
+
+danvyRHS :: (AnfRHS ty (ANF ty a)) ->(AnfRHS ty a -> ANF ty a) -> ANF ty a
+danvyRHS = undefined
+
+danvyCallANF :: (AppANF ty (ANF ty a)) -> (AppANF ty a -> ANF ty a) -> ANF ty a
+danvyCallANF = undefined
+
 
 instance Applicative (ANF ty) where
   pure  = \x -> ReturnNF  x
