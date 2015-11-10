@@ -56,6 +56,8 @@ data AnfRHS ty a
                  | AllocateThunk !(ANF ty a) -- Thunks share their evaluations
                 --  | EvaluateThunk !a       -- Thunk evaluation is a special
                 --                           -- no arg lambda plus sharing
+                                            -- thunks and closure should
+                                            -- record their free variables???
                  | AllocateClosure ![(Text,Type ty,RigModel)] -- arity >=0
                                    !(Scope Text (ANF ty)  a)  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
@@ -134,30 +136,40 @@ instance Show2 ANF
 instance Ord2 ANF
 instance Read2 ANF
 
-l2rJoinANF :: forall ty a . (ANF ty (ANF ty a)) -> (ANF ty a)
-l2rJoinANF (ReturnNF a) = a
-l2rJoinANF (Let rhs bod) = l2rCanonicalRHS rhs (Scope $ fmap (fmap l2rJoinANF) $ unscope bod)
+-- l2rJoinANF :: forall ty a . (ANF ty (ANF ty a)) -> (ANF ty a)
+-- l2rJoinANF (ReturnNF a) = a
+-- l2rJoinANF (Let rhs bod) = l2rCanonicalRHS rhs (Scope $ fmap (fmap l2rJoinANF) $ unscope bod)
+--
+-- l2rCanonicalRHS :: AnfRHS ty (ANF ty a)
+--                 -> ((Scope () (ANF ty) a)
+--                 -> ANF ty a)
+-- l2rCanonicalRHS (AllocateThunk e) scp = Let (AllocateThunk $ l2rJoinANF e) scp
+-- l2rCanonicalRHS (SharedLiteral l) scp = Let (SharedLiteral l) scp
+-- l2rCanonicalRHS (AllocateClosure ls bod) scp = Let (AllocateClosure ls $ Scope $ fmap (fmap l2rJoinANF) $ unscope bod) scp
 
-l2rCanonicalRHS :: AnfRHS ty (ANF ty a)
-                -> ((Scope () (ANF ty) a)
-                -> ANF ty a)
-l2rCanonicalRHS (AllocateThunk e) scp = Let (AllocateThunk $ l2rJoinANF e) scp
-l2rCanonicalRHS (SharedLiteral l) scp = Let (SharedLiteral l) scp
-l2rCanonicalRHS (AllocateClosure ls bod) scp = Let (AllocateClosure ls $ Scope $ fmap (fmap l2rJoinANF) $ unscope bod) scp
 
-
+flattenUnderScope :: Scope b (ANF ty) (ANF ty a) -> Scope b (ANF ty) a
+flattenUnderScope = Scope . fmap (fmap danvyANF) . unscope
 
 danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
 danvyANF (ReturnNF a) = a
 danvyANF (TailCallANF app) = danvyCallANF app  TailCallANF
-danvyANF (Let rhs bod) = danvyRHS rhs (\r -> Let r $  Scope $ (fmap $ fmap danvyANF) $ unscope bod)
+danvyANF (Let rhs bod) = danvyRHS rhs (\r -> Let r $  flattenUnderScope bod)
 
 danvyRHS :: (AnfRHS ty (ANF ty a)) ->(AnfRHS ty a -> ANF ty a) -> ANF ty a
-danvyRHS = undefined
+danvyRHS (SharedLiteral l)  f =  f $ SharedLiteral l
+danvyRHS (AllocateThunk expr) f = f $ AllocateThunk $ danvyANF expr
+danvyRHS (AllocateClosure args scp) f = f $ AllocateClosure args (flattenUnderScope scp)
+danvyRHS (NonTailCallApp app) f = danvyCallANF app (\ x -> f $  NonTailCallApp x )
+
+
 
 danvyCallANF :: (AppANF ty (ANF ty a)) -> (AppANF ty a -> ANF ty a) -> ANF ty a
-danvyCallANF = undefined
-
+danvyCallANF (EnterThunk a)= undefined
+{- traverse from right to left using Reverse or Backwards applicative
+over State, accumulating continuations of the inner scopes that are the
+later evaluation steps
+  -}
 
 instance Applicative (ANF ty) where
   pure  = \x -> ReturnNF  x
