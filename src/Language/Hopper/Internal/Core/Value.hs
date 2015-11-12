@@ -87,8 +87,9 @@ data ValueF ty  v =    VLitF !Literal
               | ThunkF !(ANF  ty v )
               | PartialAppF ![Arity] -- ^ args left to consume?
                            ![v  ]  -- ^  this will need to be reversed??
-                           !(Closure  ty  v {- (Value ty con v) -})
-              | DirectClosureF !(Closure ty  v)
+                           !(Closure  ty  v {- (Value ty con v) -})  -- should this be a heap ref to
+                           --- closure to have the right sharing ?
+              | DirectClosureF !(Closure ty  v) -- heap ref?
               | BlackHoleF
 
               -- | VRefF !Ref --- refs are so we can have  exlpicit  sharing
@@ -126,4 +127,3 @@ data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of ar
 --- | 'Closure' may need some rethinking ... later
 data Closure  ty  a = MkClosure ![Arity] !(Scope Text (ANF ty) a)
   deriving (Eq,Ord,Show,Read,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
-

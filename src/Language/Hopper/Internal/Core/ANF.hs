@@ -5,6 +5,7 @@
 -- {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE RankNTypes #-}
 -- {-# LANGUAGE KindSignatures #-}
 -- {-# LANGUAGE DeriveGeneric #-}
 
@@ -14,6 +15,7 @@ import Language.Hopper.Internal.Core.Type
 import Language.Hopper.Internal.Core.Literal
 import Data.Text (Text)
 import Data.Data
+import Data.Word (Word64)
 
 import  Control.Monad
 import Prelude.Extras
@@ -115,6 +117,7 @@ instance Read2 AppANF
 data ANF ty a
     = ReturnNF  !a -- !(Atom ty a)
     | Let !(AnfRHS ty a) !(Scope () (ANF ty) a)
+    | LetMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
     | TailCallANF !(AppANF ty a)
     -- future thing will have | LetRec maybe?
     deriving (Ord,
@@ -147,25 +150,61 @@ instance Read2 ANF
 -- l2rCanonicalRHS (SharedLiteral l) scp = Let (SharedLiteral l) scp
 -- l2rCanonicalRHS (AllocateClosure ls bod) scp = Let (AllocateClosure ls $ Scope $ fmap (fmap l2rJoinANF) $ unscope bod) scp
 
+{-
+AUDIT: should we just be doing the too / from scope functions?
 
+-}
 flattenUnderScope :: Scope b (ANF ty) (ANF ty a) -> Scope b (ANF ty) a
 flattenUnderScope = Scope . fmap (fmap danvyANF) . unscope
 
+
+
+zoomToTailPosition :: forall a ty . (forall c . c -> ANF ty c) ->  ANF ty a -> ANF ty a
+zoomToTailPosition f (ReturnNF a)  = f a
+zoomToTailPosition f (TailCallANF app)  = Let (NonTailCallApp app)
+                                           (Scope $ f (B () ))
+zoomToTailPosition f (Let rhs bod)  =   Let rhs
+                                          (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
+zoomToTailPosition f (LetMulti rhss bod) = LetMulti rhss
+                    (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
+
 danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
 danvyANF (ReturnNF a) = a
-danvyANF (TailCallANF app) = danvyCallANF app  TailCallANF
+danvyANF (TailCallANF app) = danvyTailCallANF app
 danvyANF (Let rhs bod) = danvyRHS rhs (\r -> Let r $  flattenUnderScope bod)
 
 danvyRHS :: (AnfRHS ty (ANF ty a)) ->(AnfRHS ty a -> ANF ty a) -> ANF ty a
 danvyRHS (SharedLiteral l)  f =  f $ SharedLiteral l
 danvyRHS (AllocateThunk expr) f = f $ AllocateThunk $ danvyANF expr
 danvyRHS (AllocateClosure args scp) f = f $ AllocateClosure args (flattenUnderScope scp)
-danvyRHS (NonTailCallApp app) f = danvyCallANF app (\ x -> f $  NonTailCallApp x )
+danvyRHS (NonTailCallApp app) f = danvyNotTailCallANF app  f
 
 
+danvyExp2RhsANF :: (ANF ty a) -> ( a -> ANF ty a) -> ANF ty a
+danvyExp2RhsANF = error "{ this is TERRRRIBLEEEEEEE }"
+-- danvyExp2RhsANF (ReturnNF v) f = f v
+-- danvyExp2RhsANF (TailCallANF app) f = danvyNotTailCallANF app (\ rhs -> Let rhs )
 
-danvyCallANF :: (AppANF ty (ANF ty a)) -> (AppANF ty a -> ANF ty a) -> ANF ty a
-danvyCallANF (EnterThunk a)= undefined
+
+danvyTailCallANF :: (AppANF ty (ANF ty a)) {- } -> (AppANF ty a -> ANF ty a )-} -> ANF ty a
+danvyTailCallANF (EnterThunk (ReturnNF x)) =  Let (NonTailCallApp (EnterThunk x))
+                                                  (Scope  $ ReturnNF(B ()))
+danvyTailCallANF (EnterThunk (TailCallANF app)) =
+                                            Let
+                                              (NonTailCallApp app)
+                                              (Scope $ (
+                                                ( Let (NonTailCallApp (EnterThunk (B ())))
+                                                      (Scope $ ReturnNF (B () ))
+                                                      )))
+danvyTailCallANF (EnterThunk lt@(Let _ _))=
+          zoomToTailPosition (\ x -> Let (NonTailCallApp $ EnterThunk x )
+                                            (Scope $ ReturnNF (B()))
+                                          )
+                              lt
+
+danvyNotTailCallANF :: (AppANF ty (ANF ty a)) -> ( AnfRHS ty a -> ANF ty a) -> ANF ty a
+danvyNotTailCallANF (EnterThunk a) f = danvyExp2RhsANF a (\ var -> f $ NonTailCallApp
+                                                                     $ EnterThunk var  )
 {- traverse from right to left using Reverse or Backwards applicative
 over State, accumulating continuations of the inner scopes that are the
 later evaluation steps
