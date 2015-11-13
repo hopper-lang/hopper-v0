@@ -75,22 +75,25 @@ instance Enum Ref where
 
 
 -- | 'Tag' is a constructor tag sum
-newtype Tag = Tag { unTag :: Word64 } deriving (Eq,Read, Show,Ord,Data,Typeable,Generic)
+newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Data,Typeable,Generic)
 
-type ValRec  ty   = Free (ValueF  ty) Ref
+-- type ValRec  ty   = Free (ValueF  ty Ref) Ref
 
 
-type HeapVal ty   = ValueF ty  (ValRec ty)
+type HeapVal ty   =  ValueF ty Ref --  ValueF ty Ref (ValRec ty)
 
 data ValueF ty  v =    VLitF !Literal
               | ConstructorF  !Tag  !(WrappedVector v)
               | ThunkF !(ANF  ty v )
-              | PartialAppF ![Arity] -- ^ args left to consume?
-                           ![v  ]  -- ^  this will need to be reversed??
-                           !(Closure  ty  v {- (Value ty con v) -})  -- should this be a heap ref to
-                           --- closure to have the right sharing ?
+              -- | PartialAppF ![Arity] -- ^ args left to consume?
+              --              ![(Arity,v)  ]  -- ^ heap ref paired with arg name
+              --              !(Closure  ty  v {- (Value ty con v) -})  -- should this be a heap ref to
+              --              --- closure to have the right sharing ?
               | DirectClosureF !(Closure ty  v) -- heap ref?
               | BlackHoleF
+              | IndirectionF !v
+              --- in the types are calling conventions paper,
+              --- indirections can point at pointer sized liters, or heap references (or tuples thereof???)
 
               -- | VRefF !Ref --- refs are so we can have  exlpicit  sharing
                         --- in a manner thats parametric in the choice

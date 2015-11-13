@@ -19,7 +19,11 @@ import Numeric.Natural
 import Data.Typeable
 import Control.Monad.Trans.State.Strict as State
 
+import Bound
 
+import Data.Text (Text)
+
+import  Control.Monad.Free
 
 
 --- This model implementation of the heap is kinda a hack --- Namely that
@@ -49,7 +53,7 @@ heapRefUpdate ref val (Heap ct mp)
 
 heapAllocateValue :: Heap ty  -> HeapVal ty  -> (Ref,Heap ty )
 heapAllocateValue hp val = (_minMaxFreshRef hp
-                            , Heap (Ref $ refPointer minmax +1) newMap)
+                            , Heap (Ref $ (refPointer minmax) + 1) newMap)
   where
       minmax = _minMaxFreshRef hp
       newMap = Map.insert minmax  val (_theHeap hp)
@@ -103,6 +107,7 @@ checkedCounterDecrement = do  cah <- getHSCM
 unsafeHeapUpdate :: Ref -> HeapVal ty -> HeapStepCounterM ty ()
 unsafeHeapUpdate rf val = do  cah <- getHSCM
                               x <- return $ heapRefUpdate rf val (_extractHeapCAH cah)
+                              checkedCounterDecrement
                               x `seq` setHSCM $ cah{_extractHeapCAH =x }
 
 --- note, this should also decrement the counter!
@@ -110,11 +115,12 @@ heapAllocate :: HeapVal ty -> HeapStepCounterM ty  Ref
 heapAllocate val = do   cah <-  getHSCM
                         (rf,hp) <- pure $ heapAllocateValue (_extractHeapCAH cah) val
                         cah' <- pure $ cah{_extractHeapCAH = hp}
+                        checkedCounterDecrement
                         setHSCM cah'
                         return rf
 
 heapLookup :: Ref -> HeapStepCounterM ty (Maybe (HeapVal ty))
-heapLookup rf =  (flip heapRefLookup rf . _extractHeapCAH) <$> getHSCM
+heapLookup rf =  do  checkedCounterDecrement ; (flip heapRefLookup rf . _extractHeapCAH) <$> getHSCM
 
 --heapUpdate :: Ref -> Value ty ->
 {-
@@ -122,11 +128,73 @@ need to think about possible cycles in references :(
 or can i just assume that any refs must be strictly descending?
 -}
 
+--- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)
+unsafeRunHSCM :: Natural -> Heap ty -> HeapStepCounterM ty b -> (b,CounterAndHeap ty)
+unsafeRunHSCM cnt hp (HSCM m)  = State.runState m (CounterAndHeap cnt $ hp)
 
-runHSCM :: Natural -> HeapStepCounterM ty a -> (a,CounterAndHeap ty)
-runHSCM cnt (HSCM m) = State.runState m (CounterAndHeap cnt $ Heap (Ref 1) Map.empty)
+-- run a program in an empty heap
+runEmptyHeap :: Natural -> HeapStepCounterM ty b-> (b,CounterAndHeap ty)
+runEmptyHeap ct (HSCM m) = State.runState m (CounterAndHeap ct $ Heap (Ref 1) Map.empty)
 
-{-
-need to add Partial App and multi arg lambdas to eval/apply later this week :)
 
--}
+-- this is the stack in types are calling conventions paper
+data StrictContext  ty a  = SCEmpty
+                        | LetContext   !(Scope () (ANF ty) a)  !(StrictContext ty a)
+                        | ThunkUpdate !a !(StrictContext ty a)
+   deriving (Typeable
+    --,Functor
+    --,Foldable
+    --,Traversable
+    ,Generic
+    -- ,Data
+    ,Eq
+    ,Ord
+    ,Show)
+
+
+heapRefLookupTransitive :: Ref -> HeapStepCounterM ty (HeapVal ty, Ref)
+heapRefLookupTransitive ref =
+        do  next <- heapLookup ref
+            case  next of
+              Nothing -> error $ "bad heap ref in looup transitive" ++ show ref
+              Just (BlackHoleF) -> error  $ "hit BlackHoleF in transitive lookup" ++ show ref
+              (Just (IndirectionF nextRef)) -> heapRefLookupTransitive nextRef
+              Just v -> return (v,ref)
+
+evalANF :: StrictContext ty Ref -> ANF ty Ref -> HeapStepCounterM ty (HeapVal ty)
+evalANF stk (ReturnNF rf) = returnIntoStack stk rf
+evalANF stk (TailCallANF app) = applyANF stk app
+evalANF stk (Let rhs scp) = evalRhsANF (LetContext scp stk) rhs
+
+evalRhsANF :: StrictContext ty Ref -> AnfRHS ty Ref -> HeapStepCounterM ty (HeapVal ty)
+evalRhsANF = undefined
+
+applyANF :: StrictContext ty Ref -> AppANF ty Ref -> HeapStepCounterM ty (HeapVal ty)
+applyANF stk  (EnterThunk thunkRef) =
+              do  (thunkOrV,directRef) <- heapRefLookupTransitive thunkRef
+                  case thunkOrV of
+                    (ThunkF expr) -> do unsafeHeapUpdate directRef BlackHoleF ;
+                                        evalANF (ThunkUpdate directRef stk) expr
+                    (IndirectionF wat) ->
+                        error "impossible reference, this is a failure of transitive lookup"
+                    (BlackHoleF) -> error "impossible BlackHoleF in applyANF"
+                    (ConstructorF _ _ ) -> returnIntoStack stk directRef
+                    (DirectClosureF _) -> returnIntoStack stk directRef
+                    -- (PartialAppF _ _ _) -> returnIntoStack stk directRef
+                    (VLitF _) -> returnIntoStack stk directRef
+applyANF stk (FunApp funRef lsArgsRef) =
+      do  (closureOrDie,directRef) <- heapRefLookupTransitive funRef
+          case closureOrDie of
+              (DirectClosureF (MkClosure args scp))
+                  | length args == length lsArgsRef ->
+                    evalANF stk  $ flip instantiate  scp ((ReturnNF .) $ (Map.!) $ Map.fromList $ zip (map _extractArityInfo args) lsArgsRef)
+                  | otherwise -> error $ "arity mismatch for closure in apply position"
+              _ -> error "something thats not a closure was invoked in apply position, DIE"
+
+applyPrim :: StrictContext ty Ref -> Text -> [Ref] ->  HeapStepCounterM ty (HeapVal ty)
+applyPrim = error "this isn't defined yet Prim  "
+
+returnIntoStack :: StrictContext ty Ref -> Ref -> HeapStepCounterM ty  (HeapVal ty)
+returnIntoStack SCEmpty ref =  maybe (error "invariant failure, die die die die") id <$>  heapLookup ref
+returnIntoStack (ThunkUpdate target stk) ref = do  unsafeHeapUpdate target (IndirectionF ref) ; returnIntoStack stk ref
+returnIntoStack (LetContext scp stk) ref = evalANF stk (instantiate1 (ReturnNF ref) scp)

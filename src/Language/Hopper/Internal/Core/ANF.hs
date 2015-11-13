@@ -48,9 +48,9 @@ newtype ConstrId  = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Type
 -- | the right hand side of a let, aka 'AnfRHS' is the point where heap allocation of thunks happens
 -- the only other
 data AnfRHS ty a
-                --  = PrimApp !Text ![ a]
-                --  | FunApp a [ a]
-                --  | ConstrApp !ty ConstrId {- tshould that be a???-}  [ a]
+
+--- SPLIT ANF RHS INTO ALLOCATING case and CALLING case sub data tyes  FIXMEEEEE
+
                  = SharedLiteral !Literal -- we currently do not have any fixed size literal types
                                           -- so for now all literals are heap allocated
                                           -- this will change once we add support for stuff like
@@ -91,6 +91,8 @@ instance Read2 AnfRHS
 
 data AppANF ty a = EnterThunk !a
                  | ConstrApp !ty !ConstrId ![a]
+                 -- this isnt' doing a jump....  FIXMEEEEE
+                 -- move into ALLOCATOR case of RHS ANF 
                  | FunApp !a ![a]
                  | PrimApp !Text ![a]
         deriving ( Ord,
@@ -117,7 +119,7 @@ instance Read2 AppANF
 data ANF ty a
     = ReturnNF  !a -- !(Atom ty a)
     | Let !(AnfRHS ty a) !(Scope () (ANF ty) a)
-    | LetMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
+    -- | LetMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
     | TailCallANF !(AppANF ty a)
     -- future thing will have | LetRec maybe?
     deriving (Ord,
@@ -165,8 +167,8 @@ zoomToTailPosition f (TailCallANF app)  = Let (NonTailCallApp app)
                                            (Scope $ f (B () ))
 zoomToTailPosition f (Let rhs bod)  =   Let rhs
                                           (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
-zoomToTailPosition f (LetMulti rhss bod) = LetMulti rhss
-                    (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
+-- zoomToTailPosition f (LetMulti rhss bod) = LetMulti rhss
+--                     (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
 
 danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
 danvyANF (ReturnNF a) = a
