@@ -24,7 +24,7 @@ import Bound
 import Data.Text (Text)
 
 import  Control.Monad.Free
-
+import Control.Lens
 
 --- This model implementation of the heap is kinda a hack --- Namely that
 --- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
@@ -167,7 +167,13 @@ evalANF stk (TailCallANF app) = applyANF stk app
 evalANF stk (Let rhs scp) = evalRhsANF (LetContext scp stk) rhs
 
 evalRhsANF :: StrictContext ty Ref -> AnfRHS ty Ref -> HeapStepCounterM ty (HeapVal ty)
-evalRhsANF = undefined
+evalRhsANF  stk (NonTailCallApp app)  = applyANF stk app
+evalRhsANF stk (SharedLiteral lit) = do  freshRef <- heapAllocate (VLitF lit ) ; returnIntoStack stk freshRef
+evalRhsANF stk (AllocateThunk expr) = do freshRef <- heapAllocate (ThunkF expr) ; returnIntoStack stk freshRef
+evalRhsANF stk (AllocateClosure argLs scp) =
+      do  freshRef <- heapAllocate (DirectClosureF $ MkClosure ( map (ArityBoxed . view _1)  argLs) scp)
+          returnIntoStack stk freshRef
+--- add consructor allocation case here :)
 
 applyANF :: StrictContext ty Ref -> AppANF ty Ref -> HeapStepCounterM ty (HeapVal ty)
 applyANF stk  (EnterThunk thunkRef) =
@@ -190,9 +196,11 @@ applyANF stk (FunApp funRef lsArgsRef) =
                     evalANF stk  $ flip instantiate  scp ((ReturnNF .) $ (Map.!) $ Map.fromList $ zip (map _extractArityInfo args) lsArgsRef)
                   | otherwise -> error $ "arity mismatch for closure in apply position"
               _ -> error "something thats not a closure was invoked in apply position, DIE"
+applyANF stk (PrimApp nm args) = applyPrim stk nm args
+--- constrapp will be moved elsewhere
 
 applyPrim :: StrictContext ty Ref -> Text -> [Ref] ->  HeapStepCounterM ty (HeapVal ty)
-applyPrim = error "this isn't defined yet Prim  "
+applyPrim = error "this isn't defined yet applyPrim "
 
 returnIntoStack :: StrictContext ty Ref -> Ref -> HeapStepCounterM ty  (HeapVal ty)
 returnIntoStack SCEmpty ref =  maybe (error "invariant failure, die die die die") id <$>  heapLookup ref
