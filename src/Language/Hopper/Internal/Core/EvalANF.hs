@@ -25,6 +25,7 @@ import Data.Text (Text)
 
 import  Control.Monad.Free
 import Control.Lens
+import qualified Data.Vector as V
 
 --- This model implementation of the heap is kinda a hack --- Namely that
 --- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
@@ -139,8 +140,10 @@ runEmptyHeap ct (HSCM m) = State.runState m (CounterAndHeap ct $ Heap (Ref 1) Ma
 
 -- this is the stack in types are calling conventions paper
 data StrictContext  ty a  = SCEmpty
-                        | LetContext   !(Scope () (ANF ty) a)  !(StrictContext ty a)
-                        | ThunkUpdate !a !(StrictContext ty a)
+                        | LetContext
+                            (Scope (Maybe Text) (ANF ty) a)
+                            (StrictContext ty a)
+                        | ThunkUpdate !a (StrictContext ty a)
    deriving (Typeable
     --,Functor
     --,Foldable
@@ -150,7 +153,6 @@ data StrictContext  ty a  = SCEmpty
     ,Eq
     ,Ord
     ,Show)
-
 
 heapRefLookupTransitive :: Ref -> HeapStepCounterM ty (HeapVal ty, Ref)
 heapRefLookupTransitive ref =
@@ -164,7 +166,7 @@ heapRefLookupTransitive ref =
 evalANF :: StrictContext ty Ref -> ANF ty Ref -> HeapStepCounterM ty (HeapVal ty)
 evalANF stk (ReturnNF rf) = returnIntoStack stk rf
 evalANF stk (TailCallANF app) = applyANF stk app
-evalANF stk (Let rhs scp) = evalRhsANF (LetContext scp stk) rhs
+evalANF stk (LetNF _mname _mtype rhs scp) = evalRhsANF (LetContext  scp stk) rhs
 
 evalRhsANF :: StrictContext ty Ref -> AnfRHS ty Ref -> HeapStepCounterM ty (HeapVal ty)
 evalRhsANF  stk (NonTailCallApp app)  = applyANF stk app
@@ -173,20 +175,22 @@ evalRhsANF stk (AllocateThunk expr) = do freshRef <- heapAllocate (ThunkF expr) 
 evalRhsANF stk (AllocateClosure argLs scp) =
       do  freshRef <- heapAllocate (DirectClosureF $ MkClosure ( map (ArityBoxed . view _1)  argLs) scp)
           returnIntoStack stk freshRef
---- add consructor allocation case here :)
+evalRhsANF stk (ConstrApp _ constrid argsLS) =
+        do  freshRef <- heapAllocate (ConstructorF (Tag $  unConstrId  constrid) $ WrappedVector $ V.fromList argsLS)
+            returnIntoStack stk freshRef
+
 
 applyANF :: StrictContext ty Ref -> AppANF ty Ref -> HeapStepCounterM ty (HeapVal ty)
 applyANF stk  (EnterThunk thunkRef) =
               do  (thunkOrV,directRef) <- heapRefLookupTransitive thunkRef
                   case thunkOrV of
-                    (ThunkF expr) -> do unsafeHeapUpdate directRef BlackHoleF ;
+                    (ThunkF expr) -> do unsafeHeapUpdate directRef BlackHoleF
                                         evalANF (ThunkUpdate directRef stk) expr
                     (IndirectionF wat) ->
                         error "impossible reference, this is a failure of transitive lookup"
                     (BlackHoleF) -> error "impossible BlackHoleF in applyANF"
                     (ConstructorF _ _ ) -> returnIntoStack stk directRef
                     (DirectClosureF _) -> returnIntoStack stk directRef
-                    -- (PartialAppF _ _ _) -> returnIntoStack stk directRef
                     (VLitF _) -> returnIntoStack stk directRef
 applyANF stk (FunApp funRef lsArgsRef) =
       do  (closureOrDie,directRef) <- heapRefLookupTransitive funRef
@@ -197,7 +201,6 @@ applyANF stk (FunApp funRef lsArgsRef) =
                   | otherwise -> error $ "arity mismatch for closure in apply position"
               _ -> error "something thats not a closure was invoked in apply position, DIE"
 applyANF stk (PrimApp nm args) = applyPrim stk nm args
---- constrapp will be moved elsewhere
 
 applyPrim :: StrictContext ty Ref -> Text -> [Ref] ->  HeapStepCounterM ty (HeapVal ty)
 applyPrim = error "this isn't defined yet applyPrim "
@@ -205,4 +208,4 @@ applyPrim = error "this isn't defined yet applyPrim "
 returnIntoStack :: StrictContext ty Ref -> Ref -> HeapStepCounterM ty  (HeapVal ty)
 returnIntoStack SCEmpty ref =  maybe (error "invariant failure, die die die die") id <$>  heapLookup ref
 returnIntoStack (ThunkUpdate target stk) ref = do  unsafeHeapUpdate target (IndirectionF ref) ; returnIntoStack stk ref
-returnIntoStack (LetContext scp stk) ref = evalANF stk (instantiate1 (ReturnNF ref) scp)
+returnIntoStack (LetContext  scp stk) ref = evalANF stk (instantiate1 (ReturnNF ref) scp)
