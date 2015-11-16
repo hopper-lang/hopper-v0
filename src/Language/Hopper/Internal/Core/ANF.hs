@@ -25,38 +25,37 @@ import Language.Hopper.Internal.Core.Term
 
 
 
-scopedAnf2ScopedExp :: (Ord b, Ord ty, Ord a, Monad m )=> (Text -> m (Exp ty a))-> (ty -> ConstrId -> m (Exp ty a))-> Scope b (ANF ty) a ->  m (Scope b (Exp ty) a)
-scopedAnf2ScopedExp f c  scp= Scope <$>(  anf2Exp (fmap  (V . F) . f) (\ ty con -> fmap (V .  F) $ c ty con)   =<< (traverse (traverse ( anf2Exp f c )) $ unscope scp ))
+scopedAnf2ScopedExp :: Scope b (ANF ty) a ->  (Scope b (Exp ty) a)
+scopedAnf2ScopedExp   scp= Scope $  (anf2Exp   (fmap (fmap ( anf2Exp )) $ unscope scp ))
 
-anf2Exp :: forall a m ty . (Ord ty, Ord a, Monad m )=> (Text -> m (Exp ty a))-> (ty -> ConstrId -> m (Exp ty a))-> ANF ty a -> m (Exp ty a)
-anf2Exp _f _c (ReturnNF a) = return (V a)
-anf2Exp f  c (LetNF mname mtype rhs scp) =
-    do  rhsExp <- rhs2Exp f c rhs
-        bod :: Scope (Maybe Text) (Exp ty) a  <-  scopedAnf2ScopedExp f c scp
-        -- (anf2Exp (fmap F . f) (fmap F . c))  $ unscope scp
-        -- bod2 :: <- Scope <$> traverse ( traverse . traverse (anf2Exp f c)) bod1
-        return (Let mname mtype rhsExp bod)
-        -- return undefined
-anf2Exp f _c (TailCallANF app) = appANF2Exp f  app
+anf2Exp ::  ANF ty a -> (Exp ty a)
+anf2Exp (ReturnNF a) = (pure a)
+anf2Exp (LetNF mname mtype rhs scp) = (Let mname mtype (rhs2Exp rhs) $  scopedAnf2ScopedExp  scp )
+anf2Exp (TailCallANF app) = appANF2Exp  app
 
-rhs2Exp :: (Ord ty, Ord a, Monad m )=> (Text -> m (Exp ty a))->
-                            (ty -> ConstrId -> m (Exp ty a))-> AnfRHS ty a -> m (Exp ty a)
-rhs2Exp _f _c (SharedLiteral l) = return $ ELit l
-rhs2Exp _f c (ConstrApp ty conid lsargs) = do   conname <- c ty conid
-                                                return (conname :@  fmap V lsargs)
-rhs2Exp f c (AllocateThunk e) = do  newExp <- anf2Exp f c e
-                                    return (Delay newExp)
-rhs2Exp f c (AllocateClosure binders scp) = do  fixedScp <- scopedAnf2ScopedExp f c scp
-                                                return (Lam binders fixedScp)
-rhs2Exp f _c (NonTailCallApp app) = appANF2Exp f app
+rhs2Exp ::   AnfRHS ty a ->  (Exp ty a)
+rhs2Exp  (SharedLiteral l) = ELit l
+rhs2Exp  (ConstrApp a  _ty _conid lsargs) =  (pure a :@  fmap pure lsargs)
+rhs2Exp (AllocateThunk e) = Delay $ anf2Exp  e
+rhs2Exp (AllocateClosure binders scp) =  Lam binders (scopedAnf2ScopedExp  scp)
+rhs2Exp  (NonTailCallApp app) = appANF2Exp  app
 
 
 
-appANF2Exp :: forall a m ty . ( Ord a, Monad m )=> (Text -> m (Exp ty a)) -> AppANF ty a -> m (Exp ty a)
-appANF2Exp _f  (EnterThunk a) = return $ Force (V a)
-appANF2Exp _f  (FunApp a argLS) = return $  V a :@ map V argLS
-appANF2Exp f   (PrimApp txt argLS) = do  primName <- f txt
-                                         return $  primName :@ map V argLS
+appANF2Exp :: AppANF ty a ->  (Exp ty a)
+appANF2Exp (EnterThunk a) =   Force (pure a)
+appANF2Exp (FunApp a argLS) =  pure a :@ map pure argLS
+appANF2Exp (PrimApp a _txt argLS) = pure a :@ map pure argLS
+
+
+
+exp2ANF :: Exp ty a -> ANF ty a
+exp2ANF (V a) = pure a
+exp2ANF (ELit l) = LetNF Nothing Nothing (SharedLiteral l) (Scope $ pure $ B Nothing)
+exp2ANF (Delay e) = LetNF Nothing Nothing (AllocateThunk (exp2ANF e)) (Scope $ pure $ B Nothing)
+exp2ANF (Lam binders scope) = LetNF Nothing Nothing
+            (AllocateClosure binders $ Scope $ exp2ANF $ (fmap $ fmap exp2ANF)$ unscope scope)
+              (Scope $  pure $ B Nothing )
 
 -- at runtime 'ConstrId' is mapped to a tag???
 newtype ConstrId  = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Typeable,Ord,Read)
@@ -67,7 +66,7 @@ data AnfRHS ty a = SharedLiteral !Literal -- we currently do not have any fixed 
                                           -- so for now all literals are heap allocated
                                           -- this will change once we add support for stuff like
                                           -- Double or Word64
-                 | ConstrApp !ty !ConstrId [a]
+                 | ConstrApp a !ty !ConstrId [a]
                  | AllocateThunk (ANF ty a) -- Thunks share their evaluations
                 --  | EvaluateThunk !a       -- Thunk evaluation is a special
                 --                           -- no arg lambda plus sharing
@@ -101,9 +100,9 @@ instance Read2 AnfRHS
 -- data ArgANF ty a = ArgVar a | ArgLit !Literal
 
 
-data AppANF ty a = EnterThunk !a
-                 | FunApp !a ![a]
-                 | PrimApp !Text ![a]
+data AppANF ty a = EnterThunk a
+                 | FunApp a ![a]
+                 | PrimApp  a !Text ![a]
         deriving ( Ord,
          Functor,
          Foldable,
