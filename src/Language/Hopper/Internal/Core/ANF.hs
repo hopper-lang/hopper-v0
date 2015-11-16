@@ -56,6 +56,19 @@ exp2ANF (Delay e) = LetNF Nothing Nothing (AllocateThunk (exp2ANF e)) (Scope $ p
 exp2ANF (Lam binders scope) = LetNF Nothing Nothing
             (AllocateClosure binders $ Scope $ exp2ANF $ (fmap $ fmap exp2ANF)$ unscope scope)
               (Scope $  pure $ B Nothing )
+exp2ANF (Force expr) = exp2ANFComp expr (\var -> TailCallANF (EnterThunk var))
+exp2ANF (Let mname mtyp rhsExp  scpBod) = exp2anfRHS rhsExp
+                                            (\rhsANF -> LetNF mname mtyp rhsANF  $ underScopeANF2Exp scpBod)
+exp2ANF (funExp :@ argExps) = error "dangerous territory here :) "
+
+exp2anfRHS :: Exp ty a -> (AnfRHS ty a -> ANF ty a ) -> ANF ty a
+exp2anfRHS = undefined
+
+underScopeANF2Exp :: Scope b (Exp ty) a -> Scope b (ANF ty) a
+underScopeANF2Exp scp = Scope $ exp2ANF $ (fmap $ fmap exp2ANF)$ unscope scp
+
+exp2ANFComp :: (Exp ty a) -> (a -> ANF ty a) -> ANF ty a
+exp2ANFComp e k = undefined
 
 -- at runtime 'ConstrId' is mapped to a tag???
 newtype ConstrId  = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Typeable,Ord,Read)
