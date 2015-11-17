@@ -7,7 +7,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 -- {-# LANGUAGE KindSignatures #-}
--- {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Language.Hopper.Internal.Core.ANF  where
 
@@ -17,35 +17,38 @@ import Data.Text (Text)
 import Data.Data
 -- import Data.Word (Word64)
 
+import GHC.Generics
 import  Control.Monad
 import Prelude.Extras
 import Bound
 import Language.Hopper.Internal.Core.Term
+import qualified Bound.Scope.Simple as Simple
+
+import Control.Lens (view,over,_1,_2)
 
 
 
+-- scopedAnf2ScopedExp :: Scope b (ANF ty) a ->  (Scope b (Exp ty) a)
+-- scopedAnf2ScopedExp   scp= Scope $  (anf2Exp   (fmap (fmap ( anf2Exp )) $ unscope scp ))
 
-scopedAnf2ScopedExp :: Scope b (ANF ty) a ->  (Scope b (Exp ty) a)
-scopedAnf2ScopedExp   scp= Scope $  (anf2Exp   (fmap (fmap ( anf2Exp )) $ unscope scp ))
+-- anf2Exp ::  ANF ty a -> (Exp ty a)
+-- anf2Exp (ReturnNF a) = (pure a)
+-- anf2Exp (LetNF mname mtype rhs scp) = (Let mname mtype (rhs2Exp rhs) $  scopedAnf2ScopedExp  scp )
+-- anf2Exp (TailCallANF app) = appANF2Exp  app
 
-anf2Exp ::  ANF ty a -> (Exp ty a)
-anf2Exp (ReturnNF a) = (pure a)
-anf2Exp (LetNF mname mtype rhs scp) = (Let mname mtype (rhs2Exp rhs) $  scopedAnf2ScopedExp  scp )
-anf2Exp (TailCallANF app) = appANF2Exp  app
-
-rhs2Exp ::   AnfRHS ty a ->  (Exp ty a)
-rhs2Exp  (SharedLiteral l) = ELit l
-rhs2Exp  (ConstrApp a  _ty _conid lsargs) =  (pure a :@  fmap pure lsargs)
-rhs2Exp (AllocateThunk e) = Delay $ anf2Exp  e
-rhs2Exp (AllocateClosure binders scp) =  Lam binders (scopedAnf2ScopedExp  scp)
-rhs2Exp  (NonTailCallApp app) = appANF2Exp  app
-
+-- rhs2Exp ::   AnfRHS ty a ->  (Exp ty a)
+-- rhs2Exp  (SharedLiteral l) = ELit l
+-- rhs2Exp  (ConstrApp a  _ty _conid lsargs) =  (pure a :@  fmap pure lsargs)
+-- rhs2Exp (AllocateThunk e) = Delay $ anf2Exp  e
+-- rhs2Exp (AllocateClosure binders scp) =  Lam binders (scopedAnf2ScopedExp  scp)
+-- rhs2Exp  (NonTailCallApp app) = appANF2Exp  app
 
 
-appANF2Exp :: AppANF ty a ->  (Exp ty a)
-appANF2Exp (EnterThunk a) =   Force (pure a)
-appANF2Exp (FunApp a argLS) =  pure a :@ map pure argLS
-appANF2Exp (PrimApp a _txt argLS) = pure a :@ map pure argLS
+
+-- appANF2Exp :: AppANF ty a ->  (Exp ty a)
+-- appANF2Exp (EnterThunk a) =   Force (pure a)
+-- appANF2Exp (FunApp a argLS) =  pure a :@ map pure argLS
+-- appANF2Exp (PrimApp a _txt argLS) = pure a :@ map pure argLS
 
 
 
@@ -59,7 +62,39 @@ exp2ANF (Lam binders scope) = LetNF Nothing Nothing
 exp2ANF (Force expr) = exp2ANFComp expr (\var -> TailCallANF (EnterThunk var))
 exp2ANF (Let mname mtyp rhsExp  scpBod) = exp2anfRHS rhsExp
                                             (\rhsANF -> LetNF mname mtyp rhsANF  $ underScopeANF2Exp scpBod)
-exp2ANF (funExp :@ argExps) = error "dangerous territory here :) "
+exp2ANF (funExp :@ argExps) = exp2ANFComp funExp (\ funv -> expArgs2Anf argExps funv)
+  --- should the application simplifier explicitly know the number of args needed???
+  -- error "dangerous territory here :) "
+
+
+-- expArgs2Anf :: [Exp ty a] ->  a -> ANF ty a
+-- expArgs2Anf [] v = TailCallANF $ FunApp v []
+-- expArgs2Anf  ls  v =  callArgs2AnfComp (reverse ls) (\argsLs -> Left $ TailCallANF $  FunApp v $ reverse argsLs )
+--                             -- reverse arg list trick will need testingggggggg
+--                             -- also shoudl LINT the arity is the same
+
+-- -- ignore non top level for now
+-- callArgs2AnfComp :: forall ty a  . [Exp ty a] -> (   [a]-> RecFunTail (Maybe Text) ty a) -> ANF ty a
+-- callArgs2AnfComp [] f = either id  (error "mismatched anf arity simplification, DIE DIE DIE")  $ f []
+-- callArgs2AnfComp (h : tl) f =    callArgs2AnfComp  tl $  exp2AnfCompMulti h  rfRec
+--             where
+--                 rfRec :: RecFun (Maybe Text ) ty a
+--                 rfRec = RF (\ v rest -> f (v : rest),
+--                             \ bv rest ->   f  (bv : map (F . pure ) rest ))
+-- exp2AnfCompMulti :: Exp ty a -> RecFun (Maybe Text) ty a -> ([a] -> RecFunTail (Maybe Text) ty a )
+-- exp2AnfCompMulti (V a) f = either id  (error "mismatched anf arity simplification, DIE DIE DIE") . ((view _1) unRF f $ a)
+-- exp2AnfCompMulti (ELit lit) f = \ ls -> LetNF Nothing Nothing (SharedLiteral lit)
+--                                   (Scope $ (unRF f) (B Nothing) ls)
+
+
+-- type RecFunTail b ty a =  Either (ANF ty a) (RecFun b ty a)
+
+-- v in scope  and then f''= ( \ rest -> ___ (v : Rest))
+-- -- \ (rest ''  ->   f'' (v : rest'' ))
+-- newtype RecFun b ty  a = RF { unRF ::  (a -> RecFunTail b ty a
+--                                , (Var b (ANF ty a))  --  > [a {-???-}]
+--                                                    ->  RecFunTail b ty (Var b (ANF ty a))) }
+--   deriving (Generic,Typeable)
 
 {-
 what we roughly want to do is take
@@ -103,7 +138,7 @@ data AnfRHS ty a = SharedLiteral !Literal -- we currently do not have any fixed 
                                             -- thunks and closure should
                                             -- record their free variables???
                  | AllocateClosure ![(Text,Type ty,RigModel)] -- arity >=0
-                                   (Scope Text (ANF ty)  a)  -- should we have global table of
+                                   (Simple.Scope Text (ANF ty)  a)  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
 
                  | NonTailCallApp (AppANF ty a) -- control stack allocation; possibly heap allocation
@@ -156,7 +191,7 @@ instance Read2 AppANF
 
 data ANF ty a
     = ReturnNF  !a -- !(Atom ty a)
-    | LetNF (Maybe Text) (Maybe(Type ty, RigModel)) (AnfRHS ty a) (Scope (Maybe Text) (ANF ty) a)
+    | LetNF (Maybe Text) (Maybe(Type ty, RigModel)) (AnfRHS ty a) (Simple.Scope (Maybe Text) (ANF ty) a)
     -- | LetNFMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
     | TailCallANF (AppANF ty a)
     -- future thing will have | LetNFRec maybe?
