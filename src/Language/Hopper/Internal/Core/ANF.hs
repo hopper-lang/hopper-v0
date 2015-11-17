@@ -52,49 +52,23 @@ import Control.Lens (view,over,_1,_2)
 
 
 
-exp2ANF :: Exp ty a -> ANF ty a
-exp2ANF (V a) = pure a
-exp2ANF (ELit l) = LetNF Nothing Nothing (SharedLiteral l) (Scope $ pure $ B Nothing)
-exp2ANF (Delay e) = LetNF Nothing Nothing (AllocateThunk (exp2ANF e)) (Scope $ pure $ B Nothing)
-exp2ANF (Lam binders scope) = LetNF Nothing Nothing
-            (AllocateClosure binders $ Scope $ exp2ANF $ (fmap $ fmap exp2ANF)$ unscope scope)
-              (Scope $  pure $ B Nothing )
-exp2ANF (Force expr) = exp2ANFComp expr (\var -> TailCallANF (EnterThunk var))
-exp2ANF (Let mname mtyp rhsExp  scpBod) = exp2anfRHS rhsExp
-                                            (\rhsANF -> LetNF mname mtyp rhsANF  $ underScopeANF2Exp scpBod)
-exp2ANF (funExp :@ argExps) = exp2ANFComp funExp (\ funv -> expArgs2Anf argExps funv)
-  --- should the application simplifier explicitly know the number of args needed???
-  -- error "dangerous territory here :) "
+-- exp2Anf :: Exp ty a -> ANF ty a
+-- exp2Anf (V a) = pure a
+-- exp2Anf (ELit l) = LetNF Nothing Nothing (SharedLiteral l) (Scope $ pure $ B Nothing)
+-- exp2Anf (Delay e) = LetNF Nothing Nothing (AllocateThunk (exp2ANF e)) (Scope $ pure $ B Nothing)
+-- exp2Anf (Lam binders scope) = LetNF Nothing Nothing
+--           (AllocateClosure binders $ Scope $ exp2ANF $ (fmap $ fmap exp2ANF)$ unscope scope)
+--             (Scope $  pure $ B Nothing )
+-- exp2Anf (Force expr) = exp2ANFComp expr (\var -> TailCallANF (EnterThunk var))
+-- exp2Anf (Let mname mtyp rhsExp  scpBod) = exp2anfRHS rhsExp
+--                                          (\rhsANF -> LetNF mname mtyp rhsANF  $ underScopeANF2Exp scpBod)
+-- exp2Anf (funExp :@ [])        =
+-- exp2Anf (funExp :@ [e1])      =
+-- exp2Anf (funExp :@ (he : te)) =
 
 
--- expArgs2Anf :: [Exp ty a] ->  a -> ANF ty a
--- expArgs2Anf [] v = TailCallANF $ FunApp v []
--- expArgs2Anf  ls  v =  callArgs2AnfComp (reverse ls) (\argsLs -> Left $ TailCallANF $  FunApp v $ reverse argsLs )
---                             -- reverse arg list trick will need testingggggggg
---                             -- also shoudl LINT the arity is the same
-
--- -- ignore non top level for now
--- callArgs2AnfComp :: forall ty a  . [Exp ty a] -> (   [a]-> RecFunTail (Maybe Text) ty a) -> ANF ty a
--- callArgs2AnfComp [] f = either id  (error "mismatched anf arity simplification, DIE DIE DIE")  $ f []
--- callArgs2AnfComp (h : tl) f =    callArgs2AnfComp  tl $  exp2AnfCompMulti h  rfRec
---             where
---                 rfRec :: RecFun (Maybe Text ) ty a
---                 rfRec = RF (\ v rest -> f (v : rest),
---                             \ bv rest ->   f  (bv : map (F . pure ) rest ))
--- exp2AnfCompMulti :: Exp ty a -> RecFun (Maybe Text) ty a -> ([a] -> RecFunTail (Maybe Text) ty a )
--- exp2AnfCompMulti (V a) f = either id  (error "mismatched anf arity simplification, DIE DIE DIE") . ((view _1) unRF f $ a)
--- exp2AnfCompMulti (ELit lit) f = \ ls -> LetNF Nothing Nothing (SharedLiteral lit)
---                                   (Scope $ (unRF f) (B Nothing) ls)
-
-
--- type RecFunTail b ty a =  Either (ANF ty a) (RecFun b ty a)
-
--- v in scope  and then f''= ( \ rest -> ___ (v : Rest))
--- -- \ (rest ''  ->   f'' (v : rest'' ))
--- newtype RecFun b ty  a = RF { unRF ::  (a -> RecFunTail b ty a
---                                , (Var b (ANF ty a))  --  > [a {-???-}]
---                                                    ->  RecFunTail b ty (Var b (ANF ty a))) }
---   deriving (Generic,Typeable)
+-- exp2AnfComp :: Exp ty a -> (a -> ANF ty a) -> ANF ty a
+-- exp2ANFComp (V a) f = f a
 
 {-
 what we roughly want to do is take
@@ -113,14 +87,14 @@ we simply use a function instead (within a continuation of course !)
 
 -}
 
-exp2anfRHS :: Exp ty a -> (AnfRHS ty a -> ANF ty a ) -> ANF ty a
-exp2anfRHS = undefined
+-- exp2anfRHS :: Exp ty a -> (AnfRHS ty a -> ANF ty a ) -> ANF ty a
+-- exp2anfRHS = undefined
 
-underScopeANF2Exp :: Scope b (Exp ty) a -> Scope b (ANF ty) a
-underScopeANF2Exp scp = Scope $ exp2ANF $ (fmap $ fmap exp2ANF)$ unscope scp
+-- underScopeANF2Exp :: Scope b (Exp ty) a -> Scope b (ANF ty) a
+-- underScopeANF2Exp scp = Scope $ exp2ANF $ (fmap $ fmap exp2ANF)$ unscope scp
 
-exp2ANFComp :: (Exp ty a) -> (a -> ANF ty a) -> ANF ty a
-exp2ANFComp e k = undefined
+-- exp2ANFComp :: (Exp ty a) -> (a -> ANF ty a) -> ANF ty a
+-- exp2ANFComp e k = undefined
 
 -- at runtime 'ConstrId' is mapped to a tag???
 newtype ConstrId  = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Typeable,Ord,Read)
@@ -138,10 +112,10 @@ data AnfRHS ty a = SharedLiteral !Literal -- we currently do not have any fixed 
                                             -- thunks and closure should
                                             -- record their free variables???
                  | AllocateClosure ![(Text,Type ty,RigModel)] -- arity >=0
-                                   (Simple.Scope Text (ANF ty)  a)  -- should we have global table of
+                                   (Scope Text (ANF ty)  a)  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
 
-                 | NonTailCallApp (AppANF ty a) -- control stack allocation; possibly heap allocation
+                 | NonTailCallApp  (AppANF ty a) -- control stack allocation; possibly heap allocation
 
 
    deriving (Ord,
@@ -191,7 +165,7 @@ instance Read2 AppANF
 
 data ANF ty a
     = ReturnNF  !a -- !(Atom ty a)
-    | LetNF (Maybe Text) (Maybe(Type ty, RigModel)) (AnfRHS ty a) (Simple.Scope (Maybe Text) (ANF ty) a)
+    | LetNF (Maybe Text) (Maybe(Type ty, RigModel)) (AnfRHS ty a) (Scope (Maybe Text) (ANF ty) a)
     -- | LetNFMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
     | TailCallANF (AppANF ty a)
     -- future thing will have | LetNFRec maybe?
@@ -229,8 +203,8 @@ instance Read2 ANF
 AUDIT: should we just be doing the too / from scope functions?
 
 -}
--- flattenUnderScope :: Scope b (ANF ty) (ANF ty a) -> Scope b (ANF ty) a
--- flattenUnderScope = Scope . fmap (fmap danvyANF) . unscope
+flattenUnderScope :: Scope b (ANF ty) (ANF ty a) -> Scope b (ANF ty) a
+flattenUnderScope = Scope . fmap (fmap danvyANF) . unscope
 
 
 
@@ -242,44 +216,44 @@ zoomToTailPosition f (LetNF mebeName mebeCut  rhs bod)  =   LetNF  mebeName mebe
                                           (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
 -- zoomToTailPosition f (LetNFMulti rhss bod) = LetNFMulti rhss
 --                     (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
---
--- danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
--- danvyANF (ReturnNF a) = a
--- danvyANF (TailCallANF app) = danvyTailCallANF app
--- danvyANF (LetNF rhs bod) = danvyRHS rhs (\r -> LetNF r $  flattenUnderScope bod)
---
--- danvyRHS :: (AnfRHS ty (ANF ty a)) ->(AnfRHS ty a -> ANF ty a) -> ANF ty a
--- danvyRHS (SharedLiteral l)  f =  f $ SharedLiteral l
--- danvyRHS (AllocateThunk expr) f = f $ AllocateThunk $ danvyANF expr
--- danvyRHS (AllocateClosure args scp) f = f $ AllocateClosure args (flattenUnderScope scp)
--- danvyRHS (NonTailCallApp app) f = danvyNotTailCallANF app  f
---
---
--- danvyExp2RhsANF :: (ANF ty a) -> ( a -> ANF ty a) -> ANF ty a
--- danvyExp2RhsANF = error "{ this is TERRRRIBLEEEEEEE }"
--- -- danvyExp2RhsANF (ReturnNF v) f = f v
--- -- danvyExp2RhsANF (TailCallANF app) f = danvyNotTailCallANF app (\ rhs -> LetNF rhs )
---
---
--- danvyTailCallANF :: (AppANF ty (ANF ty a)) {- } -> (AppANF ty a -> ANF ty a )-} -> ANF ty a
--- danvyTailCallANF (EnterThunk (ReturnNF x)) =  LetNF (NonTailCallApp (EnterThunk x))
---                                                   (Scope  $ ReturnNF(B ()))
--- danvyTailCallANF (EnterThunk (TailCallANF app)) =
---                                             LetNF
---                                               (NonTailCallApp app)
---                                               (Scope $ (
---                                                 ( LetNF (NonTailCallApp (EnterThunk (B ())))
---                                                       (Scope $ ReturnNF (B () ))
---                                                       )))
--- danvyTailCallANF (EnterThunk lt@(LetNF _ _))=
---           zoomToTailPosition (\ x -> LetNF (NonTailCallApp $ EnterThunk x )
---                                             (Scope $ ReturnNF (B()))
---                                           )
---                               lt
---
--- danvyNotTailCallANF :: (AppANF ty (ANF ty a)) -> ( AnfRHS ty a -> ANF ty a) -> ANF ty a
--- danvyNotTailCallANF (EnterThunk a) f = danvyExp2RhsANF a (\ var -> f $ NonTailCallApp
---                                                                      $ EnterThunk var  )
+
+danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
+danvyANF (ReturnNF a) = a
+danvyANF (TailCallANF app) = danvyTailCallANF app
+danvyANF (LetNF mname mtype rhs bod) = danvyRHS rhs (\r -> LetNF mname mtype r $  flattenUnderScope bod)
+
+danvyRHS :: (AnfRHS ty (ANF ty a)) ->(AnfRHS ty a -> ANF ty a) -> ANF ty a
+danvyRHS (SharedLiteral l)  f =  f $ SharedLiteral l
+danvyRHS (AllocateThunk expr) f = f $ AllocateThunk $ danvyANF expr
+danvyRHS (AllocateClosure args scp) f = f $ AllocateClosure args (flattenUnderScope scp)
+danvyRHS (NonTailCallApp app) f = danvyNotTailCallANF app  f
+
+
+danvyExp2RhsANF :: (ANF ty a) -> ( a -> ANF ty a) -> ANF ty a
+danvyExp2RhsANF = error "{ this is TERRRRIBLEEEEEEE }"
+-- danvyExp2RhsANF (ReturnNF v) f = f v
+-- danvyExp2RhsANF (TailCallANF app) f = danvyNotTailCallANF app (\ rhs -> LetNF rhs )
+
+
+danvyTailCallANF :: (AppANF ty (ANF ty a)) {- } -> (AppANF ty a -> ANF ty a )-} -> ANF ty a
+danvyTailCallANF (EnterThunk (ReturnNF x)) =  LetNF  Nothing Nothing (NonTailCallApp (EnterThunk x))
+                                                  (Scope  $ ReturnNF(B Nothing ))
+danvyTailCallANF (EnterThunk (TailCallANF app)) =
+                                            LetNF Nothing Nothing
+                                              (NonTailCallApp app)
+                                              (Scope $ (
+                                                ( LetNF Nothing Nothing (NonTailCallApp (EnterThunk (B Nothing)))
+                                                      (Scope $ ReturnNF (B Nothing ))
+                                                      )))
+danvyTailCallANF (EnterThunk lt@(LetNF _ _ _ _))= undefined
+          -- zoomToTailPosition (\ x -> LetNF Nothing Nothing (NonTailCallApp $ EnterThunk x )
+          --                                   (Scope $ ReturnNF (B()))
+          --                                 )
+          --                     lt
+
+danvyNotTailCallANF :: (AppANF ty (ANF ty a)) -> ( AnfRHS ty a -> ANF ty a) -> ANF ty a
+danvyNotTailCallANF (EnterThunk a) f = danvyExp2RhsANF a (\ var -> f $ NonTailCallApp
+                                                                     $ EnterThunk var  )
 {- traverse from right to left using Reverse or Backwards applicative
 over State, accumulating continuations of the inner scopes that are the
 later evaluation steps
@@ -290,9 +264,7 @@ instance Applicative (ANF ty) where
   (<*>) = ap
 
 instance Monad (ANF ty) where
-  (ReturnNF var) >>= f = f var
-
-
+  m >>= f =  danvyANF $ fmap f m
  {- (afun :@@ aargs) >>= f =
         LetNF subst'dArgs :: forall a b .  (a -> ANF ty b) -> [Atom ty a]-> [ANF ty b]
             subst'dArgs  g  ls = fmap (unVar . fmap g) ls

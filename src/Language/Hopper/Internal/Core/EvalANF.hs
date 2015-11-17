@@ -23,16 +23,14 @@ import Bound
 
 import Data.Text (Text)
 
-import  Control.Monad.Free
+-- import  Control.Monad.Free
 import Control.Lens
 import qualified Data.Vector as V
 
 --- This model implementation of the heap is kinda a hack --- Namely that
 --- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
-data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (HeapVal ty )) }
-                            deriving (
-                              -- Data
-                                      Typeable
+data Heap ty = Heap {_minMaxFreshRef :: !Ref, _theHeap :: !(Map.Map Ref (HeapVal ty )) }
+                            deriving (  Typeable
                                       ,Show
                                       ,Generic
                                       ,Eq
@@ -175,7 +173,7 @@ evalRhsANF stk (AllocateThunk expr) = do freshRef <- heapAllocate (ThunkF expr) 
 evalRhsANF stk (AllocateClosure argLs scp) =
       do  freshRef <- heapAllocate (DirectClosureF $ MkClosure ( map (ArityBoxed . view _1)  argLs) scp)
           returnIntoStack stk freshRef
-evalRhsANF stk (ConstrApp _ constrid argsLS) =
+evalRhsANF stk (ConstrApp _ _ constrid argsLS) =
         do  freshRef <- heapAllocate (ConstructorF (Tag $  unConstrId  constrid) $ WrappedVector $ V.fromList argsLS)
             returnIntoStack stk freshRef
 
@@ -186,21 +184,21 @@ applyANF stk  (EnterThunk thunkRef) =
                   case thunkOrV of
                     (ThunkF expr) -> do unsafeHeapUpdate directRef BlackHoleF
                                         evalANF (ThunkUpdate directRef stk) expr
-                    (IndirectionF wat) ->
+                    (IndirectionF _wat) ->
                         error "impossible reference, this is a failure of transitive lookup"
                     (BlackHoleF) -> error "impossible BlackHoleF in applyANF"
                     (ConstructorF _ _ ) -> returnIntoStack stk directRef
                     (DirectClosureF _) -> returnIntoStack stk directRef
                     (VLitF _) -> returnIntoStack stk directRef
 applyANF stk (FunApp funRef lsArgsRef) =
-      do  (closureOrDie,directRef) <- heapRefLookupTransitive funRef
+      do  (closureOrDie,_directRef) <- heapRefLookupTransitive funRef
           case closureOrDie of
               (DirectClosureF (MkClosure args scp))
                   | length args == length lsArgsRef ->
                     evalANF stk  $ flip instantiate  scp ((ReturnNF .) $ (Map.!) $ Map.fromList $ zip (map _extractArityInfo args) lsArgsRef)
                   | otherwise -> error $ "arity mismatch for closure in apply position"
               _ -> error "something thats not a closure was invoked in apply position, DIE"
-applyANF stk (PrimApp nm args) = applyPrim stk nm args
+applyANF stk (PrimApp _  nm args) = applyPrim stk nm args
 
 applyPrim :: StrictContext ty Ref -> Text -> [Ref] ->  HeapStepCounterM ty (HeapVal ty)
 applyPrim = error "this isn't defined yet applyPrim "
