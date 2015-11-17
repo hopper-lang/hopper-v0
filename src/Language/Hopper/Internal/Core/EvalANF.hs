@@ -201,7 +201,7 @@ applyANF stk (FunApp funRef lsArgsRef) =
 applyANF stk (PrimApp _  nm args) = applyPrim stk nm args
 
 applyPrim :: StrictContext ty Ref -> Text -> [Ref] ->  HeapStepCounterM ty (HeapVal ty)
-applyPrim = error "this isn't defined yet applyPrim "
+applyPrim = error "for demoware, we need partially applied prim vals on the heap "
 
 returnIntoStack :: StrictContext ty Ref -> Ref -> HeapStepCounterM ty  (HeapVal ty)
 returnIntoStack SCEmpty ref =  maybe (error "invariant failure, die die die die") id <$>  heapLookup ref

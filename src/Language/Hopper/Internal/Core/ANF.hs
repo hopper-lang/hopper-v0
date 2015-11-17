@@ -7,7 +7,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 -- {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, LambdaCase #-}
 
 module Language.Hopper.Internal.Core.ANF  where
 
@@ -17,14 +17,14 @@ import Data.Text (Text)
 import Data.Data
 -- import Data.Word (Word64)
 
-import GHC.Generics
+-- import GHC.Generics
 import  Control.Monad
 import Prelude.Extras
-import Bound
-import Language.Hopper.Internal.Core.Term
-import qualified Bound.Scope.Simple as Simple
-
-import Control.Lens (view,over,_1,_2)
+import Bound hiding (Scope,unscope)
+-- import Language.Hopper.Internal.Core.Term
+import qualified   Bound.Scope.Simple as Simple
+import Bound.Scope.Simple (Scope(..))
+-- import Control.Lens (view,over,_1,_2)
 
 
 
@@ -112,7 +112,7 @@ data AnfRHS ty a = SharedLiteral !Literal -- we currently do not have any fixed 
                                             -- thunks and closure should
                                             -- record their free variables???
                  | AllocateClosure ![(Text,Type ty,RigModel)] -- arity >=0
-                                   (Scope Text (ANF ty)  a)  -- should we have global table of
+                                   (Simple.Scope Text (ANF ty)  a)  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
 
                  | NonTailCallApp  (AppANF ty a) -- control stack allocation; possibly heap allocation
@@ -165,7 +165,7 @@ instance Read2 AppANF
 
 data ANF ty a
     = ReturnNF  !a -- !(Atom ty a)
-    | LetNF (Maybe Text) (Maybe(Type ty, RigModel)) (AnfRHS ty a) (Scope (Maybe Text) (ANF ty) a)
+    | LetNF (Maybe Text) (Maybe(Type ty, RigModel)) (AnfRHS ty a) (Simple.Scope (Maybe Text) (ANF ty) a)
     -- | LetNFMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
     | TailCallANF (AppANF ty a)
     -- future thing will have | LetNFRec maybe?
@@ -219,14 +219,14 @@ zoomToTailPosition f (LetNF mebeName mebeCut  rhs bod)  =   LetNF  mebeName mebe
 
 danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
 danvyANF (ReturnNF a) = a
-danvyANF (TailCallANF app) = danvyTailCallANF app
+danvyANF (TailCallANF app) = danvyTailCallAppANF app
 danvyANF (LetNF mname mtype rhs bod) = danvyRHS rhs (\r -> LetNF mname mtype r $  flattenUnderScope bod)
 
-danvyRHS :: (AnfRHS ty (ANF ty a)) ->(AnfRHS ty a -> ANF ty a) -> ANF ty a
+danvyRHS :: (AnfRHS ty (ANF ty a)) -> (AnfRHS ty a -> ANF ty a) -> ANF ty a
 danvyRHS (SharedLiteral l)  f =  f $ SharedLiteral l
 danvyRHS (AllocateThunk expr) f = f $ AllocateThunk $ danvyANF expr
 danvyRHS (AllocateClosure args scp) f = f $ AllocateClosure args (flattenUnderScope scp)
-danvyRHS (NonTailCallApp app) f = danvyNotTailCallANF app  f
+-- danvyRHS (NonTailCallApp app) f = danvyNotTailCallANF app  f
 
 
 danvyExp2RhsANF :: (ANF ty a) -> ( a -> ANF ty a) -> ANF ty a
@@ -235,25 +235,44 @@ danvyExp2RhsANF = error "{ this is TERRRRIBLEEEEEEE }"
 -- danvyExp2RhsANF (TailCallANF app) f = danvyNotTailCallANF app (\ rhs -> LetNF rhs )
 
 
-danvyTailCallANF :: (AppANF ty (ANF ty a)) {- } -> (AppANF ty a -> ANF ty a )-} -> ANF ty a
-danvyTailCallANF (EnterThunk (ReturnNF x)) =  LetNF  Nothing Nothing (NonTailCallApp (EnterThunk x))
+danvyTailCallAppANF :: (AppANF ty (ANF ty a)) {- } -> (AppANF ty a -> ANF ty a )-} -> ANF ty a
+danvyTailCallAppANF (EnterThunk (ReturnNF x)) =  LetNF  Nothing Nothing (NonTailCallApp (EnterThunk x))
                                                   (Scope  $ ReturnNF(B Nothing ))
-danvyTailCallANF (EnterThunk (TailCallANF app)) =
+danvyTailCallAppANF (EnterThunk (TailCallANF app)) =
                                             LetNF Nothing Nothing
                                               (NonTailCallApp app)
                                               (Scope $ (
                                                 ( LetNF Nothing Nothing (NonTailCallApp (EnterThunk (B Nothing)))
                                                       (Scope $ ReturnNF (B Nothing ))
                                                       )))
-danvyTailCallANF (EnterThunk lt@(LetNF _ _ _ _))= undefined
-          -- zoomToTailPosition (\ x -> LetNF Nothing Nothing (NonTailCallApp $ EnterThunk x )
-          --                                   (Scope $ ReturnNF (B()))
-          --                                 )
-          --                     lt
+danvyTailCallAppANF (EnterThunk lt@(LetNF _ _ _ _))=
+          zoomToTailPosition (\ x -> LetNF Nothing Nothing (NonTailCallApp $ EnterThunk x )
+                                            (Scope $ ReturnNF (B Nothing ))
+                                          )
+                              lt
+danvyTailCallAppANF (PrimApp  a nm args)
+      | all (\case {(ReturnNF _) -> True ; _ -> False }) args =
+                             TailCallANF $   PrimApp  ((\(ReturnNF x) -> x ) a) nm (map (\(ReturnNF x)-> x) args)
+      | otherwise = error "demoware FAILURE, will be fixed in next iteration, primp apps must be saturated"
+      --- this is our base case for the binary app hack
+danvyTailCallAppANF (FunApp (ReturnNF f) [ReturnNF v])  = TailCallANF $ FunApp f [v]
+danvyTailCallAppANF (FunApp (ReturnNF f) []) =  TailCallANF $ FunApp f []
+danvyTailCallAppANF (FunApp f  (h:t)) =
+    danvyExp2RhsANF f (\ fv -> ( danvyExp2RhsANF h   (\v  ->
+              LetNF Nothing Nothing (NonTailCallApp (FunApp fv [v])) $
+                    Scope $
+                        danvyTailCallAppANF
+                          (FunApp (ReturnNF $ B Nothing)
+                                   _whoam-- ( map (fmap F) t )
+                                  ) )))
 
-danvyNotTailCallANF :: (AppANF ty (ANF ty a)) -> ( AnfRHS ty a -> ANF ty a) -> ANF ty a
-danvyNotTailCallANF (EnterThunk a) f = danvyExp2RhsANF a (\ var -> f $ NonTailCallApp
-                                                                     $ EnterThunk var  )
+
+
+danvyNotTailCallANF :: (AppANF ty (ANF ty a)) -> ( a -> ANF ty a) -> ANF ty a
+danvyNotTailCallANF (EnterThunk a) f =  error "dskfjdklfj"-- danvyExp2RhsANF a (\ var -> f $ NonTailCallApp
+                                                                     -- $ EnterThunk var  )
+
+
 {- traverse from right to left using Reverse or Backwards applicative
 over State, accumulating continuations of the inner scopes that are the
 later evaluation steps
