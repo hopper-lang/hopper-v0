@@ -61,6 +61,23 @@ exp2ANF (Let mname mtyp rhsExp  scpBod) = exp2anfRHS rhsExp
                                             (\rhsANF -> LetNF mname mtyp rhsANF  $ underScopeANF2Exp scpBod)
 exp2ANF (funExp :@ argExps) = error "dangerous territory here :) "
 
+{-
+what we roughly want to do is take
+f a1 ... am and transform it into
+n1 = f a1
+n2 = n1 a2
+...
+n(i+1) = ni a(i+1)
+...
+
+and then flatten out again at the end by tracking these
+let applications are being distinguished from normal let bindings
+
+now, the main insight / trick is to ... instead of having a distinguished form of let,
+we simply use a function instead (within a continuation of course !)
+
+-}
+
 exp2anfRHS :: Exp ty a -> (AnfRHS ty a -> ANF ty a ) -> ANF ty a
 exp2anfRHS = undefined
 
