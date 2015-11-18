@@ -30,7 +30,7 @@ import GHC.Generics (Generic)
 -- import  Control.Monad.Trans.State.Strict (StateT(..))
 --import qualified Control.Monad.Trans.State.Strict as State
 
-import  Control.Monad.Free
+--import  Control.Monad.Free
 
 import Language.Hopper.Internal.Core.ANF
 import Language.Hopper.Internal.Core.Literal
@@ -80,14 +80,14 @@ newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Data,
 -- type ValRec  ty   = Free (ValueF  ty Ref) Ref
 
 
-type HeapVal ty   =  ValueF ty Ref --  ValueF ty Ref (ValRec ty)
+type HeapVal ast  ty   =  ValueF ast ty Ref --  ValueF ty Ref (ValRec ty)
 
-data ValueF ty  v =    VLitF !Literal
+data ValueF ast ty  v =    VLitF !Literal
               | ConstructorF  !Tag  (WrappedVector v)
               | ThunkF (ANF  ty v )
               --  should this be a heap ref to
               -- closure to have the right sharing ?
-              | DirectClosureF (Closure ty  v) -- heap ref?
+              | DirectClosureF (Closure ast ty  v) -- heap ref?
               | BlackHoleF
               | IndirectionF v
               --- in the types are calling conventions paper,
@@ -102,15 +102,15 @@ data ValueF ty  v =    VLitF !Literal
       ,Foldable
       ,Traversable
       ,Generic
-      ,Data
+      --,Data
       ,Eq
       ,Ord
       ,Show
       ,Read
-      ,Eq1
-      ,Ord1
-      ,Show1
-      ,Read1
+      --,Eq1
+      --,Ord1
+      --,Show1
+      --,Read1
       )
 
 newtype WrappedVector a = WrappedVector { unWrappedVector :: V.Vector a }
@@ -126,5 +126,6 @@ data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of ar
  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 --- | 'Closure' may need some rethinking ... later
-data Closure  ty  a = MkClosure ![Arity] !(Scope Text (ANF ty) a)
-  deriving (Eq,Ord,Show,Read,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
+--- they're kinda the erasure of a lambda ... for now
+data Closure ast ty  a = MkClosure ![Arity] !(Scope Text (ast ty) a)
+  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Generic)

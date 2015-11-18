@@ -20,10 +20,10 @@ import Data.Data
 -- import GHC.Generics
 import  Control.Monad
 import Prelude.Extras
-import Bound hiding (Scope,unscope)
+-- import Bound hiding (Scope,unscope)
 -- import Language.Hopper.Internal.Core.Term
 import qualified   Bound.Scope.Simple as Simple
-import Bound.Scope.Simple (Scope(..))
+-- import Bound.Scope.Simple (Scope(..))
 -- import Control.Lens (view,over,_1,_2)
 
 
@@ -203,74 +203,74 @@ instance Read2 ANF
 AUDIT: should we just be doing the too / from scope functions?
 
 -}
-flattenUnderScope :: Scope b (ANF ty) (ANF ty a) -> Scope b (ANF ty) a
-flattenUnderScope = Scope . fmap (fmap danvyANF) . unscope
+--flattenUnderScope :: Scope b (ANF ty) (ANF ty a) -> Scope b (ANF ty) a
+--flattenUnderScope = Scope . fmap (fmap danvyANF) . unscope
 
 
 
-zoomToTailPosition :: forall a ty . (forall c . c -> ANF ty c) ->  ANF ty a -> ANF ty a
-zoomToTailPosition f (ReturnNF a)  = f a
-zoomToTailPosition f (TailCallANF app)  = LetNF Nothing Nothing (NonTailCallApp app)
-                                           (Scope $ f (B Nothing ))
-zoomToTailPosition f (LetNF mebeName mebeCut  rhs bod)  =   LetNF  mebeName mebeCut rhs
-                                          (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
--- zoomToTailPosition f (LetNFMulti rhss bod) = LetNFMulti rhss
---                     (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
+--zoomToTailPosition :: forall a ty . (forall c . c -> ANF ty c) ->  ANF ty a -> ANF ty a
+--zoomToTailPosition f (ReturnNF a)  = f a
+--zoomToTailPosition f (TailCallANF app)  = LetNF Nothing Nothing (NonTailCallApp app)
+--                                           (Scope $ f (B Nothing ))
+--zoomToTailPosition f (LetNF mebeName mebeCut  rhs bod)  =   LetNF  mebeName mebeCut rhs
+--                                          (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
+---- zoomToTailPosition f (LetNFMulti rhss bod) = LetNFMulti rhss
+----                     (Scope $ (fmap $ fmap $ zoomToTailPosition f) $ unscope bod)
 
-danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
-danvyANF (ReturnNF a) = a
-danvyANF (TailCallANF app) = danvyTailCallAppANF app
-danvyANF (LetNF mname mtype rhs bod) = danvyRHS rhs (\r -> LetNF mname mtype r $  flattenUnderScope bod)
+--danvyANF :: (ANF ty (ANF ty a)) -> ANF ty a
+--danvyANF (ReturnNF a) = a
+--danvyANF (TailCallANF app) = danvyTailCallAppANF app
+--danvyANF (LetNF mname mtype rhs bod) = danvyRHS rhs (\r -> LetNF mname mtype r $  flattenUnderScope bod)
 
-danvyRHS :: (AnfRHS ty (ANF ty a)) -> (AnfRHS ty a -> ANF ty a) -> ANF ty a
-danvyRHS (SharedLiteral l)  f =  f $ SharedLiteral l
-danvyRHS (AllocateThunk expr) f = f $ AllocateThunk $ danvyANF expr
-danvyRHS (AllocateClosure args scp) f = f $ AllocateClosure args (flattenUnderScope scp)
--- danvyRHS (NonTailCallApp app) f = danvyNotTailCallANF app  f
-
-
-danvyExp2RhsANF :: (ANF ty a) -> ( a -> ANF ty a) -> ANF ty a
-danvyExp2RhsANF = error "{ this is TERRRRIBLEEEEEEE }"
--- danvyExp2RhsANF (ReturnNF v) f = f v
--- danvyExp2RhsANF (TailCallANF app) f = danvyNotTailCallANF app (\ rhs -> LetNF rhs )
+--danvyRHS :: (AnfRHS ty (ANF ty a)) -> (AnfRHS ty a -> ANF ty a) -> ANF ty a
+--danvyRHS (SharedLiteral l)  f =  f $ SharedLiteral l
+--danvyRHS (AllocateThunk expr) f = f $ AllocateThunk $ danvyANF expr
+--danvyRHS (AllocateClosure args scp) f = f $ AllocateClosure args (flattenUnderScope scp)
+---- danvyRHS (NonTailCallApp app) f = danvyNotTailCallANF app  f
 
 
-danvyTailCallAppANF :: (AppANF ty (ANF ty a)) {- } -> (AppANF ty a -> ANF ty a )-} -> ANF ty a
-danvyTailCallAppANF (EnterThunk (ReturnNF x)) =  LetNF  Nothing Nothing (NonTailCallApp (EnterThunk x))
-                                                  (Scope  $ ReturnNF(B Nothing ))
-danvyTailCallAppANF (EnterThunk (TailCallANF app)) =
-                                            LetNF Nothing Nothing
-                                              (NonTailCallApp app)
-                                              (Scope $ (
-                                                ( LetNF Nothing Nothing (NonTailCallApp (EnterThunk (B Nothing)))
-                                                      (Scope $ ReturnNF (B Nothing ))
-                                                      )))
-danvyTailCallAppANF (EnterThunk lt@(LetNF _ _ _ _))=
-          zoomToTailPosition (\ x -> LetNF Nothing Nothing (NonTailCallApp $ EnterThunk x )
-                                            (Scope $ ReturnNF (B Nothing ))
-                                          )
-                              lt
-danvyTailCallAppANF (PrimApp  a nm args)
-      | all (\case {(ReturnNF _) -> True ; _ -> False }) args =
-                             TailCallANF $   PrimApp  ((\(ReturnNF x) -> x ) a) nm (map (\(ReturnNF x)-> x) args)
-      | otherwise = error "demoware FAILURE, will be fixed in next iteration, primp apps must be saturated"
-      --- this is our base case for the binary app hack
-danvyTailCallAppANF (FunApp (ReturnNF f) [ReturnNF v])  = TailCallANF $ FunApp f [v]
-danvyTailCallAppANF (FunApp (ReturnNF f) []) =  TailCallANF $ FunApp f []
-danvyTailCallAppANF (FunApp f  (h:t)) =
-    danvyExp2RhsANF f (\ fv -> ( danvyExp2RhsANF h   (\v  ->
-              LetNF Nothing Nothing (NonTailCallApp (FunApp fv [v])) $
-                    Scope $
-                        danvyTailCallAppANF
-                          (FunApp (ReturnNF $ B Nothing)
-                                   _whoam-- ( map (fmap F) t )
-                                  ) )))
+--danvyExp2RhsANF :: (ANF ty a) -> ( a -> ANF ty a) -> ANF ty a
+--danvyExp2RhsANF = error "{ this is TERRRRIBLEEEEEEE }"
+---- danvyExp2RhsANF (ReturnNF v) f = f v
+---- danvyExp2RhsANF (TailCallANF app) f = danvyNotTailCallANF app (\ rhs -> LetNF rhs )
+
+
+--danvyTailCallAppANF :: (AppANF ty (ANF ty a)) {- } -> (AppANF ty a -> ANF ty a )-} -> ANF ty a
+--danvyTailCallAppANF (EnterThunk (ReturnNF x)) =  LetNF  Nothing Nothing (NonTailCallApp (EnterThunk x))
+--                                                  (Scope  $ ReturnNF(B Nothing ))
+--danvyTailCallAppANF (EnterThunk (TailCallANF app)) =
+--                                            LetNF Nothing Nothing
+--                                              (NonTailCallApp app)
+--                                              (Scope $ (
+--                                                ( LetNF Nothing Nothing (NonTailCallApp (EnterThunk (B Nothing)))
+--                                                      (Scope $ ReturnNF (B Nothing ))
+--                                                      )))
+--danvyTailCallAppANF (EnterThunk lt@(LetNF _ _ _ _))=
+--          zoomToTailPosition (\ x -> LetNF Nothing Nothing (NonTailCallApp $ EnterThunk x )
+--                                            (Scope $ ReturnNF (B Nothing ))
+--                                          )
+--                              lt
+--danvyTailCallAppANF (PrimApp  a nm args)
+--      | all (\case {(ReturnNF _) -> True ; _ -> False }) args =
+--                             TailCallANF $   PrimApp  ((\(ReturnNF x) -> x ) a) nm (map (\(ReturnNF x)-> x) args)
+--      | otherwise = error "demoware FAILURE, will be fixed in next iteration, primp apps must be saturated"
+--      --- this is our base case for the binary app hack
+--danvyTailCallAppANF (FunApp (ReturnNF f) [ReturnNF v])  = TailCallANF $ FunApp f [v]
+--danvyTailCallAppANF (FunApp (ReturnNF f) []) =  TailCallANF $ FunApp f []
+--danvyTailCallAppANF (FunApp f  (h:t)) =
+--    danvyExp2RhsANF f (\ fv -> ( danvyExp2RhsANF h   (\v  ->
+--              LetNF Nothing Nothing (NonTailCallApp (FunApp fv [v])) $
+--                    Scope $
+--                        danvyTailCallAppANF
+--                          (FunApp (ReturnNF $ B Nothing)
+--                                   _whoam-- ( map (fmap F) t )
+--                                  ) )))
 
 
 
-danvyNotTailCallANF :: (AppANF ty (ANF ty a)) -> ( a -> ANF ty a) -> ANF ty a
-danvyNotTailCallANF (EnterThunk a) f =  error "dskfjdklfj"-- danvyExp2RhsANF a (\ var -> f $ NonTailCallApp
-                                                                     -- $ EnterThunk var  )
+--danvyNotTailCallANF :: (AppANF ty (ANF ty a)) -> ( a -> ANF ty a) -> ANF ty a
+--danvyNotTailCallANF (EnterThunk a) f =  error "dskfjdklfj"-- danvyExp2RhsANF a (\ var -> f $ NonTailCallApp
+--                                                                     -- $ EnterThunk var  )
 
 
 {- traverse from right to left using Reverse or Backwards applicative
@@ -283,7 +283,7 @@ instance Applicative (ANF ty) where
   (<*>) = ap
 
 instance Monad (ANF ty) where
-  m >>= f =  danvyANF $ fmap f m
+  m >>= f =  (error "womp womp womp") $ fmap f m
  {- (afun :@@ aargs) >>= f =
         LetNF subst'dArgs :: forall a b .  (a -> ANF ty b) -> [Atom ty a]-> [ANF ty b]
             subst'dArgs  g  ls = fmap (unVar . fmap g) ls

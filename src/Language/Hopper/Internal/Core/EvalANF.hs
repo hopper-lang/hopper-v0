@@ -19,8 +19,8 @@ import Numeric.Natural
 import Data.Typeable
 import Control.Monad.Trans.State.Strict as State
 
-import Bound
-
+import Bound hiding (Scope)
+import qualified Bound.Scope.Simple as Simple
 import Data.Text (Text)
 
 -- import  Control.Monad.Free
@@ -29,16 +29,13 @@ import qualified Data.Vector as V
 
 --- This model implementation of the heap is kinda a hack --- Namely that
 --- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
-data Heap ty = Heap {_minMaxFreshRef :: !Ref, _theHeap :: !(Map.Map Ref (HeapVal ty )) }
-                            deriving (  Typeable
-                                      ,Show
+data Heap ty = Heap { _minMaxFreshRef :: !Ref,
+              _theHeap :: !(Map.Map Ref (HeapVal ty ))
+                 }
+              deriving (  Typeable,Show
                                       ,Generic
                                       ,Eq
-                                      ,Ord
-                                      --,Foldable
-                                      --,Traversable
-                                      --,Functor
-                                      )
+                                      ,Ord   )
 
 heapRefLookup :: Heap ty  -> Ref -> Maybe (HeapVal ty )
 heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
@@ -139,7 +136,7 @@ runEmptyHeap ct (HSCM m) = State.runState m (CounterAndHeap ct $ Heap (Ref 1) Ma
 -- this is the stack in types are calling conventions paper
 data StrictContext  ty a  = SCEmpty
                         | LetContext
-                            (Scope (Maybe Text) (ANF ty) a)
+                            (Simple.Scope (Maybe Text) (ANF ty) a)
                             (StrictContext ty a)
                         | ThunkUpdate !a (StrictContext ty a)
    deriving (Typeable
@@ -206,4 +203,4 @@ applyPrim = error "for demoware, we need partially applied prim vals on the heap
 returnIntoStack :: StrictContext ty Ref -> Ref -> HeapStepCounterM ty  (HeapVal ty)
 returnIntoStack SCEmpty ref =  maybe (error "invariant failure, die die die die") id <$>  heapLookup ref
 returnIntoStack (ThunkUpdate target stk) ref = do  unsafeHeapUpdate target (IndirectionF ref) ; returnIntoStack stk ref
-returnIntoStack (LetContext  scp stk) ref = evalANF stk (instantiate1 (ReturnNF ref) scp)
+returnIntoStack (LetContext  scp stk) ref = evalANF stk (Simple.instantiate1 (ReturnNF ref) scp)
