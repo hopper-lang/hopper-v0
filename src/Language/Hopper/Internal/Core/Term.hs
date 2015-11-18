@@ -30,6 +30,8 @@ data Exp ty a
   | Delay (Exp ty a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
                       --- note: may need to change their semantics later?!
   | Exp ty a :@ [Exp ty a]
+  | PrimApp  Text [Exp ty a] -- not sure if this is needed, but lets go with it for now
+
   | Lam [(Text,Type ty,RigModel)]
         (Scope Text (Exp ty) a)
   | Let (Maybe Text) (Maybe (Type ty,RigModel))  (Exp ty a)  (Scope (Maybe Text) (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
@@ -57,6 +59,7 @@ instance Traversable (Exp ty) where
   -- traverse f (PrimApp nm ls) = PrimApp nm <$> traverse f ls
   traverse f (Force e) = Force <$> traverse f e
   traverse f (Delay e) = Delay <$> traverse f e
+  traverse f (PrimApp nm args) = PrimApp nm <$> traverse (traverse f) args
   traverse f (x :@ ys)   = (:@) <$> traverse f x <*> traverse (traverse f) ys
   traverse f (Lam t e)    = Lam  t <$> traverse f e
   traverse f (Let mname mtype  bs b) = Let  mname mtype <$>  (traverse f) bs <*> traverse f b
@@ -70,5 +73,6 @@ instance Monad (Exp ty) where
   Force e     >>= f = Force $ e >>= f
   ELit e      >>= _f = ELit e -- this could also safely be a coerce?
   (x :@ y)    >>= f = (x >>= f) :@ (map (>>= f)  y )
+  (PrimApp name args) >>= f = PrimApp name (map (>>= f) args )
   Lam t  e    >>= f = Lam t (e >>>= f)
   Let mname mtype bs  b >>= f = Let mname mtype (  bs >>= f)  (b >>>= f)

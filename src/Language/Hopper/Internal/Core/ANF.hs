@@ -96,8 +96,7 @@ we simply use a function instead (within a continuation of course !)
 -- exp2ANFComp :: (Exp ty a) -> (a -> ANF ty a) -> ANF ty a
 -- exp2ANFComp e k = undefined
 
--- at runtime 'ConstrId' is mapped to a tag???
-newtype ConstrId  = ConstrId { unConstrId :: Text } deriving (Eq, Show,Data,Typeable,Ord,Read)
+
 
 -- | the right hand side of a LetNF, aka 'AnfRHS' is the point where heap allocation of thunks happens
 -- the only other

@@ -8,8 +8,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module Language.Hopper.Internal.Core.EvalANF
-    -- (
-    -- )
+
     where
 import Language.Hopper.Internal.Core.ANF
 import Language.Hopper.Internal.Core.Value
@@ -27,22 +26,26 @@ import Data.Text (Text)
 import Control.Lens
 import qualified Data.Vector as V
 
---- This model implementation of the heap is kinda a hack --- Namely that
---- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
-data Heap ty = Heap { _minMaxFreshRef :: !Ref,
-              _theHeap :: !(Map.Map Ref (HeapVal ty ))
-                 }
-              deriving (  Typeable,Show
-                                      ,Generic
-                                      ,Eq
-                                      ,Ord   )
+
+----- This model implementation of the heap is kinda a hack --- Namely that
+----- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
+data Heap ty = Heap { _minMaxFreshRef :: !Ref ,
+                       _theHeap :: !(Map.Map Ref (HeapVal ty ))  }
+              deriving (Typeable
+                        ,Show
+                        ,Generic
+                        ,Eq
+                        ,Ord   )
+
 
 heapRefLookup :: Heap ty  -> Ref -> Maybe (HeapVal ty )
 heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
 
 
--- this
-heapRefUpdate :: Ref -> HeapVal ty -> Heap ty -> Heap ty
+
+
+
+heapRefUpdate:: Ref -> HeapVal ty -> Heap ty -> Heap ty
 heapRefUpdate ref val (Heap ct mp)
         | ref < ct = Heap ct $ Map.insert ref val mp
         | otherwise = error $ "impossible heap ref greater than heap max " ++ show ref

@@ -8,8 +8,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module Language.Hopper.Internal.Core.Heap
-    -- (
-    -- )
+
     where
 --import Language.Hopper.Internal.Core.ANF
 import Language.Hopper.Internal.Core.Value
