@@ -76,3 +76,38 @@ instance Monad (Exp ty) where
   (PrimApp name args) >>= f = PrimApp name (map (>>= f) args )
   Lam t  e    >>= f = Lam t (e >>>= f)
   Let mname mtype bs  b >>= f = Let mname mtype (  bs >>= f)  (b >>>= f)
+
+-- Smart constructors
+
+type DummyType = Int
+
+abstract' :: (Eq b, Monad f) => [b] -> f b -> Scope b f b
+abstract' vs b = abstract (\v' -> if v' `elem` vs
+                                    then Just v'
+                                    else Nothing)
+                          b
+
+lam :: [Text] -> Exp DummyType Text -> Exp DummyType Text
+lam vs b = Lam (zipWith (\v n -> (v, TVar n, Omega)) vs [0..])
+               (abstract' vs b)
+
+-- | A smart constructor for Lam with one variable
+--
+-- >>> lam1 "y" (lam1 "x" (V "x" :@ [V "y"]))
+-- Lam [("y",TVar 0,Omega)]
+--     (Scope (Lam [("x",TVar 0,Omega)]
+--            (Scope (V (B "x") :@ [V (F (V (B "y")))]))))
+lam1 :: Text -> Exp DummyType Text -> Exp DummyType Text
+lam1 v b = lam [v] b
+
+let_ :: Text -> Exp DummyType Text -> Exp DummyType Text -> Exp DummyType Text
+let_ v rhs bod = Let (Just v)
+                     (Just (TVar 0, Omega))
+                     rhs
+                     (abstract (\var -> if var == v
+                                        then Just (Just v)
+                                        else Nothing)
+                               bod)
+
+callPrim :: Text -> [Exp ty a] -> Exp ty a
+callPrim name = PrimApp (PrimopId name)
