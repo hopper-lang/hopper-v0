@@ -14,16 +14,17 @@ import Language.Hopper.Internal.Core.Term
 import Language.Hopper.Internal.Core.Value
 import Language.Hopper.Internal.Core.Heap
 import Language.Hopper.Internal.Core.Literal
--- import qualified Data.Map as Map
+import qualified Data.Map as Map
 import GHC.Generics
 -- import Numeric.Natural
 import Data.Text (Text)
 import Data.Typeable
 import Data.Data
-
+import Control.Lens
 
 data ExpContext  ty a  = SCEmpty
                         | LetContext
+                            (Maybe Text) -- we're not currently using / needing the variable name here
                             (Scope (Maybe Text) (Exp ty) a)
                             (ExpContext ty a)
                         | ThunkUpdate !a (ExpContext ty a)
@@ -48,15 +49,81 @@ data ExpContext  ty a  = SCEmpty
 
 -- should this be ref or value in the return position? lets revisit later
 -- maybe it should be (Ref,HeapVal (Exp ty))  in return position?
-evalExp :: (Ord ty,Show ty)=> ExpContext ty Ref -> Exp ty Ref -> HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
+evalExp :: (Ord ty,Show ty)=>  ExpContext ty Ref -> Exp ty Ref -> HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
 evalExp stk (V rf) =  do  rp@(_hpval,_ref) <- heapRefLookupTransitive rf
                           applyStack stk rp -- does this need both heap location and value in general?
-evalExp stk (Force e)= undefined
+-- should Force reduce both Thunk e AND (Thunk (Thunk^+ e)) to e? for now I claim YES :)
+evalExp stk (Force e)=  do  res <- evalExp stk e
+                            forcingApply stk res -- forcing apply inits ref to thunk when evaluated to blackholeF
+evalExp stk (Delay e) = do ref <- heapAllocate (ThunkF e) ; applyStack stk (ThunkF e,ref)
+evalExp stk (funE :@ args) = evalClosureApp (FunAppCtxt [] (funE:args) stk )
+evalExp stk (ELit l) =  do ref <- heapAllocate (VLitF l) ; applyStack stk (VLitF l, ref)
+evalExp stk (PrimApp name args) = evalPrimApp (PrimAppCtxt name [] args stk )
+evalExp stk (Lam ts bod) = do val <- return $ (DirectClosureF (MkClosure (map (ArityBoxed . view _1 )ts  ) bod))
+                              ref <- heapAllocate val
+                              applyStack stk (val,ref)
+evalExp stk (Let mv _mty rhsExp scp) = evalExp (LetContext mv scp stk) rhsExp
+
+noBlackHoleRefs :: (Ord ty,Show ty) => [Ref] -> HeapStepCounterM (Exp ty) ()
+noBlackHoleRefs rls = do  vls <- mapM (fmap (view _1) . heapRefLookupTransitive) rls ;
+                          if all (/= BlackHoleF) vls
+                            then return ()
+                            else error "heap reference to BlackHoleF in argument position in closure or prim application"
 
 
+
+
+evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref -> HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
+evalClosureApp (FunAppCtxt ls [] stk) =
+    do  (funRef:argsRef) <- return $ reverse ls
+        (val,_ref) <- heapRefLookupTransitive funRef
+        noBlackHoleRefs argsRef
+        case val of
+          (DirectClosureF (MkClosure wrpNames scp))
+                | length argsRef == length wrpNames ->
+                      let nmMap = Map.fromList $ zip (map _extractArityInfo wrpNames) argsRef
+                            in evalExp stk
+                              (instantiate (\k -> V $ flip maybe id  (error "closure environment lookup failure ") $Map.lookup k nmMap) scp)
+                | otherwise -> error "closure arity vs argument application mismatch"
+          _ -> error "cannot invoke non closure heap values in application position"
+evalClosureApp (FunAppCtxt ls (h : t) stk) = evalExp (FunAppCtxt ls t stk) h
+evalClosureApp (LetContext _ _ _ ) = error "letcontext appearing where there should be an closure app context"
+evalClosureApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where there should be a closure app context"
+evalClosureApp (PrimAppCtxt _ _ _ _) = error "prim app context appearing where there should be a closure app context"
+evalClosureApp SCEmpty  = error "empty stack where application context is expected"
+
+evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
+evalPrimApp (PrimAppCtxt nm args [] stk) = do noBlackHoleRefs args ;applyPrim stk nm $ reverse args
+evalPrimApp (PrimAppCtxt nm args (h:t) stk) = evalExp (PrimAppCtxt nm  args t stk) h
+evalPrimApp (LetContext _ _ _ ) = error "letcontext appearing where there should be an prim app context"
+evalPrimApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where there should be a prim app context"
+evalPrimApp (FunAppCtxt _ _ _) = error "fun app context appearing where there should be a prim app context"
+evalPrimApp SCEmpty  = error "empty stack where prim app context is expected"
+
+forcingApply :: (Ord ty,Show ty)=>
+    ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
+forcingApply = undefined
+
+--- question: do we need to guard from blackholes in substitution points??????
 applyStack :: (Ord ty,Show ty)=>
     ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
-applyStack = undefined
+applyStack SCEmpty p= return p
+applyStack (LetContext _mv scp stk) (_v,ref)  = evalExp stk (instantiate1 (V ref) scp)
+applyStack (FunAppCtxt ls [] stk) (_,ref) = evalClosureApp  (FunAppCtxt (ref : ls) [] stk)
+applyStack (FunAppCtxt ls (h:t) stk) (_,ref) = evalExp (FunAppCtxt (ref:ls) t stk) h
+applyStack (PrimAppCtxt nm revArgs [] stk) (_,ref) = evalPrimApp (PrimAppCtxt nm (ref:revArgs) [] stk)
+applyStack (PrimAppCtxt nm revargs (h:t) stk) (_,ref) = evalExp (PrimAppCtxt nm (ref : revargs) t stk) h
+applyStack (ThunkUpdate refTarget stk) pr@(_val,ref) =
+                                      do   (targetVal,endRef)  <- heapRefLookupTransitive refTarget
+                                           case targetVal of
+                                                  -- should we do the indirection or direct contraction???
+                                                  --- this semantics as is, can result in a chain of indirections
+                                                 BlackHoleF -> do  unsafeHeapUpdate endRef (IndirectionF ref)  ; applyStack stk pr
+                                                 _ -> error "tried to update a heap ref that isn't a blackholeF! ERRROR"
+
+
+applyPrim :: (Ord ty,Show ty)=> ExpContext ty Ref  -> PrimOpId -> [Ref] ->  HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
+applyPrim = error "we haven't defined any primops yet! "
 
 {-
 

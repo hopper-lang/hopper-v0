@@ -30,7 +30,7 @@ data Exp ty a
   | Delay (Exp ty a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
                       --- note: may need to change their semantics later?!
   | Exp ty a :@ [Exp ty a]
-  | PrimApp  Text [Exp ty a] -- not sure if this is needed, but lets go with it for now
+  | PrimApp  PrimOpId [Exp ty a] -- not sure if this is needed, but lets go with it for now
 
   | Lam [(Text,Type ty,RigModel)]
         (Scope Text (Exp ty) a)

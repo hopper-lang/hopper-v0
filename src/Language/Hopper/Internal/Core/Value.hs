@@ -115,6 +115,7 @@ data ValueF ast   v =    VLitF !Literal
       )
 deriving instance (Data a,Data (ast a),Monad ast,Data (ast (Var Text (ast a))),  Typeable ast,Typeable a)
   =>  Data (ValueF ast a )
+
 instance (Eq1 ast,Monad ast) => Eq1 (ValueF ast) where
     (==#)  (VLitF a) (VLitF b) =  a == b
     (==#)  (VLitF _) _ =  False
@@ -137,6 +138,7 @@ codeValueF (ThunkF _) = 3
 codeValueF (DirectClosureF _) = 4
 codeValueF (BlackHoleF) = 5
 codeValueF (IndirectionF _) = 6
+
 instance (Ord1 ast,Monad ast) => Ord1 (ValueF ast) where
   compare1 (VLitF a) (VLitF b) = compare a b
   compare1 a@(VLitF _) b = compare  (codeValueF a) (codeValueF b)
