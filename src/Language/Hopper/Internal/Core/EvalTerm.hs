@@ -122,6 +122,7 @@ applyStack (ThunkUpdate refTarget stk) pr@(_val,ref) =
                                                  _ -> error "tried to update a heap ref that isn't a blackholeF! ERRROR"
 
 
+
 applyPrim :: (Ord ty,Show ty)=> ExpContext ty Ref  -> PrimOpId -> [Ref] ->  HeapStepCounterM (Exp ty) ((HeapVal (Exp ty)), Ref)
 applyPrim = error "we haven't defined any primops yet! "
 

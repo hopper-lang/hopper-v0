@@ -58,6 +58,7 @@ library
                     Language.Hopper.Internal.Core.Literal
                     Language.Hopper.Internal.Core.Heap
                     Language.Hopper.Internal.Core.EvalTerm
+                    Language.Hopper.Internal.Core.TermDemoWare
                    --  Language.Hopper.Internal.Core.Eval
                    -- Language.Hopper.Internal.Core.EvalANF
   -- Modules included in this library but not exported.
