@@ -111,3 +111,17 @@ let_ v rhs bod = Let (Just v)
 
 callPrim :: Text -> [Exp ty a] -> Exp ty a
 callPrim name = PrimApp (PrimopId name)
+
+infixr 0 !
+(!) :: Text -> Exp DummyType Text -> Exp DummyType Text
+(!) = lam1
+
+-- let_ "False" ("f" ! "t" ! V"f") (V "False")
+-- let_ "True" ("f" ! "t" ! V"t") (V "True")
+-- let_ "if" ("b" ! "t" ! "f" ! V"b" :@ [V"f"] :@ [V"t"]) (V "if")
+-- let_ "Zero" ("z" ! "s" ! V"z") (V "Zero")
+-- let_ "Succ" ("n" ! "z" ! "s" ! V"s" :@ [V"n"]) (V "Succ")
+-- let_ "Zero" ("z" ! "s" ! V"z") $
+--             let_ "Succ" ("n" ! "z" ! "s" ! V"s" :@ [V"n"]) $
+--                         let_ "one" (V"Succ" :@ [V"Zero"]) $
+--                                    V "one"
