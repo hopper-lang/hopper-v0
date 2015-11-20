@@ -11,7 +11,7 @@ import Data.Typeable
 import Data.Data
 import  Data.Text (Text)
 
-data Literal = LInteger !Integer | LRational !Rational | LNatural !Natural
+data Literal = LInteger !Integer | LRational !Rational | LNatural !Natural | LText !Text
   deriving(Eq,Ord,Show,Read,Data,Typeable)
 
 -- | ConstrId is the tag name for data type constructors, we dont have those yet

@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 module Language.Hopper.Internal.Core.TermDemoWare where
 import qualified Language.Hopper.Internal.Core.Term as Tm
 import qualified Language.Hopper.Internal.Core.Literal as Lit
@@ -53,5 +54,16 @@ demoTerm2ScopedTerm (Lam args bod) = let dtsBod = demoTerm2ScopedTerm bod
                                        in Tm.Lam  (map (\v -> (v,TVar (),Omega)) args) $  flip  abstract dtsBod (\var -> if  var `elem` args then Just $ var else Nothing)
 demoTerm2ScopedTerm (Let nm rhs bod) = Tm.Let (Just nm) Nothing (demoTerm2ScopedTerm rhs) $ flip abstract (demoTerm2ScopedTerm bod) (\var -> if var == nm then Just (Just nm) else Nothing )
 
+newtype PolyF f = PolyF { unPolyF :: forall a . Maybe (f a) }
+{-
+data PolyF f where
+   PF :: (forall a . Maybe (f a)) -> PolyF  f
 
+data ExF f where
+  EF :: forall a . (Maybe (f a) -> ExF f)
+
+-}
+
+evaluableDemoTerm :: DemoTerm -> PolyF (Tm.Exp ())
+evaluableDemoTerm tm =  PolyF (closed $ demoTerm2ScopedTerm tm)
 -- demoTerm2ScopedTerm
