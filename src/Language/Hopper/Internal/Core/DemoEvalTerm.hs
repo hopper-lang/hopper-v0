@@ -202,7 +202,7 @@ applyPrim (PrimopId  trfer) [fromRef,toRef,posRatRef,fakeCryptoSigRef]
 
         (posRatVal,_posRatRef) <- demoLift $ heapRefLookupTransitive posRatRef
         (fakeSigVal,_fakeSigRef) <- demoLift $ heapRefLookupTransitive fakeCryptoSigRef
-        case (toVal,fromVal,posRatVal,fakeSigVal) of
+        case (fromVal,toVal,posRatVal,fakeSigVal) of
             (VLitF (LText fromNm)
               ,VLitF (LText toNm)
               ,VLitF (LRational amt)
@@ -228,7 +228,3 @@ applyPrim (PrimopId  trfer) [fromRef,toRef,posRatRef,fakeCryptoSigRef]
 
             b -> error $ "deep invariant failure : bad args to transfer primop, the arguments were" ++ show b
 applyPrim a b = error $ "called command  " ++ show  a ++ " with "  ++ show  (length b)   ++ " arguments"
-
-
-
-
