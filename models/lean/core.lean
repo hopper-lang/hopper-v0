@@ -1,44 +1,33 @@
+
 import data.bool 
 import data.nat
-open nat
-check nat 
+-- import data.list 
 
+inductive List.{ℓ} (a : Type.{ℓ}) : Type.{imax (ℓ + 1) ℓ}
+        | Nil : List a 
+        | Cons : a -> List a -> List a 
+
+set_option pp.all true 
+
+check vector
+inductive 
 /-
 debrujin representation 
 -/
-inductive HasImpred := | Impred : HasImpred | Pred : HasImpred 
+check succ
 
-set_option pp.all true 
-open HasImpred 
+check Type.{imax 0 1}
+check Type.{imax 1 2}
+check Type.{imax 2 1}
+check Type.{imax 1 0}
 
-definition meet : HasImpred -> HasImpred -> HasImpred
-| meet Pred Pred := Pred 
-| meet Impred Impred := Impred
-| meet Pred Impred := Impred
-| meet Impred Pred := Impred 
-check ∀ (a b  : Type) , a -> b 
-check Type.{imax  1 0}
-check ∀ {t1} , ∀ {t2 : t1}, (t1 : Prop)
-check ∀ {t1 f} , ∀ {t2 : t1}, f t2 
-check ∀ {t1 f} , ∀ {t2 : t1}, t1 -> f t2
-check Type.{1} -> Type.{2}
+inductive Var : Type -> Type -> Type := 
+  | Free : forall {a b} , a -> Var a b 
+  | Bound : forall {a b} , b -> Var a b
 
-definition zeroOrPlusMax : nat -> nat -> nat 
-|zeroOrPlusMax 0 0 := 0 
-|zeroOrPlusMax n m :=  1 +  (max n m )
-
-inductive type :  nat-> HasImpred  -> Type := 
-  | lift : ∀ {n} , type  n Pred -> type  (succ n) Pred
-  | var : ∀ {n hasimp} , nat -> type  n hasimp 
-  | tyBool : ∀ {n} ,type n Pred 
-  | tyInteger : ∀ {n}, type n Pred 
-  | typString : ∀ {n}, type n Pred 
-  | impredUniversal : ∀ { hasimpA hasimpB},type  0 hasimpA ->type 0 hasimpB  -> type  0 Impred
-  | predUniversal : ∀ {n m},type  n Pred -> type m Pred -> type  (zeroOrPlusMax n m )  Pred 
- -- i do want impred, but will ignore for now
-
---   | predarr : ∀ {n m  hasImpA hasImpB}, type n Pred -> type m  Pred -> type n (meet hasImpA hasImpB)
-/-  with term  : ∀ {n himp}, type n himp -> Type :=
-  | tmBool : ∀ {n himp}, bool -> term (@tyBool n) 
- 
--/
+check list
+check Var.Free
+-- this is the untyped ast 
+inductive Term.{ℓ} (a : Type.{ℓ})   : Type.{max 1 ℓ} :=
+   | V :  a -> Term a 
+   | App : ∀ (n : nat), Term a -> (list (Term a) ) -> Term a 
