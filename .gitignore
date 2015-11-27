@@ -3,3 +3,4 @@ dist
 models/agda/core.agdai
 models/lean/.#core.lean
 models/lean/core.clean
+.#core.agda
