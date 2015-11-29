@@ -36,8 +36,4 @@ module Term  where
       force : term a -> term a
       delay : term a -> term a 
 
-
-
-module Types where
-
   

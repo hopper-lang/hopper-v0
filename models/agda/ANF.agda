@@ -1,6 +1,7 @@
 
 
 module ANF  where
+
 open import Data.Nat
 open import Data.Vec
 open import Data.Fin
@@ -33,7 +34,7 @@ mutual
     data Allocish (a : Set) : ℕ  -> Set  where 
       lam : ∀ (n : ℕ ) ->  term (Var (Fin n) (term a)) -> Allocish  a 1 
       delay : term a -> Allocish  a 1
-      dataConstr : DataConApp ⊤ a -> Allocish a 1 
+      dataConstr : DataConApp ⊤ {- for now using unit as the universe -} a -> Allocish a 1 
     
     
     data Callish  (a : Set) : ℕ ->  Set where
