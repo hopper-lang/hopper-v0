@@ -212,7 +212,7 @@ applyPrim (PrimopId  trfer) [fromRef,toRef,posRatRef,fakeCryptoSigRef]
                       sourceBalanceM <- lookupPrimAccountBalance fromNm
                       targetBalanceM <- lookupPrimAccountBalance toNm
                       case (sourceBalanceM,targetBalanceM) of
-                          (Just srcB,Just targB) ->
+                          (Just srcB,Just _targetB) ->
                               if srcB >= amt then
                                 do
                                   updatePrimAccountBalanceByAdding fromNm (-amt)
