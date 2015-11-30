@@ -57,6 +57,7 @@ library
                     Language.Hopper.HBound
                     Language.Hopper.Utils.Swap
                     Language.Hopper.Internal.Core.Term
+                    Language.Hopper.Internal.Core.Type
                     Language.Hopper.Internal.Core.Value
                     Language.Hopper.Internal.Core.ANF
                     Language.Hopper.Internal.Core.Literal
