@@ -62,11 +62,15 @@ readCmdMaybe str =  (\ (fr,t,pos,fk) -> Cmd fr t pos fk)  <$> readMaybe str
 readCmdListMaybe  :: String -> Maybe [Cmd]
 readCmdListMaybe str = fmap (fmap (\ (fr,t,pos,fk) -> Cmd fr t pos fk) ) $ readMaybe str
 
-type DemoWithLayers ast  a=  ExceptT  String
+type DemoWithLayers {- s -} ast  a=  ExceptT  String
                             (RWST (Map.Map Text Rational)  [(Natural,Cmd)]  (Natural,(Map.Map Text Rational))
-                              (HeapStepCounterM ast)) 
+                              (HeapStepCounterM ast {- STE HopperDemoError  s -})) 
                               a
 
+{-
+newtype DemoWithLayers s ast a =   DWL  (RWST mp1 ops tupmp2 (HeapStepCounterM ast (STE demoerror s))   a)
+
+-}
 
 
 data ExpContext  ty a  = SCEmpty
