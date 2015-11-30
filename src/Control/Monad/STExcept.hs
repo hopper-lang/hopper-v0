@@ -3,6 +3,7 @@ module Control.Monad.STExcept(
   STE
   ,runSTE
   ,throwSTE
+  ,handleSTE
   )
 
   where
@@ -55,6 +56,8 @@ unsafePrimToSTE = unsafePrimToPrim
 runSTE :: Exception e => (forall s. STE e s a) -> (Either e a  -> b) -> b
 runSTE st  f = runSTRep (case  do  res <-  unsafePrimToSTE $ catch   (unsafePrimToPrim $ fmap Right  st)  (\err -> return (Left err)) ; return (f res) of { STE st_rep -> st_rep })
 
+handleSTE :: Exception e => (Either e a -> b) -> (forall s. STE e s a)  -> b
+handleSTE f st = runSTE st f
 
 {-#  NOINLINE throwSTE #-} -- again audit
 throwSTE :: Exception e => e -> STE e s a
