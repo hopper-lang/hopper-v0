@@ -1,4 +1,4 @@
-{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies #-}
+{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts #-}
 module Control.Monad.STExcept(
   STE
   ,runSTE
@@ -13,6 +13,7 @@ import GHC.Prim (State#,realWorld#)
 import Control.Exception as Except
 import Control.Monad (ap)
 import Control.Monad.Primitive
+import Data.Typeable
 
 -- maybe this constructor shouldn't be private?
 newtype STE e s a = STE  (STRep s a)
@@ -53,15 +54,15 @@ unsafePrimToSTE :: PrimBase m => m a -> STE e s a
 unsafePrimToSTE = unsafePrimToPrim
 
 {-# NOINLINE runSTE #-} -- this may not be needed and may make code closer when its a small STE computation (though we're using it for small stuff )
-runSTE :: Exception e => (forall s. STE e s a) -> (Either e a  -> b) -> b
-runSTE st  f = runSTRep (case  do  res <-  unsafePrimToSTE $ catch   (unsafePrimToPrim $ fmap Right  st)  (\err -> return (Left err)) ; return (f res) of { STE st_rep -> st_rep })
+runSTE :: Typeable e => (forall s. STE e s a) -> (Either e a  -> b) -> b
+runSTE st  f = runSTRep (case  do  res <-  unsafePrimToSTE $ catch   (unsafePrimToPrim $ fmap Right  st)  (\(STException err) -> return (Left err)) ; return (f res) of { STE st_rep -> st_rep })
 
-handleSTE :: Exception e => (Either e a -> b) -> (forall s. STE e s a)  -> b
+handleSTE :: Typeable e => (Either e a -> b) -> (forall s. STE e s a)  -> b
 handleSTE f st = runSTE st f
 
 {-#  NOINLINE throwSTE #-} -- again audit
-throwSTE :: Exception e => e -> STE e s a
-throwSTE err = unsafePrimToSTE (throwIO err)
+throwSTE :: (Show e,Typeable  e) => e -> STE e s a
+throwSTE err = unsafePrimToSTE (throwIO (STException err))
 
 -- I'm only letting runSTRep be inlined right at the end, in particular *after* full laziness
 -- That's what the "INLINE [0]" says.
@@ -77,3 +78,13 @@ throwSTE err = unsafePrimToSTE (throwIO err)
 runSTRep :: (forall s. STRep s a) -> a
 runSTRep st_rep = case st_rep realWorld# of
                         (# _, r #) -> r
+
+
+data STException e  where
+   STException :: (Show e,Typeable e) => e -> STException e
+  deriving(Typeable)
+instance Show (STException e) where
+  show (STException e) = "(STException ( " ++ show e ++ " ))"
+instance Typeable e => Exception (STException e)
+
+-- runSTFree :: Typeable e => (forall . STE (W e) s a) -> (Either e a -> b) -> b
