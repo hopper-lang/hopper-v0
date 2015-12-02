@@ -30,6 +30,7 @@ import Text.Read (readMaybe)
 import Control.Monad.Trans.Except (ExceptT(..),runExceptT)
 import Control.Monad.Error.Class (throwError)
 
+import Control.Monad.STExcept
 
 {-
 reader holds the "snapshot" of the state of all accounts/balances before this program is run and thence committed
@@ -54,6 +55,9 @@ let _ = transfer1
 
 -}
 
+data DemoError = DERRRR
+  deriving (Eq,Ord,Typeable,Show)
+
 data Cmd = Cmd {from :: Text , to :: Text , posAmount :: Rational , fakeCryptoSig:: Text }
   deriving (Eq,Ord,Show,Read,Data,Typeable)
 readCmdMaybe :: String -> Maybe Cmd
@@ -62,9 +66,9 @@ readCmdMaybe str =  (\ (fr,t,pos,fk) -> Cmd fr t pos fk)  <$> readMaybe str
 readCmdListMaybe  :: String -> Maybe [Cmd]
 readCmdListMaybe str = fmap (fmap (\ (fr,t,pos,fk) -> Cmd fr t pos fk) ) $ readMaybe str
 
-type DemoWithLayers {- s -} ast  a=  ExceptT  String
+type DemoWithLayers s  ast  a=  ExceptT  String
                             (RWST (Map.Map Text Rational)  [(Natural,Cmd)]  (Natural,(Map.Map Text Rational))
-                              (HeapStepCounterM ast {- STE HopperDemoError  s -})) 
+                              (HeapStepCounterM ast  (STE DemoError s) {- STE HopperDemoError  s -})) 
                               a
 
 {-
@@ -96,12 +100,12 @@ data ExpContext  ty a  = SCEmpty
           ,Show)
 
 
-demoLift :: HeapStepCounterM ast a -> DemoWithLayers ast a
+demoLift :: HeapStepCounterM   ast (STE DemoError s) a -> DemoWithLayers s  ast a
 demoLift  = \m ->  lift $ lift m
 
 -- should this be ref or value in the return position? lets revisit later
 -- maybe it should be (Ref,HeapVal (Exp ty))  in return position?
-evalExp :: (Ord ty,Show ty)=>  ExpContext ty Ref -> Exp ty Ref -> DemoWithLayers (Exp ty) ((HeapVal (Exp ty)), Ref)
+evalExp :: (Ord ty,Show ty)=>  ExpContext ty Ref -> Exp ty Ref -> DemoWithLayers  s (Exp ty)  ((HeapVal (Exp ty)), Ref)
 evalExp stk (V rf) =  do  rp@(_hpval,_ref) <-   demoLift $ heapRefLookupTransitive rf
                           applyStack stk rp -- does this need both heap location and value in general?
 -- should Force reduce both Thunk e AND (Thunk (Thunk^+ e)) to e? for now I claim YES :)
@@ -116,7 +120,7 @@ evalExp stk (Lam ts bod) = do val <- return $ (DirectClosureF (MkClosure (map (A
                               applyStack stk (val,ref)
 evalExp stk (Let mv _mty rhsExp scp) = evalExp (LetContext mv scp stk) rhsExp
 
-noBlackHoleRefs :: (Ord ty,Show ty) => [Ref] -> DemoWithLayers (Exp ty) ()
+noBlackHoleRefs :: (Ord ty,Show ty) => [Ref] -> DemoWithLayers  s(Exp ty) ()
 noBlackHoleRefs rls = do  vls <- demoLift $  mapM (fmap (view _1) . heapRefLookupTransitive) rls ;
                           if all (/= BlackHoleF) vls
                             then return ()
@@ -125,7 +129,7 @@ noBlackHoleRefs rls = do  vls <- demoLift $  mapM (fmap (view _1) . heapRefLooku
 
 
 
-evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref -> DemoWithLayers (Exp ty) ((HeapVal (Exp ty)), Ref)
+evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref -> DemoWithLayers s (Exp ty) ((HeapVal (Exp ty)), Ref)
 evalClosureApp (FunAppCtxt ls [] stk) =
     do  (funRef:argsRef) <- return $ reverse ls
         (val,_ref) <- demoLift $  heapRefLookupTransitive funRef
@@ -144,7 +148,7 @@ evalClosureApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where t
 evalClosureApp (PrimAppCtxt _ _ _ _) = error "prim app context appearing where there should be a closure app context"
 evalClosureApp SCEmpty  = error "empty stack where application context is expected"
 
-evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> DemoWithLayers (Exp ty) ((HeapVal (Exp ty)), Ref)
+evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> DemoWithLayers s (Exp ty) ((HeapVal (Exp ty)), Ref)
 evalPrimApp (PrimAppCtxt nm args [] stk) = do noBlackHoleRefs args ;  res <- applyPrim  nm $ reverse args ; applyStack stk res
 evalPrimApp (PrimAppCtxt nm args (h:t) stk) = evalExp (PrimAppCtxt nm  args t stk) h
 evalPrimApp (LetContext _ _ _ ) = error "letcontext appearing where there should be an prim app context"
@@ -153,12 +157,12 @@ evalPrimApp (FunAppCtxt _ _ _) = error "fun app context appearing where there sh
 evalPrimApp SCEmpty  = error "empty stack where prim app context is expected"
 
 forcingApply :: (Ord ty,Show ty)=>
-    ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> DemoWithLayers (Exp ty) ((HeapVal (Exp ty)), Ref)
+    ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> DemoWithLayers  s (Exp ty) ((HeapVal (Exp ty)), Ref)
 forcingApply = undefined
 
 --- question: do we need to guard from blackholes in substitution points??????
 applyStack :: (Ord ty,Show ty)=>
-    ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> DemoWithLayers (Exp ty) ((HeapVal (Exp ty)), Ref)
+    ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> DemoWithLayers  s (Exp ty) ((HeapVal (Exp ty)), Ref)
 applyStack SCEmpty p= return p
 applyStack (LetContext _mv scp stk) (_v,ref)  = evalExp stk (instantiate1 (V ref) scp)
 applyStack (FunAppCtxt ls [] stk) (_,ref) = evalClosureApp  (FunAppCtxt (ref : ls) [] stk)
@@ -173,7 +177,7 @@ applyStack (ThunkUpdate refTarget stk) pr@(_val,ref) =
                                                  BlackHoleF -> do  demoLift $ unsafeHeapUpdate endRef (IndirectionF ref)  ; applyStack stk pr
                                                  _ -> error "tried to update a heap ref that isn't a blackholeF! ERRROR"
 
-lookupPrimAccountBalance :: (Ord ty,Show ty)=> Text ->  DemoWithLayers (Exp ty) (Maybe Rational)
+lookupPrimAccountBalance :: (Ord ty,Show ty)=> Text ->  DemoWithLayers  s (Exp ty) (Maybe Rational)
 lookupPrimAccountBalance acctNam = do
       (_cnt,localizedMap) :: (Natural,Map.Map Text Rational) <-  get
       case Map.lookup  acctNam localizedMap of
@@ -187,7 +191,7 @@ lookupPrimAccountBalance acctNam = do
                 Nothing ->  return Nothing  -- throwError $ "failure to find account balance for " ++ show acctNam
 
 -- this may abort if target account doesn't exist
-updatePrimAccountBalanceByAdding :: (Ord ty,Show ty)=> Text -> Rational ->  DemoWithLayers (Exp ty) ()
+updatePrimAccountBalanceByAdding :: (Ord ty,Show ty)=> Text -> Rational ->  DemoWithLayers s (Exp ty) ()
 updatePrimAccountBalanceByAdding nm amt = do
       currentBalance <- lookupPrimAccountBalance nm
       case currentBalance of
@@ -198,7 +202,7 @@ updatePrimAccountBalanceByAdding nm amt = do
                             put (cnt, (Map.insert nm  $! (current + amt)) localizedMap)
 
 
-applyPrim :: (Ord ty,Show ty)=> PrimOpId -> [Ref] ->  DemoWithLayers (Exp ty) ((HeapVal (Exp ty)), Ref)
+applyPrim :: (Ord ty,Show ty)=> PrimOpId -> [Ref] ->  DemoWithLayers s  (Exp ty) ((HeapVal (Exp ty)), Ref)
 applyPrim (PrimopId  trfer) [fromRef,toRef,posRatRef,fakeCryptoSigRef]
     | unpack trfer == "transfer" = do
         (fromVal,_reffrom) <- demoLift $ heapRefLookupTransitive fromRef
