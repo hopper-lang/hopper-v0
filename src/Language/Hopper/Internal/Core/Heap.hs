@@ -7,6 +7,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Language.Hopper.Internal.Core.Heap
 
@@ -19,6 +20,9 @@ import Numeric.Natural
 import Data.Typeable
 import Control.Monad.Trans.State.Strict as State
 import Prelude.Extras
+import Control.Monad.Trans.Class as MT
+import Control.Monad.Primitive as  Prim
+import Control.Monad.IO.Class as MIO
 --import Bound
 
 --import Data.Text (Text)
@@ -78,36 +82,45 @@ extractHeapCAH fun cnh = fmap (\mp' -> cnh{_extractHeapCAH=mp'}) $ fun $ _extrac
 extractCounterCAH :: Functor f => (Natural -> f Natural )-> (CounterAndHeap ast   -> f (CounterAndHeap ast  ))
 extractCounterCAH  fun cnh = fmap (\i' -> cnh{_extractCounterCAH=i'}) $ fun $ _extractCounterCAH cnh
 
-newtype HeapStepCounterM ast   a = HSCM {_xtractHSCM :: State.State (CounterAndHeap ast ) a}
+newtype HeapStepCounterM ast  m a = HSCM {_xtractHSCM :: State.StateT  (CounterAndHeap ast ) m a}
    deriving (Typeable,Functor,Generic)
-instance Applicative (HeapStepCounterM ast  ) where
+
+instance MonadIO m => MonadIO (HeapStepCounterM ast m) where
+  liftIO m = lift $ MIO.liftIO m
+
+instance PrimMonad m => PrimMonad (HeapStepCounterM ast m) where
+  type PrimState (HeapStepCounterM ast m) = Prim.PrimState m
+  primitive stfun = lift $ Prim.primitive stfun
+instance MT.MonadTrans (HeapStepCounterM ast) where
+    lift m =  HSCM $ StateT (\ s -> fmap (\i -> (i,s)) m)
+instance Monad  n=>Applicative (HeapStepCounterM ast  n) where
     pure  = \v ->  HSCM $ pure v
     (<*>) = \ (HSCM f) (HSCM v) -> HSCM $ f <*> v
-instance Monad (HeapStepCounterM ast  ) where
+instance Monad m => Monad (HeapStepCounterM ast m) where
     return = pure
     (>>=)= \ (HSCM mv) f -> HSCM (mv  >>= (_xtractHSCM. f))
 
-getHSCM :: HeapStepCounterM ast  (CounterAndHeap ast )
+getHSCM ::Monad m => HeapStepCounterM ast  m (CounterAndHeap ast )
 getHSCM  = HSCM State.get
 
-setHSCM :: CounterAndHeap ast   -> HeapStepCounterM  ast   ()
+setHSCM ::Monad m =>  CounterAndHeap ast   -> HeapStepCounterM  ast  m  ()
 setHSCM v = HSCM $ State.put  v
 
-checkedCounterDecrement :: HeapStepCounterM  ast  ()
+checkedCounterDecrement :: Monad m =>  HeapStepCounterM  ast  m ()
 checkedCounterDecrement = do  cah <- getHSCM
                               ct <- return $  _extractCounterCAH cah
                               if ct <= 0
                                 then error "allowed step count exceeded, aborting"
                                 else setHSCM cah{_extractCounterCAH = ct - 1}
 
-unsafeHeapUpdate :: Ref -> HeapVal ast  -> HeapStepCounterM ast  ()
+unsafeHeapUpdate ::Monad m =>  Ref -> HeapVal ast  -> HeapStepCounterM ast m ()
 unsafeHeapUpdate rf val = do  cah <- getHSCM
                               x <- return $ heapRefUpdate rf val (_extractHeapCAH cah)
                               checkedCounterDecrement
                               x `seq` setHSCM $ cah{_extractHeapCAH =x }
 
 --- note, this should also decrement the counter!
-heapAllocate :: HeapVal  ast  -> HeapStepCounterM  ast   Ref
+heapAllocate :: Monad m =>  HeapVal  ast  -> HeapStepCounterM  ast  m Ref
 heapAllocate val = do   cah <-  getHSCM
                         (rf,hp) <- pure $ heapAllocateValue (_extractHeapCAH cah) val
                         cah' <- pure $ cah{_extractHeapCAH = hp}
@@ -115,7 +128,7 @@ heapAllocate val = do   cah <-  getHSCM
                         setHSCM cah'
                         return rf
 
-heapLookup :: Ref -> HeapStepCounterM ast   (Maybe (HeapVal ast ))
+heapLookup :: Monad m =>  Ref -> HeapStepCounterM ast  m (Maybe (HeapVal ast ))
 heapLookup rf =  do  checkedCounterDecrement ; (flip heapRefLookup rf . _extractHeapCAH) <$> getHSCM
 
 --heapUpdate :: Ref -> Value ty ->
@@ -125,14 +138,14 @@ or can i just assume that any refs must be strictly descending?
 -}
 
 --- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)
-unsafeRunHSCM :: Natural -> Heap ast  -> HeapStepCounterM ast  b -> (b,CounterAndHeap ast  )
-unsafeRunHSCM cnt hp (HSCM m)  = State.runState m (CounterAndHeap cnt $ hp)
+unsafeRunHSCM :: Monad m =>  Natural -> Heap ast  -> HeapStepCounterM ast m b -> m (b,CounterAndHeap ast  )
+unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap cnt $ hp)
 
 -- run a program in an empty heap
-runEmptyHeap :: Natural -> HeapStepCounterM ast  b-> (b,CounterAndHeap ast )
-runEmptyHeap ct (HSCM m) = State.runState m (CounterAndHeap ct $ Heap (Ref 1) Map.empty)
+runEmptyHeap :: Monad m =>  Natural -> HeapStepCounterM ast m  b-> m (b,CounterAndHeap ast )
+runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap ct $ Heap (Ref 1) Map.empty)
 
-heapRefLookupTransitive :: Ref -> HeapStepCounterM ast  (HeapVal ast , Ref)
+heapRefLookupTransitive :: Monad m =>  Ref -> HeapStepCounterM ast   m (HeapVal ast , Ref)
 heapRefLookupTransitive ref =
         do  next <- heapLookup ref
             case  next of
