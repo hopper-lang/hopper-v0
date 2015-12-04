@@ -24,7 +24,7 @@ import Control.Lens
 import Control.Monad.STExcept
 import Control.Monad.Trans
 --import Bound.Scope (traverseBound)
-import Control.Monad (join)
+import Control.Monad (join, unless)
 import  Data.Hop.Or
 data ExpContext  ty a  = SCEmpty
                         | LetContext
@@ -49,7 +49,8 @@ data ExpContext  ty a  = SCEmpty
           ,Show)
 
 
-data InterpreterError = PrimopTypeMismatch
+data InterpreterError
+  = PrimopTypeMismatch
   | InfiniteLoopBlackhole
   | NonClosureInApplicationPosition
   | ArityMismatchFailure
@@ -75,21 +76,17 @@ evalExp stk (Lam ts bod) = do val <- return $ (DirectClosureF (MkClosure (map (A
                               applyStack stk (val,ref)
 evalExp stk (Let mv _mty rhsExp scp) = evalExp (LetContext mv scp stk) rhsExp
 
-noBlackHoleRefs :: (Ord ty,Show ty) => [Ref] -> HeapStepCounterM (Exp ty)  (STE ((b :+ InterpreterError ) :+ HeapError) s) ()
-noBlackHoleRefs rls = do  vls <- mapM (fmap (view _1) . heapRefLookupTransitive) rls ;
-                          if all (/= BlackHoleF) vls
-                            then return ()
-                            else lift  $  throwSTE $ (InL . InR ) NonClosureInApplicationPosition -- error "heap reference to BlackHoleF in argument position in closure or prim application"
-
-
-
+noBlackholeArgs :: (Ord ty,Show ty) => [Ref] -> HeapStepCounterM (Exp ty)  (STE ((b :+ InterpreterError ) :+ HeapError) s) ()
+noBlackholeArgs rls = do  vls <- mapM (fmap (view _1) . heapRefLookupTransitive) rls
+                          unless (BlackHoleF `notElem` vls) $
+                            lift $ throwSTE $ (InL . InR) NonClosureInApplicationPosition -- error "heap reference to BlackHoleF in argument position in closure or prim application"
 
 evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref
     -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)
 evalClosureApp (FunAppCtxt ls [] stk) =
     do  (funRef:argsRef) <- return $ reverse ls
         (val,_ref) <- heapRefLookupTransitive funRef
-        noBlackHoleRefs argsRef
+        noBlackholeArgs argsRef
         case val of
           (DirectClosureF (MkClosure wrpNames scp))
                 | length argsRef == length wrpNames ->
@@ -117,7 +114,7 @@ evalClosureApp (PrimAppCtxt _ _ _ _) = lift $ throwSTE $ (InL .InR) MismatchedSt
 evalClosureApp SCEmpty  =   lift $ throwSTE $ (InL .InR)  MismatchedStackContext -- error "empty stack where application context is expected"
 
 evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)
-evalPrimApp (PrimAppCtxt nm args [] stk) = do noBlackHoleRefs args ;applyPrim stk nm $ reverse args
+evalPrimApp (PrimAppCtxt nm args [] stk) = do noBlackholeArgs args ;applyPrim stk nm $ reverse args
 evalPrimApp (PrimAppCtxt nm args (h:t) stk) = evalExp (PrimAppCtxt nm  args t stk) h
 evalPrimApp (LetContext _ _ _ ) =  lift $ throwSTE $ (InL . InR)  MismatchedStackContext -- error "letcontext appearing where there should be an prim app context"
 evalPrimApp (ThunkUpdate _ _ ) = lift $ throwSTE $ (InL . InR) MismatchedStackContext-- error "thunkupdate context appearing where there should be a prim app context"
