@@ -47,10 +47,6 @@ data HeapError = HeapStepCounterExceeded | InvalidHeapLookup  | BlackHoleEncount
                 | HeapLookupOutOfBounds
   deriving (Eq,Ord,Show,Read,Typeable,Generic,Data)
 
-heapRefLookup :: Heap ast   -> Ref -> Maybe (HeapVal ast  )
-heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
-
-
 -- this
 heapRefUpdate :: Ref -> HeapVal ast  -> Heap ast  -> HeapStepCounterM  ast (STE (b :+ HeapError ) s) (Heap ast)
 heapRefUpdate ref val (Heap ct mp)
@@ -139,14 +135,18 @@ heapAllocate val = do   cah <-  getHSCM
                         setHSCM cah'
                         return rf
 
-heapLookup :: Ref -> HeapStepCounterM ast  (STE (b :+ HeapError ) s) (Maybe (HeapVal ast ))
-heapLookup rf =  do  checkedCounterDecrement ; (flip heapRefLookup rf . _extractHeapCAH) <$> getHSCM
+heapLookup :: Ref -> HeapStepCounterM ast  (STE (b :+ HeapError) s) (HeapVal ast )
+heapLookup ref = do
+  checkedCounterDecrement
+  heapHandle <- _extractHeapCAH <$> getHSCM
+  heapRefLookup ref heapHandle
+   where
+     heapRefLookup :: Ref -> Heap ast -> HeapStepCounterM ast (STE (b :+ HeapError) s) (HeapVal ast)
+     heapRefLookup ref (Heap ct mp)
+       | ref < ct && ref `Map.member` mp = return $ mp Map.! ref
+       | ref >= ct =  lift $ throwSTE $ InR HeapLookupOutOfBounds
+       | otherwise {- invalid heap ref -} = lift $ throwSTE $ InR InvalidHeapLookup
 
---heapUpdate :: Ref -> Value ty ->
-{-
-need to think about possible cycles in references :(
-or can i just assume that any refs must be strictly descending?
--}
 
 --- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)
 unsafeRunHSCM :: Monad m =>  Natural -> Heap ast  -> HeapStepCounterM ast m b -> m (b,CounterAndHeap ast  )
@@ -160,9 +160,7 @@ heapRefLookupTransitive ::  Ref -> HeapStepCounterM ast   (STE (b :+ HeapError )
 heapRefLookupTransitive ref =
         do  next <- heapLookup ref
             case  next of
-              Nothing -> error $ "bad heap ref in looup transitive" ++ show ref
+              Nothing -> error $ "bad heap ref in lookup transitive" ++ show ref
               Just (BlackHoleF) -> error  $ "hit BlackHoleF in transitive lookup" ++ show ref
               (Just (IndirectionF nextRef)) -> heapRefLookupTransitive nextRef
               Just v -> return (v,ref)
-
-
