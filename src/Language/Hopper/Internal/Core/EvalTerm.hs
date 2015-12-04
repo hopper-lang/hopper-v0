@@ -53,7 +53,6 @@ data InterpreterError = PrimopTypeMismatch
   | InfiniteLoopBlackhole
   | NonClosureInApplicationPosition
   | ArityMismatchFailure
-  | BlackHoleUpdateForNonBlackholeHeapRef
   | HeapLookupFailure
   | MismatchedStackContext
   deriving (Eq,Ord,Show,Typeable,Data)
