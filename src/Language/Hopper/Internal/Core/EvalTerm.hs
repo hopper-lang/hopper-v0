@@ -139,13 +139,12 @@ applyStack (FunAppCtxt ls [] stk) (_,ref) = evalClosureApp  (FunAppCtxt (ref : l
 applyStack (FunAppCtxt ls (h:t) stk) (_,ref) = evalExp (FunAppCtxt (ref:ls) t stk) h
 applyStack (PrimAppCtxt nm revArgs [] stk) (_,ref) = evalPrimApp (PrimAppCtxt nm (ref:revArgs) [] stk)
 applyStack (PrimAppCtxt nm revargs (h:t) stk) (_,ref) = evalExp (PrimAppCtxt nm (ref : revargs) t stk) h
-applyStack (ThunkUpdate refTarget stk) pr@(_val,ref) =
-                                      do   (targetVal,endRef)  <- heapRefLookupTransitive refTarget
-                                           case targetVal of
-                                                  -- should we do the indirection or direct contraction???
-                                                  --- this semantics as is, can result in a chain of indirections
-                                                 BlackHoleF -> do  unsafeHeapUpdate endRef (IndirectionF ref)  ; applyStack stk pr
-                                                 _ -> error "tried to update a heap ref that isn't a blackholeF! ERRROR"
+applyStack (ThunkUpdate thunkRef stk) pr@(_val,ref) = do
+  -- NOTE: under our current (deterministic, sequential) semantics, thunkRef
+  --       *should* (transitively) lead to a blackhole before update.
+  unsafeHeapUpdate thunkRef (IndirectionF ref)
+  applyStack stk pr
+
 
 
 
