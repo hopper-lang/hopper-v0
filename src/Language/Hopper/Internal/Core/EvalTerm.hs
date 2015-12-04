@@ -24,7 +24,7 @@ import Control.Lens
 import Control.Monad.STExcept
 import Control.Monad.Trans
 --import Bound.Scope (traverseBound)
-import Control.Monad (join, unless)
+import Control.Monad (join, void)
 import  Data.Hop.Or
 data ExpContext  ty a  = SCEmpty
                         | LetContext
@@ -78,9 +78,7 @@ evalExp stk (Lam ts bod) = do val <- return $ (DirectClosureF (MkClosure (map (A
 evalExp stk (Let mv _mty rhsExp scp) = evalExp (LetContext mv scp stk) rhsExp
 
 noBlackholeArgs :: (Ord ty,Show ty) => [Ref] -> HeapStepCounterM (Exp ty)  (STE ((b :+ InterpreterError ) :+ HeapError) s) ()
-noBlackholeArgs rls = do  vls <- mapM (fmap (view _1) . heapRefLookupTransitive) rls
-                          unless (BlackHoleF `notElem` vls) $
-                            lift $ throwSTE $ (InL . InR) InfiniteLoopBlackhole -- error "heap reference to BlackHoleF in argument position in closure or prim application"
+noBlackholeArgs rls = void $ traverse heapRefLookupTransitive rls
 
 evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref
     -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)
