@@ -109,5 +109,5 @@ test-suite hspec
   default-language: Haskell2010
   build-depends:
       base,
-      hspec >= 2.2 && < 2.3 ,
+      hspec >= 2.1 && < 2.3 ,
       hopper
