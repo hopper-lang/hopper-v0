@@ -79,7 +79,7 @@ evalExp stk (Let mv _mty rhsExp scp) = evalExp (LetContext mv scp stk) rhsExp
 noBlackholeArgs :: (Ord ty,Show ty) => [Ref] -> HeapStepCounterM (Exp ty)  (STE ((b :+ InterpreterError ) :+ HeapError) s) ()
 noBlackholeArgs rls = do  vls <- mapM (fmap (view _1) . heapRefLookupTransitive) rls
                           unless (BlackHoleF `notElem` vls) $
-                            lift $ throwSTE $ (InL . InR) NonClosureInApplicationPosition -- error "heap reference to BlackHoleF in argument position in closure or prim application"
+                            lift $ throwSTE $ (InL . InR) InfiniteLoopBlackhole -- error "heap reference to BlackHoleF in argument position in closure or prim application"
 
 evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref
     -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)
