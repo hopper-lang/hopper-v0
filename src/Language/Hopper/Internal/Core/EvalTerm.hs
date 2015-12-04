@@ -55,6 +55,7 @@ data InterpreterError
   | NonClosureInApplicationPosition
   | ArityMismatchFailure
   | HeapLookupFailure
+  | MalformedClosure
   | MismatchedStackContext
   deriving (Eq,Ord,Show,Typeable,Data)
 
@@ -94,7 +95,8 @@ evalClosureApp (FunAppCtxt ls [] stk) =
                             in do
                               nextExp <-  traverse (\ var ->
                                                             case var of
-                                                              (B nm ) ->  maybe (lift $ throwSTE $ (InL . InR) HeapLookupFailure) (\ rf -> return $ V rf)
+                                                              (B nm ) ->  maybe (lift $ throwSTE $ (InL . InR) MalformedClosure)
+                                                                                (\ rf -> return $ V rf)
                                                                                 (Map.lookup nm nmMap)
                                                               (F term) -> return term )
                                                     (unscope scp)
