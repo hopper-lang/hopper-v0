@@ -7,7 +7,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, TypeOperators #-}
 
 module Language.Hopper.Internal.Core.Heap
 
@@ -23,6 +23,9 @@ import Prelude.Extras
 import Control.Monad.Trans.Class as MT
 import Control.Monad.Primitive as  Prim
 import Control.Monad.IO.Class as MIO
+import  Control.Monad.STExcept
+import Data.Data
+import Data.Hop.Or
 --import Bound
 
 --import Data.Text (Text)
@@ -39,15 +42,21 @@ deriving instance (Functor ast,Show1 ast, Show (ast Ref)) => Show (Heap ast)
 deriving instance (Monad ast,Eq1 ast, Eq (ast Ref)) => Eq (Heap ast)
 deriving instance (Monad ast, Ord1 ast, Ord (ast Ref)) => Ord (Heap ast)
 
+
+data HeapError = HeapStepCounterExceeded | InvalidHeapLookup  | BlackHoleEncounteredDuringLookup
+                | HeapLookupOutOfBounds
+  deriving (Eq,Ord,Show,Read,Typeable,Generic,Data)
+
 heapRefLookup :: Heap ast   -> Ref -> Maybe (HeapVal ast  )
 heapRefLookup hp rf = Map.lookup rf (_theHeap hp)
 
 
 -- this
-heapRefUpdate :: Ref -> HeapVal ast  -> Heap ast  -> Heap ast
+heapRefUpdate :: Ref -> HeapVal ast  -> Heap ast  -> HeapStepCounterM  ast (STE (b :+ HeapError ) s) (Heap ast)
 heapRefUpdate ref val (Heap ct mp)
-        | ref < ct = Heap ct $ Map.insert ref val mp
-        | otherwise = error $ "impossible heap ref greater than heap max " ++ show ref
+        | ref < ct  && ref `Map.member` mp = return $ Heap ct $ Map.insert ref val mp
+        | ref >= ct =  lift $throwSTE $ InR HeapLookupOutOfBounds -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
+        | otherwise {- invalid heap ref -} = lift $ throwSTE $ InR  InvalidHeapLookup
 
 heapAllocateValue :: Heap ast   -> HeapVal ast   -> (Ref,Heap ast  )
 heapAllocateValue hp val = (_minMaxFreshRef hp
@@ -106,21 +115,23 @@ getHSCM  = HSCM State.get
 setHSCM ::Monad m =>  CounterAndHeap ast   -> HeapStepCounterM  ast  m  ()
 setHSCM v = HSCM $ State.put  v
 
-checkedCounterDecrement :: Monad m =>  HeapStepCounterM  ast  m ()
+
+
+checkedCounterDecrement ::   HeapStepCounterM  ast  (STE (b :+ HeapError ) s) ()
 checkedCounterDecrement = do  cah <- getHSCM
                               ct <- return $  _extractCounterCAH cah
                               if ct <= 0
-                                then error "allowed step count exceeded, aborting"
+                                then lift $ throwSTE $ InR HeapStepCounterExceeded-- error "allowed step count exceeded, aborting"
                                 else setHSCM cah{_extractCounterCAH = ct - 1}
 
-unsafeHeapUpdate ::Monad m =>  Ref -> HeapVal ast  -> HeapStepCounterM ast m ()
+unsafeHeapUpdate :: Ref -> HeapVal ast  -> HeapStepCounterM ast (STE (b :+ HeapError ) s) ()
 unsafeHeapUpdate rf val = do  cah <- getHSCM
-                              x <- return $ heapRefUpdate rf val (_extractHeapCAH cah)
+                              x <-  heapRefUpdate rf val (_extractHeapCAH cah)
                               checkedCounterDecrement
                               x `seq` setHSCM $ cah{_extractHeapCAH =x }
 
 --- note, this should also decrement the counter!
-heapAllocate :: Monad m =>  HeapVal  ast  -> HeapStepCounterM  ast  m Ref
+heapAllocate :: HeapVal  ast  -> HeapStepCounterM  ast  (STE (b :+ HeapError ) s) Ref
 heapAllocate val = do   cah <-  getHSCM
                         (rf,hp) <- pure $ heapAllocateValue (_extractHeapCAH cah) val
                         cah' <- pure $ cah{_extractHeapCAH = hp}
@@ -128,7 +139,7 @@ heapAllocate val = do   cah <-  getHSCM
                         setHSCM cah'
                         return rf
 
-heapLookup :: Monad m =>  Ref -> HeapStepCounterM ast  m (Maybe (HeapVal ast ))
+heapLookup :: Ref -> HeapStepCounterM ast  (STE (b :+ HeapError ) s) (Maybe (HeapVal ast ))
 heapLookup rf =  do  checkedCounterDecrement ; (flip heapRefLookup rf . _extractHeapCAH) <$> getHSCM
 
 --heapUpdate :: Ref -> Value ty ->
@@ -145,7 +156,7 @@ unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap cnt $ hp)
 runEmptyHeap :: Monad m =>  Natural -> HeapStepCounterM ast m  b-> m (b,CounterAndHeap ast )
 runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap ct $ Heap (Ref 1) Map.empty)
 
-heapRefLookupTransitive :: Monad m =>  Ref -> HeapStepCounterM ast   m (HeapVal ast , Ref)
+heapRefLookupTransitive ::  Ref -> HeapStepCounterM ast   (STE (b :+ HeapError ) s) (HeapVal ast , Ref)
 heapRefLookupTransitive ref =
         do  next <- heapLookup ref
             case  next of

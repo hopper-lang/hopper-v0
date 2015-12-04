@@ -50,7 +50,7 @@ library
   -- Modules exported by the library.
   exposed-modules:
 
-
+                    Data.Hop.Or
                     Control.Monad.STExcept
                     Language.Hopper.Internal.State
                     Language.Hopper.Internal.Core.CPS
