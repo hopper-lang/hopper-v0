@@ -51,7 +51,6 @@ data ExpContext  ty a  = SCEmpty
 
 data InterpreterError
   = PrimopTypeMismatch
-  | InfiniteLoopBlackhole
   | NonClosureInApplicationPosition
   | ArityMismatchFailure
   | HeapLookupFailure

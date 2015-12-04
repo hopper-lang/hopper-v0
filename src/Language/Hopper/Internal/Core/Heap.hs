@@ -43,8 +43,11 @@ deriving instance (Monad ast,Eq1 ast, Eq (ast Ref)) => Eq (Heap ast)
 deriving instance (Monad ast, Ord1 ast, Ord (ast Ref)) => Ord (Heap ast)
 
 
-data HeapError = HeapStepCounterExceeded | InvalidHeapLookup  | BlackHoleEncounteredDuringLookup
-                | HeapLookupOutOfBounds
+data HeapError
+  = HeapStepCounterExceeded
+  | InvalidHeapLookup
+  | BlackholeEncounteredDuringLookup
+  | HeapLookupOutOfBounds
   deriving (Eq,Ord,Show,Read,Typeable,Generic,Data)
 
 -- this
@@ -135,7 +138,7 @@ heapAllocate val = do   cah <-  getHSCM
                         setHSCM cah'
                         return rf
 
-heapLookup :: Ref -> HeapStepCounterM ast  (STE (b :+ HeapError) s) (HeapVal ast )
+heapLookup :: Ref -> HeapStepCounterM ast (STE (b :+ HeapError) s) (HeapVal ast)
 heapLookup ref = do
   checkedCounterDecrement
   heapHandle <- _extractHeapCAH <$> getHSCM
@@ -150,17 +153,16 @@ heapLookup ref = do
 
 --- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)
 unsafeRunHSCM :: Monad m =>  Natural -> Heap ast  -> HeapStepCounterM ast m b -> m (b,CounterAndHeap ast  )
-unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap cnt $ hp)
+unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap cnt hp)
 
 -- run a program in an empty heap
 runEmptyHeap :: Monad m =>  Natural -> HeapStepCounterM ast m  b-> m (b,CounterAndHeap ast )
 runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap ct $ Heap (Ref 1) Map.empty)
 
-heapRefLookupTransitive ::  Ref -> HeapStepCounterM ast   (STE (b :+ HeapError ) s) (HeapVal ast , Ref)
-heapRefLookupTransitive ref =
-        do  next <- heapLookup ref
-            case  next of
-              Nothing -> error $ "bad heap ref in lookup transitive" ++ show ref
-              Just (BlackHoleF) -> error  $ "hit BlackHoleF in transitive lookup" ++ show ref
-              (Just (IndirectionF nextRef)) -> heapRefLookupTransitive nextRef
-              Just v -> return (v,ref)
+heapRefLookupTransitive :: Ref -> HeapStepCounterM ast (STE (b :+ HeapError) s) (HeapVal ast, Ref)
+heapRefLookupTransitive ref = do
+  next <- heapLookup ref
+  case next of
+    BlackHoleF -> lift $ throwSTE $ InR BlackholeEncounteredDuringLookup
+    IndirectionF nextRef -> heapRefLookupTransitive nextRef
+    val -> return (val, ref)
