@@ -84,27 +84,27 @@ throwInterpError :: MonadTrans t
                  -> t (STE ((a1 :+ InterpreterError) :+ b) s) a
 throwInterpError e = lift $ throwSTE $ (InL . InR) e
 
-evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref
-    -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)
-evalClosureApp (FunAppCtxt ls [] stk) =
-    do  (funRef:argsRef) <- return $ reverse ls
-        (val,_ref) <- heapRefLookupTransitive funRef
-        noBlackholeArgs argsRef
-        case val of
-          (DirectClosureF (MkClosure wrpNames scp))
-                | length argsRef == length wrpNames ->
-                      let nmMap = Map.fromList $ zip (map _extractArityInfo wrpNames) argsRef
-                            in do
-                              nextExp <-  traverse (\ var ->
-                                                            case var of
-                                                              (B nm ) ->  maybe (throwInterpError MalformedClosure)
-                                                                                (\ rf -> return $ V rf)
-                                                                                (Map.lookup nm nmMap)
-                                                              (F term) -> return term )
-                                                    (unscope scp)
-                              evalExp stk $ join nextExp
-                | otherwise -> throwInterpError ArityMismatchFailure -- error "closure arity vs argument application mismatch"
-          _ -> throwInterpError NonClosureInApplicationPosition  -- error "cannot invoke non closure heap values in application position"
+evalClosureApp :: (Show ty, Ord ty)
+               => ExpContext ty Ref
+               -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) (HeapVal (Exp ty), Ref)
+evalClosureApp (FunAppCtxt ls [] stk) = do
+  (funRef:argsRef) <- return $ reverse ls
+  (val,_ref) <- heapRefLookupTransitive funRef
+  noBlackholeArgs argsRef
+  case val of
+    (DirectClosureF (MkClosure wrpNames scp))
+      | length argsRef == length wrpNames
+      -> let nmMap = Map.fromList $ zip (map _extractArityInfo wrpNames) argsRef
+             sub var = case var of
+               (B nm) -> maybe (throwInterpError MalformedClosure)
+                               (\ rf -> return $ V rf)
+                               (Map.lookup nm nmMap)
+               (F term) -> return term
+         in do
+           nextExp <- traverse sub $ unscope scp
+           evalExp stk $ join nextExp
+      | otherwise -> throwInterpError ArityMismatchFailure -- error "closure arity vs argument application mismatch"
+    _ -> throwInterpError NonClosureInApplicationPosition  -- error "cannot invoke non closure heap values in application position"
 evalClosureApp (FunAppCtxt ls (h : t) stk) = evalExp (FunAppCtxt ls t stk) h
 evalClosureApp (LetContext _ _ _ ) = throwInterpError MismatchedStackContext --error "letcontext appearing where there should be an closure app context"
 evalClosureApp (ThunkUpdate _ _ ) = throwInterpError MismatchedStackContext --  error "thunkupdate context appearing where there should be a closure app context"
