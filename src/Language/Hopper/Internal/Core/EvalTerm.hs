@@ -79,6 +79,11 @@ evalExp stk (Let mv _mty rhsExp scp) = evalExp (LetContext mv scp stk) rhsExp
 noBlackholeArgs :: (Ord ty,Show ty) => [Ref] -> HeapStepCounterM (Exp ty)  (STE ((b :+ InterpreterError ) :+ HeapError) s) ()
 noBlackholeArgs rls = void $ traverse heapRefLookupTransitive rls
 
+throwInterpError :: MonadTrans t
+                 => InterpreterError
+                 -> t (STE ((a1 :+ InterpreterError) :+ b) s) a
+throwInterpError e = lift $ throwSTE $ (InL . InR) e
+
 evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref
     -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)
 evalClosureApp (FunAppCtxt ls [] stk) =
@@ -92,33 +97,27 @@ evalClosureApp (FunAppCtxt ls [] stk) =
                             in do
                               nextExp <-  traverse (\ var ->
                                                             case var of
-                                                              (B nm ) ->  maybe (lift $ throwSTE $ (InL . InR) MalformedClosure)
+                                                              (B nm ) ->  maybe (throwInterpError MalformedClosure)
                                                                                 (\ rf -> return $ V rf)
                                                                                 (Map.lookup nm nmMap)
                                                               (F term) -> return term )
                                                     (unscope scp)
                               evalExp stk $ join nextExp
-
-
-                            -- case
-                            --  evalExp stk
-                            --   (instantiate (\k -> V $ maybe (error "closure environment lookup failure ") id $ Map.lookup k nmMap)
-                            --                scp)
-                | otherwise -> lift  $ throwSTE  $  (InL .InR) ArityMismatchFailure -- error "closure arity vs argument application mismatch"
-          _ ->  lift $ throwSTE $ (InL .InR) NonClosureInApplicationPosition  -- error "cannot invoke non closure heap values in application position"
+                | otherwise -> throwInterpError ArityMismatchFailure -- error "closure arity vs argument application mismatch"
+          _ -> throwInterpError NonClosureInApplicationPosition  -- error "cannot invoke non closure heap values in application position"
 evalClosureApp (FunAppCtxt ls (h : t) stk) = evalExp (FunAppCtxt ls t stk) h
-evalClosureApp (LetContext _ _ _ ) =  lift $ throwSTE $ (InL .InR)  MismatchedStackContext --error "letcontext appearing where there should be an closure app context"
-evalClosureApp (ThunkUpdate _ _ ) = lift $ throwSTE $ (InL .InR)  MismatchedStackContext --  error "thunkupdate context appearing where there should be a closure app context"
-evalClosureApp (PrimAppCtxt _ _ _ _) = lift $ throwSTE $ (InL .InR) MismatchedStackContext -- error "prim app context appearing where there should be a closure app context"
-evalClosureApp SCEmpty  =   lift $ throwSTE $ (InL .InR)  MismatchedStackContext -- error "empty stack where application context is expected"
+evalClosureApp (LetContext _ _ _ ) = throwInterpError MismatchedStackContext --error "letcontext appearing where there should be an closure app context"
+evalClosureApp (ThunkUpdate _ _ ) = throwInterpError MismatchedStackContext --  error "thunkupdate context appearing where there should be a closure app context"
+evalClosureApp (PrimAppCtxt _ _ _ _) = throwInterpError MismatchedStackContext -- error "prim app context appearing where there should be a closure app context"
+evalClosureApp SCEmpty  = throwInterpError MismatchedStackContext -- error "empty stack where application context is expected"
 
 evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)
 evalPrimApp (PrimAppCtxt nm args [] stk) = do noBlackholeArgs args ;applyPrim stk nm $ reverse args
 evalPrimApp (PrimAppCtxt nm args (h:t) stk) = evalExp (PrimAppCtxt nm  args t stk) h
-evalPrimApp (LetContext _ _ _ ) =  lift $ throwSTE $ (InL . InR)  MismatchedStackContext -- error "letcontext appearing where there should be an prim app context"
-evalPrimApp (ThunkUpdate _ _ ) = lift $ throwSTE $ (InL . InR) MismatchedStackContext-- error "thunkupdate context appearing where there should be a prim app context"
-evalPrimApp (FunAppCtxt _ _ _) = lift $ throwSTE $ (InL . InR) MismatchedStackContext -- error "fun app context appearing where there should be a prim app context"
-evalPrimApp SCEmpty  = lift $ throwSTE $ (InL . InR) MismatchedStackContext --- error "empty stack where prim app context is expected"
+evalPrimApp (LetContext _ _ _ ) = throwInterpError MismatchedStackContext -- error "letcontext appearing where there should be an prim app context"
+evalPrimApp (ThunkUpdate _ _ ) = throwInterpError MismatchedStackContext-- error "thunkupdate context appearing where there should be a prim app context"
+evalPrimApp (FunAppCtxt _ _ _) = throwInterpError MismatchedStackContext -- error "fun app context appearing where there should be a prim app context"
+evalPrimApp SCEmpty  = throwInterpError MismatchedStackContext --- error "empty stack where prim app context is expected"
 
 forcingApply :: (Ord ty,Show ty)=>
     ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) ((HeapVal (Exp ty)), Ref)

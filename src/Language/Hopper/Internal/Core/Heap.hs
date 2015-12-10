@@ -50,12 +50,14 @@ data HeapError
   | HeapLookupOutOfBounds
   deriving (Eq,Ord,Show,Read,Typeable,Generic,Data)
 
--- this
+throwHeapError :: MonadTrans t => HeapError -> t (STE (a1 :+ HeapError) s) a
+throwHeapError e = lift $ throwSTE $ InR e
+
 heapRefUpdate :: Ref -> HeapVal ast  -> Heap ast  -> HeapStepCounterM  ast (STE (b :+ HeapError ) s) (Heap ast)
 heapRefUpdate ref val (Heap ct mp)
         | ref < ct  && ref `Map.member` mp = return $ Heap ct $ Map.insert ref val mp
-        | ref >= ct =  lift $throwSTE $ InR HeapLookupOutOfBounds -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
-        | otherwise {- invalid heap ref -} = lift $ throwSTE $ InR  InvalidHeapLookup
+        | ref >= ct = throwHeapError HeapLookupOutOfBounds -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
+        | otherwise {- invalid heap ref -} = throwHeapError InvalidHeapLookup
 
 heapAllocateValue :: Heap ast   -> HeapVal ast   -> (Ref,Heap ast  )
 heapAllocateValue hp val = (_minMaxFreshRef hp
@@ -120,7 +122,7 @@ checkedCounterDecrement ::   HeapStepCounterM  ast  (STE (b :+ HeapError ) s) ()
 checkedCounterDecrement = do  cah <- getHSCM
                               ct <- return $  _extractCounterCAH cah
                               if ct <= 0
-                                then lift $ throwSTE $ InR HeapStepCounterExceeded-- error "allowed step count exceeded, aborting"
+                                then throwHeapError HeapStepCounterExceeded-- error "allowed step count exceeded, aborting"
                                 else setHSCM cah{_extractCounterCAH = ct - 1}
 
 unsafeHeapUpdate :: Ref -> HeapVal ast  -> HeapStepCounterM ast (STE (b :+ HeapError ) s) ()
@@ -147,8 +149,8 @@ heapLookup ref = do
      heapRefLookup :: Ref -> Heap ast -> HeapStepCounterM ast (STE (b :+ HeapError) s) (HeapVal ast)
      heapRefLookup ref (Heap ct mp)
        | ref < ct && ref `Map.member` mp = return $ mp Map.! ref
-       | ref >= ct =  lift $ throwSTE $ InR HeapLookupOutOfBounds
-       | otherwise {- invalid heap ref -} = lift $ throwSTE $ InR InvalidHeapLookup
+       | ref >= ct = throwHeapError HeapLookupOutOfBounds
+       | otherwise {- invalid heap ref -} = throwHeapError InvalidHeapLookup
 
 
 --- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)
@@ -163,6 +165,6 @@ heapRefLookupTransitive :: Ref -> HeapStepCounterM ast (STE (b :+ HeapError) s) 
 heapRefLookupTransitive ref = do
   next <- heapLookup ref
   case next of
-    BlackHoleF -> lift $ throwSTE $ InR BlackholeEncounteredDuringLookup
+    BlackHoleF -> throwHeapError BlackholeEncounteredDuringLookup
     IndirectionF nextRef -> heapRefLookupTransitive nextRef
     val -> return (val, ref)
