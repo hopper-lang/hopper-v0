@@ -27,7 +27,7 @@ import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Term
 import Control.Lens (view,_1)
 import Text.Read (readMaybe)
-import Control.Monad.Trans.Except (ExceptT(..),runExceptT)
+import Control.Monad.Trans.Except (ExceptT(..))
 import Control.Monad.Error.Class (throwError)
 import Data.Hop.Or
 import Control.Monad.STExcept

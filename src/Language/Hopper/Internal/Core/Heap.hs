@@ -147,8 +147,8 @@ heapLookup ref = do
   heapRefLookup ref heapHandle
    where
      heapRefLookup :: Ref -> Heap ast -> HeapStepCounterM ast (STE (b :+ HeapError) s) (HeapVal ast)
-     heapRefLookup ref (Heap ct mp)
-       | ref < ct && ref `Map.member` mp = return $ mp Map.! ref
+     heapRefLookup rf (Heap ct mp)
+       | ref < ct && rf `Map.member` mp = return $ mp Map.! rf
        | ref >= ct = throwHeapError HeapLookupOutOfBounds
        | otherwise {- invalid heap ref -} = throwHeapError InvalidHeapLookup
 
