@@ -123,16 +123,21 @@ data InterpreterError
 
 
 
-runExpr :: Natural -> (Natural, (Map.Map Text Rational))
-    -> (Map.Map Text Rational)  -> ( forall s . InterpStack s  ty b a )-> Either ( ((b :+ InterpreterError ) :+ HeapError) )  (a, (Natural, (Map.Map Text Rational)) ,[(Natural, Cmd)])
-runExpr step st  rdr m = fmap fst $  handleSTE id $  runEmptyHeap  step $ runRWST  m  rdr st
+runExpr :: (Ord ty, Show ty ) =>  Natural
+        -> (Natural, (Map.Map Text Rational))
+        -> (Map.Map Text Rational)
+        -> (forall v . Exp ty v)
+        -> Either (((b :+ InterpreterError) :+ HeapError))
+                  ((Natural, Map.Map Text Rational), [(Natural, Cmd)])
+runExpr step st env expr = fmap (\ (_a,b,c)  -> (b,c)) $ fmap fst $ handleSTE id $ runEmptyHeap step $ runRWST (evalExp SCEmpty expr) env st
 
-type InterpStack s  ty b a = RWST (Map.Map Text Rational)
-                                  [(Natural, Cmd)]
-                                  (Natural, (Map.Map Text Rational))
-                              (HeapStepCounterM (Exp ty)
-                                  (STE ((b :+ InterpreterError ) :+ HeapError) s))
-                              a
+type InterpStack s ty b a
+  = RWST (Map.Map Text Rational)
+         [(Natural, Cmd)]
+         (Natural, (Map.Map Text Rational))
+         (HeapStepCounterM (Exp ty)
+                           (STE ((b :+ InterpreterError) :+ HeapError) s))
+         a
 
 -- should this be ref or value in the return position? lets revisit later
 -- maybe it should be (Ref,HeapVal (Exp ty))  in return position?
