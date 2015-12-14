@@ -58,6 +58,8 @@ data InterpreterError
   | HeapLookupFailure
   | MalformedClosure
   | MismatchedStackContext
+  | PrimFailure String
+  | UnsupportedTermConstructFailure String
   deriving (Eq,Ord,Show,Typeable,Data)
 
 

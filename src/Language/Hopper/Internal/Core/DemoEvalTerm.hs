@@ -27,7 +27,6 @@ import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Term
 import Control.Lens (view,_1)
 import Text.Read (readMaybe)
-import Control.Monad.Trans.Except (ExceptT(..),runExceptT)
 -- import Control.Monad.Error.Class (throwError)
 import Data.Hop.Or
 import Control.Monad.STExcept
@@ -92,7 +91,7 @@ data ExpContext  ty a  = SCEmpty
                             (Maybe Text) -- we're not currently using / needing the variable name here
                             (Scope (Maybe Text) (Exp ty) a)
                             (ExpContext ty a)
-                        | ThunkUpdate !a (ExpContext ty a)
+                        -- | ThunkUpdate !a (ExpContext ty a)
                         | FunAppCtxt  [Ref] [Exp ty a] (ExpContext  ty a)
                           -- lets just treat the ref list as having the function ref at the
                           -- "bottom of the stack", when [Exp] is empty, reverse ref list to resolve function and apply args
@@ -118,6 +117,7 @@ data InterpreterError
   | MalformedClosure
   | MismatchedStackContext
   | PrimFailure String
+  | UnsupportedTermConstructFailure String
   deriving (Eq,Ord,Show,Typeable,Data)
 
 
@@ -132,9 +132,9 @@ evalExp :: (Ord ty,Show ty)=>  ExpContext ty Ref -> Exp ty Ref
 evalExp stk (V rf) =  do  rp@(_hpval,_ref) <- lift $ heapRefLookupTransitive rf
                           applyStack stk rp -- does this need both heap location and value in general?
 -- should Force reduce both Thunk e AND (Thunk (Thunk^+ e)) to e? for now I claim YES :)
-evalExp stk (Force e)=  do  res <- evalExp stk e
-                            forcingApply stk res -- forcing apply inits ref to thunk when evaluated to blackholeF
-evalExp stk (Delay e) = do ref <- lift  $heapAllocate (ThunkF e) ; applyStack stk (ThunkF e,ref)
+evalExp _stk (Force _e)= throwInterpError $ UnsupportedTermConstructFailure  "Force" {-do  res <- evalExp stk e
+                            forcingApply stk res -}-- forcing apply inits ref to thunk when evaluated to blackholeF
+evalExp _stk (Delay _e) = throwInterpError $ UnsupportedTermConstructFailure "Delay" --- do ref <- lift  $heapAllocate (ThunkF e) ; applyStack stk (ThunkF e,ref)
 evalExp stk (funE :@ args) = evalClosureApp (FunAppCtxt [] (funE:args) stk )
 evalExp stk (ELit l) =  do ref <- lift $  heapAllocate (VLitF l) ; applyStack stk (VLitF l, ref)
 evalExp stk (PrimApp name args) = evalPrimApp (PrimAppCtxt name [] args stk )
@@ -175,7 +175,7 @@ evalClosureApp (FunAppCtxt ls [] stk) = do
     _ ->  throwInterpError NonClosureInApplicationPosition  -- error "cannot invoke non closure heap values in application position"
 evalClosureApp (FunAppCtxt ls (h : t) stk) = evalExp (FunAppCtxt ls t stk) h
 evalClosureApp (LetContext _ _ _ ) =  throwInterpError MismatchedStackContext --error "letcontext appearing where there should be an closure app context"
-evalClosureApp (ThunkUpdate _ _ ) =  throwInterpError MismatchedStackContext --  error "thunkupdate context appearing where there should be a closure app context"
+-- evalClosureApp (ThunkUpdate _ _ ) =  throwInterpError MismatchedStackContext --  error "thunkupdate context appearing where there should be a closure app context"
 evalClosureApp (PrimAppCtxt _ _ _ _) =  throwInterpError MismatchedStackContext -- error "prim app context appearing where there should be a closure app context"
 evalClosureApp SCEmpty  = throwInterpError MismatchedStackContext -- error "empty stack where application context is expected"
 
@@ -183,7 +183,7 @@ evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> InterpStack s  ty b ((He
 evalPrimApp (PrimAppCtxt nm args [] stk) =  do   noBlackholeArgs args ;  applyPrim stk nm $ reverse args
 evalPrimApp (PrimAppCtxt nm args (h:t) stk) = evalExp (PrimAppCtxt nm  args t stk) h
 evalPrimApp (LetContext _ _ _ ) = throwInterpError MismatchedStackContext -- error "letcontext appearing where there should be an prim app context"
-evalPrimApp (ThunkUpdate _ _ ) = throwInterpError MismatchedStackContext-- error "thunkupdate context appearing where there should be a prim app context"
+-- evalPrimApp (ThunkUpdate _ _ ) = throwInterpError MismatchedStackContext-- error "thunkupdate context appearing where there should be a prim app context"
 evalPrimApp (FunAppCtxt _ _ _) = throwInterpError MismatchedStackContext -- error "fun app context appearing where there should be a prim app context"
 evalPrimApp SCEmpty  = throwInterpError MismatchedStackContext --- error "empty stack where prim app context is expected"
 
@@ -201,11 +201,11 @@ applyStack (FunAppCtxt ls [] stk) (_,ref) = evalClosureApp  (FunAppCtxt (ref : l
 applyStack (FunAppCtxt ls (h:t) stk) (_,ref) = evalExp (FunAppCtxt (ref:ls) t stk) h
 applyStack (PrimAppCtxt nm revArgs [] stk) (_,ref) = evalPrimApp (PrimAppCtxt nm (ref:revArgs) [] stk)
 applyStack (PrimAppCtxt nm revargs (h:t) stk) (_,ref) = evalExp (PrimAppCtxt nm (ref : revargs) t stk) h
-applyStack (ThunkUpdate thunkRef stk) pr@(_val,ref) = do
+-- applyStack (ThunkUpdate thunkRef stk) pr@(_val,ref) = do
   -- NOTE: under our current (deterministic, sequential) semantics, thunkRef
   --       *should* (transitively) lead to a blackhole before update.
-  lift $ unsafeHeapUpdate thunkRef (IndirectionF ref)
-  applyStack stk pr
+  -- lift $ unsafeHeapUpdate thunkRef (IndirectionF ref)
+  -- applyStack stk pr
 
 
 
