@@ -84,7 +84,7 @@ throwInterpError :: MonadTrans t
                  -> t (STE ((a1 :+ InterpreterError) :+ b) s) a
 throwInterpError e = lift $ throwSTE $ (InL . InR) e
 
-evalClosureApp :: (Show ty, Ord ty)
+evalClosureApp :: forall ty  s b .  (Show ty, Ord ty)
                => ExpContext ty Ref
                -> HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s) (HeapVal (Exp ty), Ref)
 evalClosureApp (FunAppCtxt ls [] stk) = do
@@ -95,13 +95,16 @@ evalClosureApp (FunAppCtxt ls [] stk) = do
     (DirectClosureF (MkClosure wrpNames scp))
       | length argsRef == length wrpNames
       -> let nmMap = Map.fromList $ zip (map _extractArityInfo wrpNames) argsRef
-             sub var = case var of
-               (B nm) -> maybe (throwInterpError MalformedClosure)
-                               (\ rf -> return $ V rf)
-                               (Map.lookup nm nmMap)
-               (F term) -> return term
+             substApply :: (MonadTrans t1, (Monad (t1 (STE ((a2 :+ InterpreterError) :+ b2) s2))))
+                 => Var Text (Exp ty2 Ref)
+                    -> t1 (STE ((a2 :+ InterpreterError) :+ b2) s2) (Exp ty2 Ref)
+             substApply var = case var of
+                     (B nm) -> maybe (throwInterpError MalformedClosure)
+                                     (\ rf -> return $ V rf)
+                                     (Map.lookup nm nmMap)
+                     (F term) -> return term
          in do
-           nextExp <- traverse sub $ unscope scp
+           nextExp <- traverse substApply $ unscope scp
            evalExp stk $ join nextExp
       | otherwise -> throwInterpError ArityMismatchFailure -- error "closure arity vs argument application mismatch"
     _ -> throwInterpError NonClosureInApplicationPosition  -- error "cannot invoke non closure heap values in application position"
