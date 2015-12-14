@@ -32,10 +32,10 @@ check Var.Free
  --  |   Cons : a -> list a  -> list a 
 
 
-inductive term.{ℓ}  (a : Type.{ℓ}) : nat ->  Type.{max 2 ℓ }  :=
-   | V :∀ {fv : nat}, Var (fin fv) a -> term  a fv  
-   | App : ∀ {fv : nat }, term  a fv ->  term a fv   -> term  a fv  
-   | Lam : ∀ (ct : nat ) { fv  m : nat} ,(m = fv + ct) -> term a   m  -> term  a fv
+inductive term : Type -> Type   :=
+   | V :∀ {a}, a -> term  a   
+   | App : ∀ {a  }, term  a  ->  term a    -> term  a 
+   | Lam : ∀  {a} (n : nat) , term (Var (fin n)  a)     -> term  a 
      -- we can introduce ct variables, which also tells us how to "upshift"
      -- any substitution, because theres now "ct" many variables as the inner most scope
 -- with 
