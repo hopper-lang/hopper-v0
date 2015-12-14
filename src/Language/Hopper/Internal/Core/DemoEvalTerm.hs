@@ -82,7 +82,7 @@ data ExpContext  ty a  = SCEmpty
                             (Maybe Text) -- we're not currently using / needing the variable name here
                             (Scope (Maybe Text) (Exp ty) a)
                             (ExpContext ty a)
-                        | ThunkUpdate !a (ExpContext ty a)
+                        -- | ThunkUpdate !a (ExpContext ty a)
                         | FunAppCtxt  [Ref] [Exp ty a] (ExpContext  ty a)
                           -- lets just treat the ref list as having the function ref at the
                           -- "bottom of the stack", when [Exp] is empty, reverse ref list to resolve function and apply args
@@ -109,9 +109,9 @@ evalExp :: (Ord ty,Show ty)=>  ExpContext ty Ref -> Exp ty Ref -> DemoWithLayers
 evalExp stk (V rf) =  do  rp@(_hpval,_ref) <-   demoLift $ heapRefLookupTransitive rf
                           applyStack stk rp -- does this need both heap location and value in general?
 -- should Force reduce both Thunk e AND (Thunk (Thunk^+ e)) to e? for now I claim YES :)
-evalExp stk (Force e)=  do  res <- evalExp stk e
-                            forcingApply stk res -- forcing apply inits ref to thunk when evaluated to blackholeF
-evalExp stk (Delay e) = do ref <- demoLift  $ heapAllocate (ThunkF e) ; applyStack stk (ThunkF e,ref)
+evalExp _stk (Force _e)= error "demo evaluator impossible force" {-do  res <- evalExp stk e
+                            forcingApply stk res --} -- forcing apply inits ref to thunk when evaluated to blackholeF
+evalExp _stk (Delay _e) = error "demoevaulator impossible Delay " -- do ref <- demoLift  $ heapAllocate (ThunkF e) ; applyStack stk (ThunkF e,ref)
 evalExp stk (funE :@ args) = evalClosureApp (FunAppCtxt [] (funE:args) stk )
 evalExp stk (ELit l) =  do ref <- demoLift $ heapAllocate (VLitF l) ; applyStack stk (VLitF l, ref)
 evalExp stk (PrimApp name args) = evalPrimApp (PrimAppCtxt name [] args stk )
@@ -144,7 +144,7 @@ evalClosureApp (FunAppCtxt ls [] stk) =
           _ -> error "cannot invoke non closure heap values in application position"
 evalClosureApp (FunAppCtxt ls (h : t) stk) = evalExp (FunAppCtxt ls t stk) h
 evalClosureApp (LetContext _ _ _ ) = error "letcontext appearing where there should be an closure app context"
-evalClosureApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where there should be a closure app context"
+-- evalClosureApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where there should be a closure app context"
 evalClosureApp (PrimAppCtxt _ _ _ _) = error "prim app context appearing where there should be a closure app context"
 evalClosureApp SCEmpty  = error "empty stack where application context is expected"
 
@@ -152,13 +152,13 @@ evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> DemoWithLayers b  s (Exp
 evalPrimApp (PrimAppCtxt nm args [] stk) = do noBlackHoleRefs args ;  res <- applyPrim  nm $ reverse args ; applyStack stk res
 evalPrimApp (PrimAppCtxt nm args (h:t) stk) = evalExp (PrimAppCtxt nm  args t stk) h
 evalPrimApp (LetContext _ _ _ ) = error "letcontext appearing where there should be an prim app context"
-evalPrimApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where there should be a prim app context"
+-- evalPrimApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where there should be a prim app context"
 evalPrimApp (FunAppCtxt _ _ _) = error "fun app context appearing where there should be a prim app context"
 evalPrimApp SCEmpty  = error "empty stack where prim app context is expected"
 
-forcingApply :: (Ord ty,Show ty)=>
-    ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> DemoWithLayers b  s (Exp ty) ((HeapVal (Exp ty)), Ref)
-forcingApply = undefined
+-- forcingApply :: (Ord ty,Show ty)=>
+--     ExpContext ty Ref -> (HeapVal (Exp ty),Ref) -> DemoWithLayers b  s (Exp ty) ((HeapVal (Exp ty)), Ref)
+-- forcingApply = undefined
 
 --- question: do we need to guard from blackholes in substitution points??????
 applyStack :: (Ord ty,Show ty)=>
@@ -169,13 +169,13 @@ applyStack (FunAppCtxt ls [] stk) (_,ref) = evalClosureApp  (FunAppCtxt (ref : l
 applyStack (FunAppCtxt ls (h:t) stk) (_,ref) = evalExp (FunAppCtxt (ref:ls) t stk) h
 applyStack (PrimAppCtxt nm revArgs [] stk) (_,ref) = evalPrimApp (PrimAppCtxt nm (ref:revArgs) [] stk)
 applyStack (PrimAppCtxt nm revargs (h:t) stk) (_,ref) = evalExp (PrimAppCtxt nm (ref : revargs) t stk) h
-applyStack (ThunkUpdate refTarget stk) pr@(_val,ref) =
-                                      do   (targetVal,endRef)  <- demoLift $ heapRefLookupTransitive refTarget
-                                           case targetVal of
-                                                  -- should we do the indirection or direct contraction???
-                                                  --- this semantics as is, can result in a chain of indirections
-                                                 BlackHoleF -> do  demoLift $ unsafeHeapUpdate endRef (IndirectionF ref)  ; applyStack stk pr
-                                                 _ -> error "tried to update a heap ref that isn't a blackholeF! ERRROR"
+-- applyStack (ThunkUpdate refTarget stk) pr@(_val,ref) =
+--                                       do   (targetVal,endRef)  <- demoLift $ heapRefLookupTransitive refTarget
+--                                            case targetVal of
+--                                                   -- should we do the indirection or direct contraction???
+--                                                   --- this semantics as is, can result in a chain of indirections
+--                                                  BlackHoleF -> do  demoLift $ unsafeHeapUpdate endRef (IndirectionF ref)  ; applyStack stk pr
+--                                                  _ -> error "tried to update a heap ref that isn't a blackholeF! ERRROR"
 
 lookupPrimAccountBalance :: (Ord ty,Show ty)=> Text ->  DemoWithLayers b s (Exp ty) (Maybe Rational)
 lookupPrimAccountBalance acctNam = do

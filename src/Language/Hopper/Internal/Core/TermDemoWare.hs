@@ -13,11 +13,11 @@ import Language.Hopper.Internal.Core.Type
 data DemoTerm = V  Text
     | ELit Lit.Literal
     -- | PrimApp Text [a]
-    | Force DemoTerm  --- Force is a Noop on evaluate values,
-                        --- otherwise reduces expression to applicable normal form
-                        -- should force be more like seq a b, cause pure
+    -- | Force DemoTerm  --- Force is a Noop on evaluate values,
+    --                     --- otherwise reduces expression to applicable normal form
+    --                     -- should force be more like seq a b, cause pure
 
-    | Delay DemoTerm  --- Delay is a Noop on Thunked values, otherwise creates a thunk
+    -- | Delay DemoTerm  --- Delay is a Noop on Thunked values, otherwise creates a thunk
                         --- note: may need to change their semantics later?!
     | DemoTerm :@ [DemoTerm]
     | PrimApp  Text [DemoTerm] -- not sure if this is needed, but lets go with it for now
@@ -46,8 +46,8 @@ data DemoTerm = V  Text
 demoTerm2ScopedTerm :: DemoTerm -> Tm.Exp () Text
 demoTerm2ScopedTerm (V str) = Tm.V $  str
 demoTerm2ScopedTerm (ELit l) = Tm.ELit l
-demoTerm2ScopedTerm (Force e) = Tm.Force  $ demoTerm2ScopedTerm e
-demoTerm2ScopedTerm (Delay e) = Tm.Delay $ demoTerm2ScopedTerm e
+-- demoTerm2ScopedTerm (Force e) = Tm.Force  $ demoTerm2ScopedTerm e
+-- demoTerm2ScopedTerm (Delay e) = Tm.Delay $ demoTerm2ScopedTerm e
 demoTerm2ScopedTerm (f :@ lse) = demoTerm2ScopedTerm f Tm.:@ map demoTerm2ScopedTerm lse
 demoTerm2ScopedTerm (PrimApp nm ls) = Tm.PrimApp (Lit.PrimopId  nm) (map demoTerm2ScopedTerm ls)
 demoTerm2ScopedTerm (Lam args bod) = let dtsBod = demoTerm2ScopedTerm bod
