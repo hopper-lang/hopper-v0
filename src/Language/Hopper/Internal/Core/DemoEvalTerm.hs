@@ -6,6 +6,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric, TypeOperators #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Language.Hopper.Internal.Core.DemoEvalTerm where
 
@@ -121,9 +122,17 @@ data InterpreterError
   deriving (Eq,Ord,Show,Typeable,Data)
 
 
-type InterpStack s  ty b a = RWST  (Map.Map Text Rational)
-         [(Natural, Cmd)]
-         (Natural, (Map.Map Text Rational)) (HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s))  a
+
+runExpr :: Natural -> (Natural, (Map.Map Text Rational))
+    -> (Map.Map Text Rational)  -> ( forall s . InterpStack s  ty b a )-> Either ( ((b :+ InterpreterError ) :+ HeapError) )  (a, (Natural, (Map.Map Text Rational)) ,[(Natural, Cmd)])
+runExpr step st  rdr m = fmap fst $  handleSTE id $  runEmptyHeap  step $ runRWST  m  rdr st
+
+type InterpStack s  ty b a = RWST (Map.Map Text Rational)
+                                  [(Natural, Cmd)]
+                                  (Natural, (Map.Map Text Rational))
+                              (HeapStepCounterM (Exp ty)
+                                  (STE ((b :+ InterpreterError ) :+ HeapError) s))
+                              a
 
 -- should this be ref or value in the return position? lets revisit later
 -- maybe it should be (Ref,HeapVal (Exp ty))  in return position?

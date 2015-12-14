@@ -6,6 +6,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric , TypeOperators#-}
+{-# LANGUAGE RankNTypes #-}
 module Language.Hopper.Internal.Core.EvalTerm where
 
 import Bound
@@ -25,8 +26,9 @@ import Control.Monad.STExcept
 import Control.Monad.Trans
 --import Bound.Scope (traverseBound)
 import Control.Monad (join, void)
-import Control.Monad.Trans.Identity
+import Control.Monad.Trans.Identity (IdentityT(..),runIdentityT)
 import  Data.Hop.Or
+import Numeric.Natural
 
 data ExpContext  ty a  = SCEmpty
                         | LetContext
@@ -61,6 +63,10 @@ data InterpreterError
   | PrimFailure String
   | UnsupportedTermConstructFailure String
   deriving (Eq,Ord,Show,Typeable,Data)
+
+
+runExpr :: Natural ->  ( forall s . InterpStack s  ty b a )-> Either ( ((b :+ InterpreterError ) :+ HeapError) )  a
+runExpr step m = fmap fst $ handleSTE id  $  runEmptyHeap  step $ runIdentityT m
 
 
 type InterpStack s  ty b a = IdentityT (HeapStepCounterM (Exp ty) (STE ((b :+ InterpreterError ) :+ HeapError) s))  a
