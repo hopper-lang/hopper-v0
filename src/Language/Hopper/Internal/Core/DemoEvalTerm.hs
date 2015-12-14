@@ -120,11 +120,11 @@ evalExp stk (Lam ts bod) = do val <- return $ (DirectClosureF (MkClosure (map (A
                               applyStack stk (val,ref)
 evalExp stk (Let mv _mty rhsExp scp) = evalExp (LetContext mv scp stk) rhsExp
 
-noBlackHoleRefs :: (Ord ty,Show ty) => [Ref] -> DemoWithLayers b   s(Exp ty) ()
-noBlackHoleRefs rls = do  vls <- demoLift $  mapM (fmap (view _1) . heapRefLookupTransitive) rls ;
-                          if all (/= BlackHoleF) vls
-                            then return ()
-                            else error "heap reference to BlackHoleF in argument position in closure or prim application"
+-- noBlackHoleRefs :: (Ord ty,Show ty) => [Ref] -> DemoWithLayers b   s(Exp ty) ()
+-- noBlackHoleRefs rls = do  vls <- demoLift $  mapM (fmap (view _1) . heapRefLookupTransitive) rls ;
+--                           if all (/= BlackHoleF) vls
+--                             then return ()
+--                             else error "heap reference to BlackHoleF in argument position in closure or prim application"
 
 
 
@@ -133,7 +133,7 @@ evalClosureApp :: (Show ty, Ord ty) => ExpContext ty Ref -> DemoWithLayers b  s 
 evalClosureApp (FunAppCtxt ls [] stk) =
     do  (funRef:argsRef) <- return $ reverse ls
         (val,_ref) <- demoLift $  heapRefLookupTransitive funRef
-        noBlackHoleRefs argsRef
+        -- noBlackHoleRefs argsRef
         case val of
           (DirectClosureF (MkClosure wrpNames scp))
                 | length argsRef == length wrpNames ->
@@ -149,7 +149,7 @@ evalClosureApp (PrimAppCtxt _ _ _ _) = error "prim app context appearing where t
 evalClosureApp SCEmpty  = error "empty stack where application context is expected"
 
 evalPrimApp ::(Show ty, Ord ty) => ExpContext ty Ref -> DemoWithLayers b  s (Exp ty) ((HeapVal (Exp ty)), Ref)
-evalPrimApp (PrimAppCtxt nm args [] stk) = do noBlackHoleRefs args ;  res <- applyPrim  nm $ reverse args ; applyStack stk res
+evalPrimApp (PrimAppCtxt nm args [] stk) = do {-noBlackHoleRefs args ; -}  res <- applyPrim  nm $ reverse args ; applyStack stk res
 evalPrimApp (PrimAppCtxt nm args (h:t) stk) = evalExp (PrimAppCtxt nm  args t stk) h
 evalPrimApp (LetContext _ _ _ ) = error "letcontext appearing where there should be an prim app context"
 -- evalPrimApp (ThunkUpdate _ _ ) = error "thunkupdate context appearing where there should be a prim app context"
