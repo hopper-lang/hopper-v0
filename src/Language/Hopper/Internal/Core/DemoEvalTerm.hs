@@ -100,26 +100,30 @@ data InterpreterError
   | UnsupportedTermConstructFailure String
   deriving (Eq,Ord,Show,Typeable,Data)
 
-
+data InterpreterState
+  = InterpreterState { _stateCount :: Natural
+                     , _stateBalances :: Map.Map Text Rational
+                     }
+  deriving (Eq, Show)
 
 runExpr :: (Ord ty, Show ty)
         => Natural
-        -> (Natural, Map.Map Text Rational)
+        -> InterpreterState
         -> Map.Map Text Rational
         -> (forall v . Exp ty v)
         -> Either (b :+ InterpreterError :+ HeapError)
-                  (Natural, Map.Map Text Rational, [(Natural, Cmd)])
-runExpr step st env expr = fmap projectDiffs
-                         $ handleSTE id
-                         $ runEmptyHeap step
-                         $ runRWST (evalExp SCEmpty expr) env st
+                  (InterpreterState, [(Natural, Cmd)])
+runExpr step st0 env expr = fmap projectStateAndOps
+                          $ handleSTE id
+                          $ runEmptyHeap step
+                          $ runRWST (evalExp SCEmpty expr) env st0
   where
-    projectDiffs ((_heapVal, (n, stDiff), opDiff), _heap) = (n, stDiff, opDiff)
+    projectStateAndOps ((_heapVal, st1, opDiff), _heap) = (st1, opDiff)
 
 type InterpStack s ty b a
   = RWST (Map.Map Text Rational)
          [(Natural, Cmd)]
-         (Natural, Map.Map Text Rational)
+         InterpreterState
          (HeapStepCounterM (Exp ty)
                            (STE (b :+ InterpreterError :+ HeapError) s))
          a
@@ -213,7 +217,7 @@ applyStack (PrimAppCtxt nm revargs (h:t) stk) (_,ref) = evalExp (PrimAppCtxt nm 
 
 lookupPrimAccountBalance :: (Ord ty,Show ty)=> Text ->  InterpStack s  ty b (Maybe Rational)
 lookupPrimAccountBalance acctNam = do
-      (_cnt,localizedMap) :: (Natural,Map.Map Text Rational) <-  get
+      InterpreterState _cnt localizedMap <- get
       case Map.lookup  acctNam localizedMap of
           Just v |  v >= 0 -> return $ Just  v
                  | otherwise -> throwInterpError $ PrimFailure "critical data invariant failure in underlying snapshot or localized map"
@@ -232,8 +236,8 @@ updatePrimAccountBalanceByAdding nm amt = do
           Nothing   -> throwInterpError $ PrimFailure "account doesn't exist "
           Just current |  current + amt < 0 -> throwInterpError $ PrimFailure  "cant debit an account more than its current balance"
                        |  otherwise -> do
-                            (cnt,localizedMap) <- get
-                            put (cnt, (Map.insert nm  $! (current + amt)) localizedMap)
+                            InterpreterState cnt localizedMap <- get
+                            put $ InterpreterState cnt $ (Map.insert nm $! (current + amt)) localizedMap
 
 
 applyPrim :: (Ord ty,Show ty)=> ExpContext ty Ref  -> PrimOpId -> [Ref]
@@ -263,8 +267,8 @@ applyPrimDemo (PrimopId  trfer) [fromRef,toRef,posRatRef,fakeCryptoSigRef]
                                 do
                                   updatePrimAccountBalanceByAdding fromNm (-amt)
                                   updatePrimAccountBalanceByAdding toNm amt
-                                  (cnt, mp) <- get
-                                  put (cnt+1,mp)
+                                  InterpreterState cnt mp <- get
+                                  put $ InterpreterState (cnt + 1) mp
                                   tell [(cnt,Cmd fromNm toNm amt demoSig)]
                                   val <- return $ VLitF  $ LText $  pack "success"
                                   ref <- lift $ heapAllocate val  -- this shoudld be unit, but whatever
