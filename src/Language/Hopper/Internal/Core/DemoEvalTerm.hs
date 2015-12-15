@@ -66,27 +66,6 @@ readCmdMaybe str =  (\ (fr,t,pos,fk) -> Cmd fr t pos fk)  <$> readMaybe str
 readCmdListMaybe  :: String -> Maybe [Cmd]
 readCmdListMaybe str = fmap (fmap (\ (fr,t,pos,fk) -> Cmd fr t pos fk) ) $ readMaybe str
 
--- type DemoWithLayers b s  ast  a=  ExceptT  String
---                             (RWST (Map.Map Text Rational)  [(Natural,Cmd)]  (Natural,(Map.Map Text Rational))
---                               (HeapStepCounterM ast  (STE (( b :+ DemoError):+ HeapError) s) {- STE HopperDemoError  s -})) 
---                               a
-
-type DemoWithLayers b s ast a
-  = RWST (Map.Map Text Rational)
-         [(Natural, Cmd)]
-         (Natural, (Map.Map Text Rational))
-         (HeapStepCounterM ast (STE ((b :+ DemoError) :+ HeapError) s))
-         a
-
--- runLayeredDemo ::  Ord ty =>  Exp ty Ref
---                                   -> Natural
---                                   -> Map.Map Text Rational
---                                   -> Either (t, Map.Map Text Rational) (t8, t9)
--- runLayeredDemo expr step state  =  case runSTE $ runEmptyHeap step $ runRWST  (runExceptT $ evalExp SCEmpty expr)
---                                                             state (0,Map.empty :: Map.Map Text Rational) of
---                                         ((Left err,_badDiff,_badOpDiff), _heapStuff ) -> Left  (err, state)
---                                         ((Right _otherStuff, (_counter,stateDiff), oplogDiff),_heapStuff) -> Right (oplogDiff,stateDiff)
-
 data ExpContext  ty a  = SCEmpty
                         | LetContext
                             (Maybe Text) -- we're not currently using / needing the variable name here
@@ -123,20 +102,24 @@ data InterpreterError
 
 
 
-runExpr :: (Ord ty, Show ty ) =>  Natural
-        -> (Natural, (Map.Map Text Rational))
-        -> (Map.Map Text Rational)
+runExpr :: (Ord ty, Show ty )
+        => Natural
+        -> (Natural, Map.Map Text Rational)
+        -> Map.Map Text Rational
         -> (forall v . Exp ty v)
-        -> Either (((b :+ InterpreterError) :+ HeapError))
+        -> Either (b :+ InterpreterError :+ HeapError)
                   ((Natural, Map.Map Text Rational), [(Natural, Cmd)])
-runExpr step st env expr = fmap (\ (_a,b,c)  -> (b,c)) $ fmap fst $ handleSTE id $ runEmptyHeap step $ runRWST (evalExp SCEmpty expr) env st
+runExpr step st0 env expr = fmap projectDiffs
+                          $ handleSTE id $ runEmptyHeap step $ runRWST (evalExp SCEmpty expr) env st0
+  where
+    projectDiffs ((_heapValue, stDiff, opDiff), _heap) = (stDiff, opDiff)
 
 type InterpStack s ty b a
   = RWST (Map.Map Text Rational)
          [(Natural, Cmd)]
-         (Natural, (Map.Map Text Rational))
+         (Natural, Map.Map Text Rational)
          (HeapStepCounterM (Exp ty)
-                           (STE ((b :+ InterpreterError) :+ HeapError) s))
+                           (STE (b :+ InterpreterError :+ HeapError) s))
          a
 
 -- should this be ref or value in the return position? lets revisit later
