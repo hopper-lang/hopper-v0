@@ -108,11 +108,11 @@ runExpr :: (Ord ty, Show ty )
         -> Map.Map Text Rational
         -> (forall v . Exp ty v)
         -> Either (b :+ InterpreterError :+ HeapError)
-                  ((Natural, Map.Map Text Rational), [(Natural, Cmd)])
+                  (Natural, Map.Map Text Rational, [(Natural, Cmd)])
 runExpr step st0 env expr = fmap projectDiffs
                           $ handleSTE id $ runEmptyHeap step $ runRWST (evalExp SCEmpty expr) env st0
   where
-    projectDiffs ((_heapValue, stDiff, opDiff), _heap) = (stDiff, opDiff)
+    projectDiffs ((_heapValue, (cnt, stDiff), opDiff), _heap) = (cnt, stDiff, opDiff)
 
 type InterpStack s ty b a
   = RWST (Map.Map Text Rational)
