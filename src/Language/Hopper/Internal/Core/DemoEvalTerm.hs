@@ -102,17 +102,19 @@ data InterpreterError
 
 
 
-runExpr :: (Ord ty, Show ty )
+runExpr :: (Ord ty, Show ty)
         => Natural
         -> (Natural, Map.Map Text Rational)
         -> Map.Map Text Rational
         -> (forall v . Exp ty v)
         -> Either (b :+ InterpreterError :+ HeapError)
                   (Natural, Map.Map Text Rational, [(Natural, Cmd)])
-runExpr step st0 env expr = fmap projectDiffs
-                          $ handleSTE id $ runEmptyHeap step $ runRWST (evalExp SCEmpty expr) env st0
+runExpr step st env expr = fmap projectDiffs
+                         $ handleSTE id
+                         $ runEmptyHeap step
+                         $ runRWST (evalExp SCEmpty expr) env st
   where
-    projectDiffs ((_heapValue, (cnt, stDiff), opDiff), _heap) = (cnt, stDiff, opDiff)
+    projectDiffs ((_heapVal, (n, stDiff), opDiff), _heap) = (n, stDiff, opDiff)
 
 type InterpStack s ty b a
   = RWST (Map.Map Text Rational)
