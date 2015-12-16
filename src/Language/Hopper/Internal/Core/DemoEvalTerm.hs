@@ -31,6 +31,7 @@ import Text.Read (readMaybe)
 -- import Control.Monad.Error.Class (throwError)
 import Data.Hop.Or
 import Control.Monad.STExcept
+import Data.Maybe (fromMaybe)
 
 {-
 reader holds the "snapshot" of the state of all accounts/balances before this program is run and thence committed
@@ -101,29 +102,49 @@ data InterpreterError
   deriving (Eq,Ord,Show,Typeable,Data)
 
 data InterpreterState
-  = InterpreterState { _stateCount :: Natural
-                     , _stateBalances :: Map.Map Text Rational
+  = InterpreterState { _stateCounter :: Natural
+                     , _stateBalanceOverlay :: Map.Map Text Rational
+                     -- TODO: possibly add op log stuff here? probably don't
+                     --       want to carry around the full op log as part of
+                     --       the interpreter's state, though.
                      }
   deriving (Eq, Show)
 
+newtype InterpreterDiff
+  = InterpreterDiff InterpreterState
+  deriving (Eq, Show)
+
+initialState :: InterpreterState
+initialState = InterpreterState 0 Map.empty
+
+advanceState :: InterpreterDiff -> InterpreterState -> Either Text InterpreterState
+advanceState (InterpreterDiff (InterpreterState dCtr dOverlay))
+             (InterpreterState sCtr sAccts)
+  | dCtr > sCtr
+  = Right $ InterpreterState dCtr $ dOverlay `mappend` sAccts
+  | otherwise
+  = Left $ pack "the diff must occur after the state to which it is applied"
+
 runExpr :: (Ord ty, Show ty)
         => Natural
-        -> InterpreterState
+        -> Maybe InterpreterState
         -> Map.Map Text Rational
         -> (forall v . Exp ty v)
         -> Either (b :+ InterpreterError :+ HeapError)
-                  (InterpreterState, [(Natural, Cmd)])
-runExpr step st0 env expr = fmap projectStateAndOps
+                  (InterpreterDiff, [(Natural, Cmd)])
+runExpr step mSt env expr = fmap projectDiffs
                           $ handleSTE id
                           $ runEmptyHeap step
-                          $ runRWST (evalExp SCEmpty expr) env st0
+                          $ runRWST (evalExp SCEmpty expr) env diff0
   where
-    projectStateAndOps ((_heapVal, st1, opDiff), _heap) = (st1, opDiff)
+    st = fromMaybe initialState mSt
+    diff0 = InterpreterDiff $ st { _stateBalanceOverlay = Map.empty }
+    projectDiffs ((_heapVal, diff1, ops), _heap) = (diff1, ops)
 
 type InterpStack s ty b a
-  = RWST (Map.Map Text Rational)
+  = RWST (Map.Map Text Rational) -- TODO: maybe tuple this up with primops?
          [(Natural, Cmd)]
-         InterpreterState
+         InterpreterDiff
          (HeapStepCounterM (Exp ty)
                            (STE (b :+ InterpreterError :+ HeapError) s))
          a
@@ -217,7 +238,7 @@ applyStack (PrimAppCtxt nm revargs (h:t) stk) (_,ref) = evalExp (PrimAppCtxt nm 
 
 lookupPrimAccountBalance :: (Ord ty,Show ty)=> Text ->  InterpStack s  ty b (Maybe Rational)
 lookupPrimAccountBalance acctNam = do
-      InterpreterState _cnt localizedMap <- get
+      InterpreterDiff (InterpreterState _cnt localizedMap) <- get
       case Map.lookup  acctNam localizedMap of
           Just v |  v >= 0 -> return $ Just  v
                  | otherwise -> throwInterpError $ PrimFailure "critical data invariant failure in underlying snapshot or localized map"
@@ -236,8 +257,8 @@ updatePrimAccountBalanceByAdding nm amt = do
           Nothing   -> throwInterpError $ PrimFailure "account doesn't exist "
           Just current |  current + amt < 0 -> throwInterpError $ PrimFailure  "cant debit an account more than its current balance"
                        |  otherwise -> do
-                            InterpreterState cnt localizedMap <- get
-                            put $ InterpreterState cnt $ (Map.insert nm $! (current + amt)) localizedMap
+                            InterpreterDiff (InterpreterState cnt localizedMap) <- get
+                            put $ InterpreterDiff $ InterpreterState cnt $ (Map.insert nm $! (current + amt)) localizedMap
 
 
 applyPrim :: (Ord ty,Show ty)=> ExpContext ty Ref  -> PrimOpId -> [Ref]
@@ -267,8 +288,8 @@ applyPrimDemo (PrimopId  trfer) [fromRef,toRef,posRatRef,fakeCryptoSigRef]
                                 do
                                   updatePrimAccountBalanceByAdding fromNm (-amt)
                                   updatePrimAccountBalanceByAdding toNm amt
-                                  InterpreterState cnt mp <- get
-                                  put $ InterpreterState (cnt + 1) mp
+                                  InterpreterDiff (InterpreterState cnt mp) <- get
+                                  put $ InterpreterDiff $ InterpreterState (cnt + 1) mp
                                   tell [(cnt,Cmd fromNm toNm amt demoSig)]
                                   val <- return $ VLitF  $ LText $  pack "success"
                                   ref <- lift $ heapAllocate val  -- this shoudld be unit, but whatever
