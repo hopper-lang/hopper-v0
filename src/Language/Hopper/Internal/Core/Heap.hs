@@ -118,7 +118,7 @@ setHSCM ::Monad m =>  CounterAndHeap val   -> HeapStepCounterM  val  m  ()
 setHSCM v = HSCM $ State.put  v
 
 
-
+{- change this to INCREMENT -}
 checkedCounterDecrement ::   HeapStepCounterM  val  (STE (b :+ HeapError ) s) ()
 checkedCounterDecrement = do  cah <- getHSCM
                               ct <- return $  _extractCounterCAH cah

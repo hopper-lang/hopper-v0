@@ -37,3 +37,16 @@ module Term  where
       delay : term a -> term a 
 
   
+module TypedTerm where
+  data PrimType : Set where
+       Nat : PrimType
+       Rat : PrimType
+       Str : PrimType
+  data Sort : Set where -- should this be a record?? 
+       lit : ℕ -> Sort
+       -- var : 
+       -- univ→ : 
+  data Literal : PrimType ->  Set where
+        NatL : ℕ  -> Literal Nat
+        RatL : ℚ -> Literal Rat
+        StrL : String -> Literal Str  
