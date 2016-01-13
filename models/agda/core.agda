@@ -36,7 +36,6 @@ module Term  where
       force : term a -> term a
       delay : term a -> term a 
 
-  
 module TypedTerm where
   data PrimType : Set where
        Nat : PrimType
@@ -49,4 +48,7 @@ module TypedTerm where
   data Literal : PrimType ->  Set where
         NatL : ℕ  -> Literal Nat
         RatL : ℚ -> Literal Rat
-        StrL : String -> Literal Str  
+        StrL : String -> Literal Str
+
+
+
