@@ -6,6 +6,8 @@
 %
 \documentclass[letterpaper,11pt,reqno]{amsart}
 
+% \documentclass[twoside]{tufte-book}
+
 \usepackage[% pdftex,%
  backref=page,%
  % pdftitle={\paperTitle},%
@@ -29,8 +31,8 @@
 
 % current alg2e package doesnt like lualatex
 % ignore this if you're not using lualatex
-\usepackage[vlined,boxruled,linesnumbered,commentsnumbered,inoutnumbered,norelsize
-            ]{algorithm2e}
+% \usepackage[vlined,boxruled,linesnumbered,commentsnumbered,inoutnumbered,norelsize
+%             ]{algorithm2e}
 % don't  forget to use \dontprintsemic colon etc, norelsize is a bug fix, may or may not need it
 
 %%%%%%%%%%%%%%%%
@@ -46,6 +48,7 @@
 
 
 
+\usepackage{todonotes}
 % \usepackage[parfill]{parskip} % Activate to begin paragraphs with an empty line rather than an indent
 
 % %%% PACKAGES
@@ -70,7 +73,8 @@
 % \usepackage{fullpage}
 
 
-
+% trademark symbol!
+\usepackage{textcomp}
 
 % make formatting more awesome
 \usepackage{microtype}
@@ -104,6 +108,8 @@
 % \usepackage[charter]{mathdesign}
 % \usepackage{mathpple}
 
+\usepackage{minted}
+
 \usepackage{fancyhdr} % This should be set AFTER setting up the page geometry
 \pagestyle{fancy} % options: empty , plain , fancy
 % be sure to give short title version
@@ -119,7 +125,7 @@
 % \usetikzlibrary{arrows,decorations.pathmorphing,backgrounds,
             % positioning,fit,matrix,calc}
 
-\usepackage{fixltx2e}
+% \usepackage{fixltx2e}
 
 % \usepackage[vlined,ruled,linesnumbered]{algorithm2e}
 % \usepackage{xfrac}
@@ -230,20 +236,44 @@
 \newcommand{\liloh}[1]{\ensuremath{o\Paren{#1}}}
 \newcommand{\lilomega}[1]{\ensuremath{\omega\Paren{#1}}}
 
+% \title{Hopper:\\ Examples and Design for a Resource and Authorization oriented langauge}
+% \author{Carter Tazio Schonwald}
 \begin{document}
-\title{Hopper }
+\title{Hopper:\\ Examples and Design for a Resource and Authorization oriented langauge}
 \author{Carter Tazio Schonwald}
-\date{2016-01-12}
+\date{created 2016-01-12\\generated \now}
 \begin{abstract}
-
- to be filled in later
+The Hopper language provides facilities for succintly and precisely specifying interactions that govern and define ownership in myriad application domains.
+The first half of this document demonstrates the vocabulary of Hopper with a (pseudo)code development of how a modern library system's database are served by Hopper.
+The second half of this document lays out the technical foundations of the Hopper language
+needed to provide these modelling capabilities.
 
 \end{abstract}
 
 
 \maketitle
 
-\section{Part 1}
+\todototoc
+\makeatletter
+\providecommand\@dotsep{5}
+\makeatother
+\listoftodos\relax
 
+
+\section{Motivation} Despite decades of research surrounding theory and practice of resource management in computer science, %\marginpar{this is a margin par}
+there has been very little work around tools for flexibly modelling the resource management problems
+seen in the physical world\footnote{Popularly known as the real world\texttrademark}, including but not limited to:
+\begin{enumerate}
+  \item Supply chain management in Manufacturing and Commerce
+  \item authorization, ownership and custody management for Healthcare services such as those intersecting: medical treatment, prescribed controlled substances, and organ transplants. \todo{cleanup this phrasing}
+  \item
+\end{enumerate}
+
+\begin{minted}{agda}
+module LOOKATTHIS
+  data IRock : Set where
+      Foo : Nat -> IRock
+
+\end{minted}
 
 \end{document}
