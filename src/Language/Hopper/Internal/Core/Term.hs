@@ -19,7 +19,7 @@ import Control.Monad
 import GHC.Generics (Generic)
 import Data.Traversable (fmapDefault,foldMapDefault)
 
-data Exp ty a
+data Exp a
   = V  a
   | ELit Literal
   -- | PrimApp Text [a]
