@@ -30,39 +30,39 @@ import Control.Monad.Trans.Identity (IdentityT(..),runIdentityT)
 import  Data.Hop.Or
 import Numeric.Natural
 
-data ExpContext  ty a  = SCEmpty
-                        | LetContext
-                            (Maybe Text) -- we're not currently using / needing the variable name here
-                            (Scope (Maybe Text) (Exp ty) a)
-                            (ExpContext ty a)
-                        | ThunkUpdate !a (ExpContext ty a)
-                        | FunAppCtxt  [Ref] [Exp ty a] (ExpContext  ty a)
-                          -- lets just treat the ref list as having the function ref at the
-                          -- "bottom of the stack", when [Exp] is empty, reverse ref list to resolve function and apply args
-                        | PrimAppCtxt  PrimOpId [Ref] [Exp ty a] (ExpContext  ty a)
+-- data ExpContext  ty a  = SCEmpty
+--                         | LetContext
+--                             (Maybe Text) -- we're not currently using / needing the variable name here
+--                             (Scope (Maybe Text) (Exp ) a)
+--                             (ExpContext ty a)
+--                         | ThunkUpdate !a (ExpContext ty a)
+--                         | FunAppCtxt  [Ref] [Exp ty a] (ExpContext  ty a)
+--                           -- lets just treat the ref list as having the function ref at the
+--                           -- "bottom of the stack", when [Exp] is empty, reverse ref list to resolve function and apply args
+--                         | PrimAppCtxt  PrimOpId [Ref] [Exp ty a] (ExpContext  ty a)
 
-                        -- applications are their one hole contexts!
-   deriving (Typeable
-          ,Functor
-          ,Foldable
-          ,Traversable
-          ,Generic
-          ,Data
-          ,Eq
-          ,Ord
-          ,Show)
+--                         -- applications are their one hole contexts!
+--    deriving (Typeable
+--           ,Functor
+--           ,Foldable
+--           ,Traversable
+--           ,Generic
+--           ,Data
+--           ,Eq
+--           ,Ord
+--           ,Show)
 
 
-data InterpreterError
-  = PrimopTypeMismatch
-  | NonClosureInApplicationPosition
-  | ArityMismatchFailure
-  | HeapLookupFailure
-  | MalformedClosure
-  | MismatchedStackContext
-  | PrimFailure String
-  | UnsupportedTermConstructFailure String
-  deriving (Eq,Ord,Show,Typeable,Data)
+-- data InterpreterError
+--   = PrimopTypeMismatch
+--   | NonClosureInApplicationPosition
+--   | ArityMismatchFailure
+--   | HeapLookupFailure
+--   | MalformedClosure
+--   | MismatchedStackContext
+--   | PrimFailure String
+--   | UnsupportedTermConstructFailure String
+--   deriving (Eq,Ord,Show,Typeable,Data)
 
 
 -- runExpr :: Natural ->  ( forall s . InterpStack s  ty b a )-> Either ( ((b :+ InterpreterError ) :+ HeapError) )  a
