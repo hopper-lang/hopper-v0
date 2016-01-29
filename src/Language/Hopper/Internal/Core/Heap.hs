@@ -9,7 +9,16 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies, TypeOperators #-}
 
-module Language.Hopper.Internal.Core.Heap
+module Language.Hopper.Internal.Core.Heap(
+  HeapError(..)
+  ,HeapStepCounterM(..)
+  ,unsafeHeapUpdate
+  ,unsafeRunHSCM
+  ,runEmptyHeap
+  ,heapAllocate
+  ,heapLookup
+  ,checkedCounterIncrement
+  )
 
     where
 --import Language.Hopper.Internal.Core.ANF
@@ -19,7 +28,7 @@ import GHC.Generics
 import Numeric.Natural
 import Data.Typeable
 import Control.Monad.Trans.State.Strict as State
-import Prelude.Extras
+-- import Prelude.Extras
 import Control.Monad.Trans.Class as MT
 import Control.Monad.Primitive as  Prim
 import Control.Monad.IO.Class as MIO
@@ -27,21 +36,10 @@ import  Control.Monad.STExcept
 import Data.Data
 import Data.Hop.Or
 
---import Bound
 
---import Data.Text (Text)
 
--- import  Control.Monad.Free
---import Control.Lens
---import qualified Data.Vector as V
-
---- This model implementation of the heap is kinda a hack --- Namely that
---- _minMaxFreshRef acts as a kinda heap pointer that is >= RefInMap + 1
 data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref val)   }
-   deriving (  Typeable ,Generic , Eq, Ord, Show, Functor,Foldable,Traversable   )
--- deriving instance (Functor ast,Show1 ast, Show (ast Ref)) => Show (Heap ast)
--- deriving instance (Monad ast,Eq1 ast, Eq (ast Ref)) => Eq (Heap ast)
--- deriving instance (Monad ast, Ord1 ast, Ord (ast Ref)) => Ord (Heap ast)
+   deriving (  Typeable ,Generic , Eq, Ord, Show, Functor,Foldable,Traversable )
 
 
 data HeapError
@@ -68,9 +66,10 @@ heapAllocateValue hp val = (_minMaxFreshRef hp
       newMap = Map.insert minmax  val (_theHeap hp)
 
 data CounterAndHeap val  =  CounterAndHeap {
-                                        _extractCounterCAH :: !Natural
+                                        _extractStepCounterCAH :: !Natural
                                         -- this should be a Natural, represents  number of
-                                        -- steps left
+                                        -- steps l
+                                        ,_extractMaxStepCounter :: !Natural
                                         ,_extractHeapCAH :: !(Heap val ) }
                             deriving (
 
@@ -82,16 +81,7 @@ data CounterAndHeap val  =  CounterAndHeap {
                                       ,Traversable
                                       ,Functor
                                       )
--- deriving instance (Show (ast Ref),Functor ast , Show1 ast ) => Show (CounterAndHeap ast)
--- deriving instance (Eq (ast Ref),Monad ast,Eq1 ast ) => Eq (CounterAndHeap ast)
--- deriving instance (Ord (ast Ref), Monad ast, Ord1 ast) => Ord (CounterAndHeap ast)
 
-extractHeapCAH :: Functor f => ((Heap val  ) ->  f (Heap val  ))
-                  -> CounterAndHeap val    -> f (CounterAndHeap val  )
-extractHeapCAH fun cnh = fmap (\mp' -> cnh{_extractHeapCAH=mp'}) $ fun $ _extractHeapCAH cnh
-
-extractCounterCAH :: Functor f => (Natural -> f Natural )-> (CounterAndHeap val   -> f (CounterAndHeap val  ))
-extractCounterCAH  fun cnh = fmap (\i' -> cnh{_extractCounterCAH=i'}) $ fun $ _extractCounterCAH cnh
 
 newtype HeapStepCounterM val  m a = HSCM {_xtractHSCM :: State.StateT  (CounterAndHeap val ) m a}
    deriving (Typeable,Functor,Generic)
@@ -118,18 +108,20 @@ setHSCM ::Monad m =>  CounterAndHeap val   -> HeapStepCounterM  val  m  ()
 setHSCM v = HSCM $ State.put  v
 
 
-{- change this to INCREMENT -}
-checkedCounterDecrement ::   HeapStepCounterM  val  (STE (b :+ HeapError ) s) ()
-checkedCounterDecrement = do  cah <- getHSCM
-                              ct <- return $  _extractCounterCAH cah
-                              if ct <= 0
+{- this is how we track number of reduction steps deterministically
+may be a useful way of "addressing" a point in a programs execution
+within a debugging tool at some future point -}
+checkedCounterIncrement ::   HeapStepCounterM  val  (STE (b :+ HeapError ) s) ()
+checkedCounterIncrement = do  cah <- getHSCM
+                              ct <- return $  _extractStepCounterCAH cah
+                              if ct > _extractMaxStepCounter cah
                                 then throwHeapError HeapStepCounterExceeded-- error "allowed step count exceeded, aborting"
-                                else setHSCM cah{_extractCounterCAH = ct - 1}
+                                else setHSCM cah{_extractStepCounterCAH = ct + 1}
 
 unsafeHeapUpdate :: Ref -> val  -> HeapStepCounterM val (STE (b :+ HeapError ) s) ()
 unsafeHeapUpdate rf val = do  cah <- getHSCM
                               x <-  heapRefUpdate rf val (_extractHeapCAH cah)
-                              checkedCounterDecrement
+                              checkedCounterIncrement
                               x `seq` setHSCM $ cah{_extractHeapCAH =x }
 
 --- note, this should also decrement the counter!
@@ -137,13 +129,13 @@ heapAllocate :: val  -> HeapStepCounterM  val  (STE (b :+ HeapError ) s) Ref
 heapAllocate val = do   cah <-  getHSCM
                         (rf,hp) <- pure $ heapAllocateValue (_extractHeapCAH cah) val
                         cah' <- pure $ cah{_extractHeapCAH = hp}
-                        checkedCounterDecrement
+                        checkedCounterIncrement
                         setHSCM cah'
                         return rf
 
 heapLookup :: Ref -> HeapStepCounterM val (STE (b :+ HeapError) s) val
 heapLookup ref = do
-  checkedCounterDecrement
+  checkedCounterIncrement
   heapHandle <- _extractHeapCAH <$> getHSCM
   heapRefLookup ref heapHandle
    where
@@ -156,11 +148,11 @@ heapLookup ref = do
 
 --- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)
 unsafeRunHSCM :: Monad m =>  Natural -> Heap val  -> HeapStepCounterM val m b -> m (b,CounterAndHeap val  )
-unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap cnt hp)
+unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap 0 cnt hp)
 
 -- run a program in an empty heap
 runEmptyHeap :: Monad m =>  Natural -> HeapStepCounterM val m  b-> m (b,CounterAndHeap val )
-runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap ct $ Heap (Ref 1) Map.empty)
+runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap 0 ct $ Heap (Ref 1) Map.empty)
 
 -- heapRefLookupTransitive :: Ref -> HeapStepCounterM val (STE (b :+ HeapError) s) (val , Ref)
 -- heapRefLookupTransitive ref = do
