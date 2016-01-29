@@ -30,6 +30,9 @@ import Bound.Var
 
 
 
+
+
+
 data AppANF  a = EnterThunk a
                  | FunApp a ![a]
                  | PrimApp  a !Text ![a]
@@ -44,13 +47,12 @@ data AppANF  a = EnterThunk a
          Read,
          Show)
 
-
-data AnfRHS {-ty-} a = SharedLiteral !Literal -- we currently do not have any fixed size literal types
+data AnfRHS  {-ty-} a = SharedLiteral !Literal -- we currently do not have any fixed size literal types
                                           -- so for now all literals are heap allocated
                                           -- this will change once we add support for stuff like
                                           -- Double or Word64
                  | ConstrApp a {-!ty-} !ConstrId [a]
-                 | AllocateThunk (ANF  a) -- Thunks share their evaluations
+                 | AllocateThunk  (ANF   a) -- Thunks share their evaluations
                 --  | EvaluateThunk !a       -- Thunk evaluation is a special
                 --                           -- no arg lambda plus sharing
                                             -- thunks and closure should
@@ -71,14 +73,6 @@ data AnfRHS {-ty-} a = SharedLiteral !Literal -- we currently do not have any fi
     Eq,
     Read,
     Show)
-
-
-
--- data ArgANF ty a = ArgVar a | ArgLit !Literal
-
-
-
-
 
 
 data ANF  a
