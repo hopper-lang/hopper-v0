@@ -7,9 +7,11 @@
 -- {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric , TypeOperators#-}
 {-# LANGUAGE RankNTypes #-}
+
+{-#  OPTIONS_GHC -fno-warn-unused-imports #-} -- suppressing this warning for a wee bit
 module Language.Hopper.Internal.Core.EvalTerm where
 
-import Bound
+--import Bound
 
 import Language.Hopper.Internal.Core.Term
 import Language.Hopper.Internal.Core.Value

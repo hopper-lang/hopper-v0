@@ -62,7 +62,7 @@ instance Applicative (Exp ) where
 
 
 instance Monad (Exp ) where
-  -- return = V
+  return = V
   V a         >>= f = f a
   -- PrimApp nm ls >>= f = PrimApp nm (map f ls)
   Delay e     >>= f = Delay $ e >>= f
