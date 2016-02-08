@@ -21,24 +21,26 @@ import GHC.Generics (Generic)
 -- import Data.Traversable --  (fmapDefault,foldMapDefault)
 
 data Exp a
-  = V  a
-  | ELit Literal
-  | Seq  (Exp  a) (Exp  a)  --- this works like thunk `seq` returnme, a la haskell ,
-                            -- type should be  forall a b  . {Thunk a ,b} -> b
-                      --- otherwise reduces expression to applicable normal form
-                      -- should force be more like seq a b, cause pure
+  = V  !a
+  | ELit !Literal
+  | Return ![Exp a ] -- explicit multiple return values
+  | EnterThunk !(Exp a) -- because we're in a strict IR rep,
+                        -- we dont need to provide a seq like operation
+                          -- seq a b === let _ := enterThunk a in b
 
-  | Delay (Exp a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
+  | Delay !(Exp a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
   --                     --- note: may need to change their semantics later?!
-  | App (Exp  a)  [Exp  a]
-  | PrimApp  PrimOpId [Exp  a] -- not sure if this is needed, but lets go with it for now
+  | App !(Exp  a)  ![Exp  a]
+  | PrimApp  !PrimOpId ![Exp  a] -- not sure if this is needed, but lets go with it for now
 
-  | Lam [(Text{-,Type ty,RigModel-})]
-        (Scope Text (Exp) a)
-  | Let (Maybe Text)
+  | Lam ![(Text{-,Type ty,RigModel-})]
+        !(Scope Text (Exp) a)
+  | Let !(Either Word64  [Text]) -- either the # of multiple RVs from the rhs,
+                                  -- or the names for the values on the RHS
       --  this was the optional type annotation? (Maybe  () {-(Type ty,RigModel)-})
-          (Exp  a)  (Scope (Maybe Text) Exp  a) --  [Scope Int Exp a] (Scope Int Exp a)
-  deriving (Typeable,Data,Generic,Show1,Read1,Show,Read,Functor,Foldable,Traversable)
+          !(Exp  a)   -- rhs which may have multi verses
+          (Scope (Either Word64 Text) Exp  a) --  [Scope Int Exp a] (Scope Int Exp a)
+  deriving (Show1,Read1,Ord1,Eq1,Ord,Eq,Show,Read,Functor,Foldable,Typeable,Data,Generic,Traversable)
 
 
 -- instance Functor (Exp ty)  where fmap       = fmapDefault
@@ -64,9 +66,10 @@ instance Applicative (Exp ) where
 instance Monad (Exp ) where
   return = V
   V a         >>= f = f a
+  (Return ls) >>= f =    Return (map (>>= f) ls )
   -- PrimApp nm ls >>= f = PrimApp nm (map f ls)
   Delay e     >>= f = Delay $ e >>= f
-  Seq thnk retexp    >>= f =   (thnk >>= f) `Seq` (retexp >>= f)
+  EnterThunk thnk     >>= f =  EnterThunk (thnk >>= f)
   ELit e      >>= _f = ELit e -- this could also safely be a coerce?
   (App x y)    >>= f = App (x >>= f)  (map (>>= f)  y )
   (PrimApp name args) >>= f = PrimApp name (map (>>= f) args )
@@ -97,11 +100,11 @@ lam1 :: Text -> Exp  Text -> Exp  Text
 lam1 v b = lam [v] b
 
 let_ :: Text -> Exp  Text -> Exp  Text -> Exp  Text
-let_ v rhs bod = Let (Just v)
+let_ v rhs bod = Let (Right [ v])
                      {-(Just (TVar 0, Omega))-}
                      rhs
                      (abstract (\var -> if var == v
-                                        then Just (Just v)
+                                        then Just (Right v)
                                         else Nothing)
                                bod)
 

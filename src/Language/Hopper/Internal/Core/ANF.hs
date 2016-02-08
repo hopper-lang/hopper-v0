@@ -60,30 +60,33 @@ import Numeric.Natural
 --   deriving (Eq,Ord,Show,Typeable,Data)
 
 
-data AppANF  a = SeqThunk !a !a
-                 | FunApp !a ![a]
-                 | PrimApp  !a !Text ![a]
+data AppANF  a
+    = EnterThunk !a --
+    | FunApp !a ![a]
+    | PrimApp  !a !Text ![a]
         deriving ( Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 
-data AnfAlloc a = SharedLiteral !Literal -- we currently do not have any fixed size literal types
-                                          -- so for now all literals are heap allocated
-                                          -- this will change once we add support for stuff like
-                                          -- Double or Word64
-                 | ConstrApp a {-!ty-} !ConstrId [a]
-                 | AllocateThunk  (ANF   a) -- Thunks share their evaluations
-                --  | EvaluateThunk !a       -- Thunk evaluation is a special
-                --                           -- no arg lambda plus sharing
-                                            -- thunks and closure should
-                                            -- record their free variables???
-                 | AllocateClosure ![(Text{-,Type ty,RigModel-})] -- arity >=0
-                                   ({-Simple.Scope -} (ANF (Var Text a)))  -- should we have global table of
+data AnfAlloc a
+  = SharedLiteral !Literal -- we currently do not have any fixed size literal types
+                            -- so for now all literals are heap allocated
+                            -- this will change once we add support for stuff like
+                            -- Double or Word64
+   | ConstrApp a {-!ty-} !ConstrId [a]
+   | AllocateThunk  (ANF   a) -- Thunks share their evaluations
+  --  | EvaluateThunk !a       -- Thunk evaluation is a special
+  --                           -- no arg lambda plus sharing
+                              -- thunks and closure should
+                              -- record their free variables???
+   | AllocateClosure ![(Text{-,Type ty,RigModel-})] -- arity >=0
+                             ({-Simple.Scope -} (ANF (Var Text a)))  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
      deriving (Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 
 
 
-data AnfRHS  {-ty-} a = AnfAllocRHS !(AnfAlloc a) -- only heap allocates, no control flow
-                 | NonTailCallApp  (AppANF  a) -- control stack allocation; possibly heap allocation
+data AnfRHS  {-ty-} a
+    = AnfAllocRHS !(AnfAlloc a) -- only heap allocates, no control flow
+    | NonTailCallApp  (AppANF  a) -- control stack allocation; possibly heap allocation
 
    deriving (Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 
