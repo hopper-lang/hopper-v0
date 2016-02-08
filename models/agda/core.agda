@@ -20,6 +20,11 @@ module ABTLearning where
      Syn : f a -> View f a []
      Var : 
    record ABT {u : Set}
+
+
+
+data Var (a b : Set) where 
+    Free 
 -}
 
 module Term  where
