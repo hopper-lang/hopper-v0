@@ -71,7 +71,7 @@ data AnfAlloc a
                             -- so for now all literals are heap allocated
                             -- this will change once we add support for stuff like
                             -- Double or Word64
-   | ConstrApp a {-!ty-} !ConstrId [a]
+   | ConstrApp {-a is this a resolved qname? -} {-!ty-} !ConstrId [a]
    | AllocateThunk  (ANF   a) -- Thunks share their evaluations
   --  | EvaluateThunk !a       -- Thunk evaluation is a special
   --                           -- no arg lambda plus sharing
@@ -93,9 +93,10 @@ data AnfRHS  {-ty-} a
 
 
 data ANF  a
-    = ReturnNF  !a -- !(Atom ty a)
+    = ReturnNF  ![a] -- !(Atom ty a)
     | LetNF --  (Maybe Text) {-(Maybe(Type ty, RigModel)) -} (AnfRHS  a)
-          ![(Either Natural Text, AnfRHS a)]
+          ![(Either Natural Text)]  -- should be Either Count [Text] later
+          !(AnfRHS a) -- only ONE right hand side for now , which may have multiple return values
           -- this list of "independent" simultaneous let bindings must always be nonempty
           -- this is NOT a let rec construct and doesn't provide mutual recursion
           -- this is provided as an artifact of simplifying the term 2 anf translation

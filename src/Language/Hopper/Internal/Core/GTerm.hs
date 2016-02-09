@@ -5,18 +5,28 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
-
+{-# LANGUAGE MagicHash, DataKinds, KindSignatures,GADTs, TypeFamilies  #-}
 {-# LANGUAGE TypeOperators #-}
-
+{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 module Language.Hopper.Internal.Core.GTerm where
+{-
+this module is for experiments in representation choices that are kept for retrospective
+and learning value
 
+approachs so
 
+-}
+import Numeric.Natural
 import Data.Functor.Identity
 import Data.Text
 import qualified Bound.Scope as P
 import Bound.Var
 import GHC.Generics
 import Data.Data
+import GHC.TypeLits
+--import GHC.Prim(Proxy#,proxy#)
+import Data.Word (Word64)
+--import Data.Proxy
 
 data PrimOpId = PID Int
   deriving(Read,Eq,Show,Ord,Data,Typeable,Generic)
@@ -60,11 +70,11 @@ data GValue f g a = GVFunc !(GAllocEnvCaptureHL f a) | GV !(GAllocFirstOrder g a
 -- data Literal a = LitInt Int
 
 
-data Exp a  = ExpLet (GLetHL Exp Exp a)
-              | ExpComp (GCompHL Exp a) |  ExpLit (GValue Exp Exp a)
+data GExp a  = ExpLet (GLetHL GExp GExp a)
+              | ExpComp (GCompHL GExp a) |  ExpLit (GValue GExp GExp a)
     deriving(Typeable,Functor,Foldable,Traversable)
 
-data ANF a = ANFLetCall (GLetANF (GCompHL Identity) ANF a) | ANFLetAlloc !(GLetANF (GValue ANF Identity) ANF  a)
+data GANF a = ANFLetCall (GLetANF (GCompHL Identity) GANF a) | ANFLetAlloc !(GLetANF (GValue GANF Identity) GANF  a)
             |  ANFTailCall (GCompHL Identity a)
             deriving(Typeable,Functor,Foldable,Traversable)
 
@@ -78,3 +88,21 @@ data ANF a = ANFLetCall (GLetANF (GCompHL Identity) ANF a) | ANFLetAlloc !(GLetA
 --       (GComp Identity)
 --                    ) a
 --     )
+
+data SEither a b = SLeft !a | SRight !b
+  deriving (Read,Eq,Show,Ord,Data,Typeable,Generic,Functor,Foldable,Traversable)
+data HVar :: Nat  -> * -> * where
+    FVar :: KnownNat depth => Proxy  depth -> a -> HVar depth a
+    BVar :: KnownNat depth => Proxy  depth
+        ->  !Natural {- natural should be at most Depth-} -> !(SEither Word64 Text)-> HVar depth a
+    -- the BVars can be "half open"
+
+data SExp :: Nat -> * -> * where
+    SV :: HVar n a  -> SExp n a
+    SLam ::  [(SEither Word64 Text)] -> (SExp (n+1) a) -> SExp n a
+    SLet ::  [(SEither Word64 Text)] -> SExp n a -> (SExp (n+1) a) -> SExp n a
+    --STreeSucc :: KnownNat m `=> Proxy m ->
+
+--topLevel :: SExp 0 String
+--topLevel = SLet [] (SV (FVar (Proxy   ) "lol")  )  (SV $ (BVar (Proxy   )  0   (SLeft 7))  )
+

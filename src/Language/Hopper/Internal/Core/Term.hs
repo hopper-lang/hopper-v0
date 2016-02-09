@@ -23,14 +23,18 @@ import GHC.Generics (Generic)
 data Exp a
   = V  !a
   | ELit !Literal
-  | Return ![Exp a ] -- explicit multiple return values
+  | Return ![ Exp a ] -- explicit multiple return values
+                      -- should V x be replaced by Return [x] ?
+                      --  once we lower to ANF
+                      -- NOTE: for valid expressions,
   | EnterThunk !(Exp a) -- because we're in a strict IR rep,
                         -- we dont need to provide a seq like operation
                           -- seq a b === let _ := enterThunk a in b
 
-  | Delay !(Exp a)  --- Delay is a Noop on Thunked values, otherwise creates a thunk
-  --                     --- note: may need to change their semantics later?!
-  | App !(Exp  a)  ![Exp  a]
+  | Delay !(Exp a)  --- Delay is a Noop on Thunked values, otherwise creates a Thunked
+                    --- note: may need to change their semantics later?!
+                    --- Q: is it valid to thunk a thunked value? (no?)
+  | App !(Exp  a)  ![Exp  a]  --this is not curried :)
   | PrimApp  !PrimOpId ![Exp  a] -- not sure if this is needed, but lets go with it for now
 
   | Lam ![(Text{-,Type ty,RigModel-})]
