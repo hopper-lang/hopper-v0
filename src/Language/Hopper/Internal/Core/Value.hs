@@ -40,7 +40,7 @@ import Language.Hopper.Internal.Core.Literal
 
 -- | current theres no pointer tagging in 'Ref' but eventually that will
 -- probably change
-newtype Ref = Ref {refPointer :: Word64} deriving  (Eq, Show,Ord,Data,Typeable,Generic)
+newtype Ref = Ref {refPointer :: Word64} deriving  (Eq,Read,Show,Ord,Data,Typeable,Generic)
 
 
 instance Bounded Ref where
