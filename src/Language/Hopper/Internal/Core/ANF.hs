@@ -8,7 +8,7 @@
 {-# LANGUAGE RankNTypes #-}
 -- {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric, LambdaCase #-}
-{-# LANGUAGE TemplateHaskell #-}
+-- {-# LANGUAGE TemplateHaskell #-}
 
 module Language.Hopper.Internal.Core.ANF  where
 
@@ -66,65 +66,13 @@ import Numeric.Natural
 
 
 data AppANF  a
-    = EnterThunk !a --
-    | FunApp !a ![a]
-    | PrimApp  {-!a -} !Text ![a]
+    = EnterThunk !a -- if a is neutral term OR a free variable, this becomes neutral
+    | FunApp !a ![a] --- if function position of FunApp is neutral, its neutral
+    | PrimApp  {-!a -} !Text ![a] -- if any arg of a primop is neutral, its neutral
+      --- case / eliminators will also be in this data type later
         deriving ( Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 
-{-
 
- Either (NeutralSyntax GG a) (OrdinaryValue a)
-
--}
-{-
-why can't it derive functor? this aint a gadt!
-or foldable or traversable
-is this a ghc 7.10 bug? investigate and report when time permits
--}
-data NeutralTermsANF gv a
-    =  NeutVarANF  !gv
-    | NeutApp !(NeutralTermsANF gv a) ![a]
-    | NeutPrimApp !PrimOpId ![ a ]
-    -- this doesn't guarantee that one of the args is a neutral term
-    -- but one value on the heap MUST be a neutral term,
-    --- for a primapp to be a neutral term
-       deriving ( Ord,Functor,Foldable,Traversable,Typeable,Data,Eq,Read,Show {-,Ord1,Show1,Eq1,Read1,Ord2,Show2,Eq2,Read2-} )
-{-
-
-our HEAP Value TYPE will be
-    Either (Value Ref)  (NeutralTermsANF Text Ref)
--}
--- $(deriveBifunctor ''NeutralTermsANF)
-
--- $(deriveBifoldable ''NeutralTermsANF)
-
--- $(deriveBitraversable ''NeutralTermsANF)
-{-
-instance Functor (NeutralTermsANF gv) where
-    fmap = \ f x  -> second f x
-    {-# INLINE fmap #-}
-instance Foldable (NeutralTermsANF gv) where
-    foldMap f =  \x ->   foldMap f (WrapBifunctor x)
-    # INLINE foldMap #
-instance Traversable(NeutralTermsANF gv) where
-    traverse f = \x -> fmap   unwrapBifunctor $ traverse f (WrapBifunctor x)
-    {-# INLINE  traverse  #-}
-
--}
-
-{-
-  eventually our case construct will need to be added here,
-  and roughly  only  stuck when we have
-      case neutralterm of
-        stuff -> something
-        ....
-    It is OK for some / all
-
-we DO NOT need to have LET be explicit, because in our USAGE, we have
-EXPLICIT SHARING VIA THE HEAP, so reflecting back to CORE/Term syntax
-entails identifying the Lowest Common ancestor  of the subtrees of the neutral
-term graph that mention the same heap value / netural term syntax to recover sharing
--}
 data AnfAlloc a
   = SharedLiteral !Literal -- we currently do not have any fixed size literal types
                             -- so for now all literals are heap allocated
