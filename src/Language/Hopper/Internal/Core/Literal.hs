@@ -7,7 +7,6 @@ module Language.Hopper.Internal.Core.Literal(
 where
 
 import Numeric.Natural
-import Data.Typeable
 import Data.Data
 import  Data.Text (Text)
 

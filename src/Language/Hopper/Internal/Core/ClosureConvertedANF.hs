@@ -5,19 +5,23 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE DeriveGeneric, LambdaCase #-}
+{-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
 
 
 module Language.Hopper.Internal.Core.ClosureConvertedANF where
 
 import Data.Word
 import Data.Data
-import GHC.Generics
+import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
+
 import Data.Text (Text)
 import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Closed
 import Language.Hopper.Internal.Core.ANF
-
+import Language.Hopper.Internal.Core.Heap
+import Language.Hopper.Internal.Core.HeapRef
+import Data.Hop.Or
+import Control.Monad.STExcept
 {-
 DESIGN
 - this is the closure-converted let normal form (ANF) sibling of the types-as-calling-conventions language/abstract machine
@@ -41,18 +45,21 @@ maybe
 
 -- | LocalVariableCC is a local variable that is operationally an offset in an environment structure
 newtype CcLocalVariable = CcLV Word64
-  deriving(Eq,Ord,Enum,Typeable,Generic,Data)
+  deriving(Eq,Ord,Show,Enum,Typeable)
 
 newtype ThunkCodeId = ThunkCodeId { unThunkCodeId :: Word64 } deriving (Eq,Ord, Show,Typeable)
-newtype ClosureCodeId = ClosureCodeId { unClosureCodeId :: Word64 } deriving (Eq,Ord,Show)
-newtype EnvSize = EnvSize { unEnvSize :: Word64 } deriving (Eq, Ord,Show)
-newtype CodeArity = CodeArity { getCodeArity :: Word64 } deriving (Eq,Ord,Show)
+newtype ClosureCodeId = ClosureCodeId { unClosureCodeId :: Word64 } deriving (Eq,Ord,Show,Typeable)
+newtype EnvSize = EnvSize { unEnvSize :: Word64 } deriving (Eq, Ord,Show,Typeable)
+newtype CodeArity = CodeArity { getCodeArity :: Word64 } deriving (Eq,Ord,Show,Typeable)
+
+
+data CcValueRep = FIXMEEEEEEANFCC --- TODO
 
 data ThunkCodeRecord
   = ThunkCodeRecord !EnvSize      -- number of slots in the environment struct
                     ![Maybe Text] -- source names, if applicable, for the captured free vars in the orig source
                     !CcAnf        -- the code
-
+    deriving (Eq,Ord,Show,Typeable)
 {- |
 for now we pass all function args as references to boxed heap values,
 but in the future we can be clever about specialization / register-sized values
@@ -63,6 +70,8 @@ data ClosureCodeRecord
                       !CodeArity -- how many explicit arguments the function takes
                       --- later we'll have [arg rep]
                       !CcAnf
+  deriving (Eq,Ord,Show,Typeable)
+
 
 data CcAnf
     = CcReturn ![CcLocalVariable]
@@ -75,16 +84,19 @@ data CcAnf
           !(CcRhs) -- right hand side of let binder, closure converted
           !(CcAnf) -- body of the let
     | CcTailCall !(CcApp)
+  deriving (Eq,Ord,Show,Typeable)
 
 data CcApp
     = CcEnterThunk !CcLocalVariable -- if a is neutral term OR a free variable, this becomes neutral
     | CcFunApp !CcLocalVariable ![CcLocalVariable] --- if function position of FunApp is neutral, its neutral
     | CcPrimApp !PrimOpId ![CcLocalVariable] -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
+  deriving (Eq,Ord,Show,Typeable)
 
 data CcRhs
   = CcAllocRhs !CcAlloc
   | CcNonTailCallApp !CcApp
+ deriving (Eq,Ord,Show,Typeable)
 
 data CcAlloc
   = CcSharedLiteral !Literal
@@ -97,6 +109,20 @@ data CcAlloc
         ![CcLocalVariable] -- set of local variables captured in the thunk environment, in this order
         !Word64 --- arity of closure
         !ClosureCodeId -- the code id for the "code pointer" of a closure
+  deriving (Eq,Ord,Show,Typeable)
 
--- closureConvert :: Closed Anf -> (CcAnf, Map.Map ThunkCodeId ThunkCodeRecord, Map.Map ClosureId ClosureCodeRecord)
--- closureConvert = _FINISHMEEEEEBRIANNNNN
+-- TODO: implement this after ccAnf evaluator
+--
+closureConvert :: Closed Anf -> (CcAnf, CodeRegistry)
+closureConvert = error "_FINISHMEEEEEBRIANNNNN" -- TODO
+data CodeRegistry = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecord)
+                                 !(Map.Map ClosureCodeId ClosureCodeRecord)
+
+data CcAnfEnvStack
+data CcAnfControlStack
+data CcAnfEvalError
+
+evalCcAnf :: CodeRegistry -> CcAnfEnvStack -> CcAnfControlStack -> CcAnf -> HeapStepCounterM CcValueRep (STE (c :+ CcAnfEvalError :+ HeapError ) s) Ref
+evalCcAnf = error "finish this next week"
+
+-- evalANF ::  Anf Ref -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
