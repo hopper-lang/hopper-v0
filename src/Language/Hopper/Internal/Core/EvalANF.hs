@@ -61,7 +61,7 @@ data ControlStackAnf =
   deriving (Eq,Ord,Show,Read,Typeable)
 
 newtype WrappedVector a = WrappedVector { unWrappedVector :: V.Vector a }
-  deriving (Eq, Show,Ord,Read,Data,Typeable,Functor,Foldable,Traversable)
+  deriving (Eq, Show,Ord,Read,Typeable,Functor,Foldable,Traversable)
 instance Show1 WrappedVector
 instance Eq1 WrappedVector
 instance Ord1 WrappedVector
@@ -70,16 +70,16 @@ instance Read1 WrappedVector
 data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of arity is boring and simple
                               -- for now lets keep the variable names?
                               -- it'll keep the debugging simpler (maybe?)
- deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
+ deriving (Eq,Ord,Show,Read,Typeable)
 
 --- | 'Closure' may need some rethinking ... later
 --- they're kinda the erasure of a lambda ... for now
 data Closure    a =  BORING  -- MkClosure ![Arity] !(Scope Text ast a)
-  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Generic,Typeable,Data)
+  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Typeable)
 
 
 -- | 'Tag' is a constructor tag sum
-newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Data,Typeable,Generic)
+newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Typeable)
 --type HeapVal ast     =  ValueF ast  Ref --  ValueF ty Ref (ValRec ty)
 
 data ValueF    v =    VLitF !Literal
@@ -101,8 +101,8 @@ data ValueF    v =    VLitF !Literal
       ,Functor
       ,Foldable
       ,Traversable
-      ,Generic
-      --,Data
+
+      --
       ,Eq
       ,Ord
       ,Show

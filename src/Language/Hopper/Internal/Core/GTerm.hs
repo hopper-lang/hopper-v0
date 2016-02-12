@@ -21,7 +21,6 @@ import Data.Functor.Identity
 import Data.Text
 import qualified Bound.Scope as P
 import Bound.Var
-import GHC.Generics
 import Data.Data
 import GHC.TypeLits
 --import GHC.Prim(Proxy#,proxy#)
@@ -29,13 +28,13 @@ import Data.Word (Word64)
 --import Data.Proxy
 
 data PrimOpId = PID Int
-  deriving(Read,Eq,Show,Ord,Data,Typeable,Generic)
+  deriving(Read,Eq,Show,Ord,Typeable)
 
 data ConId = ConId !Text
-  deriving(Read,Eq,Show,Ord,Data,Typeable,Generic)
+  deriving(Read,Eq,Show,Ord,Typeable)
 data GLetHL rhsg bodf a = GLet (Maybe Text) (rhsg a) (P.Scope (Maybe Text) bodf a )
     deriving(Typeable,Functor,Foldable,Traversable)
-  -- deriving(Read,Eq,Show,Ord,Data,Typeable,Generic)
+  -- deriving(Read,Eq,Show,Ord,Typeable)
 
 data GLetANF rhsg bodf a = GLetANF (Maybe Text) (rhsg a) (bodf   (Var (Maybe Text) a) )
   deriving(Typeable,Functor,Foldable,Traversable)
@@ -45,24 +44,24 @@ data GCompHL f a = GApp (f a) [f a]
                 | GPrimApp PrimOpId  [f a]
                 | GReturn (f a) -- this maybe should move somewhere else?
                 | GSeqThunk (f a) (f a)
-  deriving(Read,Eq,Show,Ord,Data,Typeable,Generic,Functor,Foldable,Traversable)
+  deriving(Read,Eq,Show,Ord,Typeable,Functor,Foldable,Traversable)
 
 
 
 
 data GAllocEnvCaptureHL f a = GHLLambdaHL [Text] !(P.Scope Text f a) | Delay !(f a)
-  deriving(Typeable,Functor,Foldable,Traversable,Eq,Show,Ord,Typeable,Generic)
-  -- deriving(Read,Eq,Show,Ord,Data,Typeable,Generic)
+  deriving(Typeable,Functor,Foldable,Traversable,Eq,Show,Ord,Typeable)
+  -- deriving(Read,Eq,Show,Ord,Typeable)
 
 
 data GAllocEnvCaptureANF f a = GHLLambdaANF [Text] !(f  (Var Text  a)) | DelayANF !(f a)
-    deriving(Typeable,Functor,Foldable,Traversable,Typeable,Generic)
-  -- deriving(Read,Eq,Show,Ord,Data,Typeable,Generic)
+    deriving(Typeable,Functor,Foldable,Traversable,Typeable)
+  -- deriving(Read,Eq,Show,Ord,Typeable)
 
 
 
 data GAllocFirstOrder f a = ConstrApp !ConId ![f a] | GLitInt !Integer
-  deriving(Read,Eq,Show,Ord,Data,Typeable,Generic,Functor,Foldable,Traversable)
+  deriving(Read,Eq,Show,Ord,Typeable,Functor,Foldable,Traversable)
 
 
 data GValue f g a = GVFunc !(GAllocEnvCaptureHL f a) | GV !(GAllocFirstOrder g a)
@@ -90,7 +89,7 @@ data GANF a = ANFLetCall (GLetANF (GCompHL Identity) GANF a) | ANFLetAlloc !(GLe
 --     )
 
 data SEither a b = SLeft !a | SRight !b
-  deriving (Read,Eq,Show,Ord,Data,Typeable,Generic,Functor,Foldable,Traversable)
+  deriving (Read,Eq,Show,Ord,Typeable,Functor,Foldable,Traversable)
 data HVar :: Nat  -> * -> * where
     FVar :: KnownNat depth => Proxy  depth -> a -> HVar depth a
     BVar :: KnownNat depth => Proxy  depth

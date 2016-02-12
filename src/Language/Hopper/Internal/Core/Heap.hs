@@ -39,7 +39,7 @@ import Language.Hopper.Internal.Core.HeapRef
 
 
 data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref val)   }
-   deriving (  Typeable ,Generic , Eq, Ord, Show, Functor,Foldable,Traversable )
+   deriving (  Typeable  , Eq, Ord, Show, Functor,Foldable,Traversable )
 
 
 data HeapError
@@ -47,7 +47,7 @@ data HeapError
   | InvalidHeapLookup
   | BlackholeEncounteredDuringLookup
   | HeapLookupOutOfBounds
-  deriving (Eq,Ord,Show,Read,Typeable,Generic,Data)
+  deriving (Eq,Ord,Show,Read,Typeable)
 
 throwHeapError :: MonadTrans t => HeapError -> t (STE (a1 :+ HeapError) s) a
 throwHeapError e = lift $ throwSTE $ InR e
@@ -75,7 +75,7 @@ data CounterAndHeap val  =  CounterAndHeap {
 
                                       Typeable
 
-                                      ,Generic
+
                                       ,Eq,Ord,Show
                                       ,Foldable
                                       ,Traversable
@@ -84,7 +84,7 @@ data CounterAndHeap val  =  CounterAndHeap {
 
 
 newtype HeapStepCounterM val  m a = HSCM {_xtractHSCM :: State.StateT  (CounterAndHeap val ) m a}
-   deriving (Typeable,Functor,Generic)
+   deriving (Typeable,Functor)
 
 instance MonadIO m => MonadIO (HeapStepCounterM val m) where
   liftIO m = lift $ MIO.liftIO m

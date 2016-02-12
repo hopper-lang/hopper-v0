@@ -19,7 +19,7 @@ import Data.Biapplicative
 import Data.Data
 
 newtype Swap f a b = Swap { unSwap :: f b a }
-    deriving (Eq, Show,Ord,Data,Typeable,Generic)
+    deriving (Eq, Show,Ord,Typeable,Data,Generic)
 
 instance Bifunctor p => Bifunctor (Swap p) where
   first f = Swap . second f . unSwap

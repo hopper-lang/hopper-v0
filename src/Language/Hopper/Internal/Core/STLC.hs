@@ -63,18 +63,18 @@ plus the kinda subtle "pubkey" "signed by"/"encrypted for" primitives that
 
 
 data RigModel = Zero | One | Omega
- deriving (Eq,Ord,Show,Read,Data,Typeable,Generic)
+ deriving (Eq,Ord,Show,Read,Typeable)
 
 data Kind = Star | KArr Kind Kind | LiftedPubKey
-  deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
+  deriving (Eq,Ord,Read,Show,Typeable)
 
 data TCon {-a -}=  TInteger | TNatural | TRational  | TUnit | TArrow RigModel
                 | EncryptedFor |  SignedBy
                 | PubKey String {- this is not how it'll work :) -}
                 -- | Linear
-    deriving (Eq,Ord,Read,Show ,Data,Typeable,Generic)
+    deriving (Eq,Ord,Read,Show ,Typeable)
 data Type ty  {-a -}=  Tapp (Type ty) (Type ty) | TLit (TCon) | TVar ty
-   deriving (Eq,Ord,Read,Show,Data,Typeable,Functor,Foldable,Traversable,Generic)
+   deriving (Eq,Ord,Read,Show,Typeable,Functor,Foldable,Traversable)
 
 
 {-
@@ -199,11 +199,11 @@ checkIrrelevance ::
 -}
 
 -- | 'Tag' is a constructor tag sum
-newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Data,Typeable,Generic)
+newtype Tag = Tag { unTag :: Word64 } deriving (Eq, Show,Ord,Typeable)
 
 -- | current theres no pointer tagging in 'Ref' but eventually that will
 -- probably change
-newtype Ref = Ref {refPointer :: Word64} deriving  (Eq, Show,Ord,Data,Typeable,Generic)
+newtype Ref = Ref {refPointer :: Word64} deriving  (Eq, Show,Ord,Typeable)
 
 
 instance Bounded Ref where
@@ -260,8 +260,8 @@ instance Enum Ref where
     --,Functor
     --,Foldable
     --,Traversable
-    ,Generic
-    ,Data
+
+
     ,Eq
     ,Ord
     ,Show)
@@ -289,8 +289,8 @@ data ValueF  ty v =    VLitF !Literal
       ,Functor
       ,Foldable
       ,Traversable
-      ,Generic
-      ,Data
+
+
       ,Eq
       ,Ord
       ,Show
@@ -322,11 +322,11 @@ instance (Eq ty  ) => Eq1 (ValueF ty)
 data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of arity is boring and simple
                               -- for now lets keep the variable names?
                               -- it'll keep the debugging simpler (maybe?)
- deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
+ deriving (Eq,Ord,Show,Read,Typeable)
 
 --- | 'Closure' may need some rethinking ... later
 data Closure  ty a = MkClosure ![Arity] !(Scope Text (ANF ty) a)
-  deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable,Data,Generic)
+  deriving (Eq,Ord,Show,Read,Ord1,Show1,Read1,Functor,Foldable,Traversable)
 deriving instance Eq ty => (Eq1 (Closure ty))
 
 --- when we check closure arity, we're also gonna collaps indirected refernces
@@ -374,8 +374,8 @@ data LazyContext ty = LCEmpty |   LCThunkUpdate !Ref !(LazyContext ty)
     --,Functor
     --,Foldable
     --,Traversable
-    ,Generic
-    -- ,Data
+
+    --
     ,Eq
     ,Ord
     ,Show)
@@ -388,8 +388,8 @@ data StrictContext  ty  = SCEmpty
     --,Functor
     --,Foldable
     --,Traversable
-    ,Generic
-    -- ,Data
+
+    --
     ,Eq
     ,Ord
     ,Show)
@@ -402,7 +402,7 @@ data Heap ty = Heap {_minMaxFreshRef :: !Ref,_theHeap :: !(Map.Map Ref (HeapVal 
                               -- Data
                                       Typeable
                                       ,Show
-                                      ,Generic
+
                                       ,Eq
                                       ,Ord
                                       --,Foldable
@@ -436,7 +436,7 @@ data CounterAndHeap ty =  CounterAndHeap {
 
                                       Typeable
                                       ,Show
-                                      ,Generic
+
                                       ,Eq
                                       ,Ord
                                       --,Foldable
@@ -452,7 +452,7 @@ extractCounterCAH :: Functor f => (Natural -> f Natural )-> (CounterAndHeap ty  
 extractCounterCAH  fun cnh = fmap (\i' -> cnh{_extractCounterCAH=i'}) $ fun $ _extractCounterCAH cnh
 
 newtype HeapStepCounterM ty  a = HSCM {_xtractHSCM :: State.State (CounterAndHeap ty) a}
-   deriving (Typeable,Functor,Generic)
+   deriving (Typeable,Functor)
 instance Applicative (HeapStepCounterM ty ) where
     pure  = \v ->  HSCM $ pure v
     (<*>) = \ (HSCM f) (HSCM v) -> HSCM $ f <*> v
@@ -642,7 +642,7 @@ data Exp ty a
   | Lam [(Text,Type ty,RigModel)] -- do we want to allow arity == 0, or just >= 1?
         (Scope Text (Exp ty) a)
   | Let (Text,Type ty,RigModel)  (Exp ty a)  (Scope Text (Exp ty) a) --  [Scope Int Exp a] (Scope Int Exp a)
-  deriving (Typeable,Data)
+  deriving (Typeable)
 deriving instance (Read a, Read ty) => Read (Exp ty a)
 deriving instance (Read ty) => Read1 (Exp ty)
 deriving instance (Show a, Show ty) => Show (Exp ty a)

@@ -31,7 +31,7 @@ data NeutralTermsANF gv a
     -- this doesn't guarantee that one of the args is a neutral term
     -- but one value on the heap MUST be a neutral term,
     --- for a primapp to be a neutral term
-       deriving ( Ord,Functor,Foldable,Traversable,Typeable,Data,Eq,Read,Show )
+       deriving ( Ord,Functor,Foldable,Traversable,Typeable,Eq,Read,Show )
 {-
 
 our HEAP Value TYPE will be

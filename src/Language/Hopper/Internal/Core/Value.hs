@@ -12,34 +12,16 @@
 module Language.Hopper.Internal.Core.Value where
 
 import Bound
---import Numeric.Natural
 import Prelude.Extras
--- import Control.Applicative
---import Control.Monad
---import qualified  Data.Set as Set
---import qualified  Data.Map.Strict as Map
---import Data.Foldable (foldl')
---import Data.Traversable
 import Data.Text (Text)
 import Data.Data
 import qualified Data.Vector as V
-import Data.Word
---import Data.Int
-import GHC.Generics (Generic)
---import Control.Lens
--- import qualified  Data.Bits as Bits
--- import  Control.Monad.Trans.State.Strict (StateT(..))
---import qualified Control.Monad.Trans.State.Strict as State
-
---import  Control.Monad.Free
-
---import Language.Hopper.Internal.Core.ANF
 import Language.Hopper.Internal.Core.Literal
 
 
 
 -- | 'Tag' is a constructor tag sum
-newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Data,Typeable,Generic)
+newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Typeable)
 
 -- type ValRec  ty   = Free (ValueF  ty Ref) Ref
 
@@ -65,8 +47,8 @@ data ValueF ast   v =    VLitF !Literal
       ,Functor
       ,Foldable
       ,Traversable
-      ,Generic
-      --,Data
+
+      --
       ,Eq
       ,Ord
       ,Show
@@ -76,8 +58,7 @@ data ValueF ast   v =    VLitF !Literal
       --,Show1
       --,Read1
       )
-deriving instance (Data a,Data (ast a),Monad ast,Data (ast (Var Text (ast a))),  Typeable ast,Typeable a)
-  =>  Data (ValueF ast a )
+
 
 instance (Eq1 ast,Monad ast) => Eq1 (ValueF ast) where
     (==#)  (VLitF a) (VLitF b) =  a == b
@@ -121,7 +102,7 @@ instance (Ord1 ast,Monad ast) => Ord1 (ValueF ast) where
 
 
 newtype WrappedVector a = WrappedVector { unWrappedVector :: V.Vector a }
-  deriving (Eq, Show,Ord,Read,Data,Typeable,Functor,Foldable,Traversable)
+  deriving (Eq, Show,Ord,Read,Typeable,Functor,Foldable,Traversable)
 instance Show1 WrappedVector
 instance Eq1 WrappedVector
 instance Ord1 WrappedVector
@@ -130,13 +111,12 @@ instance Read1 WrappedVector
 data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of arity is boring and simple
                               -- for now lets keep the variable names?
                               -- it'll keep the debugging simpler (maybe?)
- deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
+ deriving (Eq,Ord,Show,Read,Typeable)
 
 --- | 'Closure' may need some rethinking ... later
 --- they're kinda the erasure of a lambda ... for now
 data Closure ast   a = MkClosure ![Arity] !(Scope Text ast a)
-  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Generic,Typeable)
-deriving instance (Typeable ast,Typeable a,Data (Scope Text ast  a))=> Data (Closure ast   a)
+  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Typeable)
 instance (Monad ast, Eq1 ast) => Eq1 (Closure ast)
 instance (Monad ast, Ord1 ast) => Ord1 (Closure ast)
 instance (Monad ast, Read1 ast) => Read1 (Closure ast)

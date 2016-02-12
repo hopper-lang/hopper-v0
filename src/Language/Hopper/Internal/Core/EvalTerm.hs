@@ -48,8 +48,8 @@ data ExpContext  ty a  = SCEmpty
            ,Functor
            ,Foldable
            ,Traversable
-           ,Generic
-           ,Data
+
+
            ,Eq
            ,Ord
            ,Show)
@@ -64,7 +64,7 @@ data InterpreterError
    | MismatchedStackContext
    | PrimFailure String
    | UnsupportedTermConstructFailure String
-   deriving (Eq,Ord,Show,Typeable,Data)
+   deriving (Eq,Ord,Show,Typeable)
 
 
 runExpr :: Natural ->  ( forall s . InterpStack s  ty b a )-> Either ( ((b :+ InterpreterError ) :+ HeapError) )  a

@@ -10,8 +10,6 @@
 module Language.Hopper.Internal.Core.Type where
 
 import Data.Data
---import  Data.Typeable
-import GHC.Generics
 import qualified Data.Map as Map
 import qualified  Data.Set as Set
 import Data.Foldable (foldl')
@@ -19,18 +17,18 @@ import Data.Foldable (foldl')
 import Prelude.Extras
 
 data RigModel = Zero | One | Omega
- deriving (Eq,Ord,Show,Read,Data,Typeable,Generic)
+ deriving (Eq,Ord,Show,Read,Typeable)
 
 data Kind = Star | KArr Kind Kind | LiftedPubKey
-  deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
+  deriving (Eq,Ord,Read,Show,Typeable)
 
 data TCon {-a -}=  TInteger | TNatural | TRational  | TUnit | TArrow RigModel
                 | EncryptedFor |  SignedBy
                 | PubKey String {- this is not how it'll work :) -}
                 -- | Linear
-    deriving (Eq,Ord,Read,Show ,Data,Typeable,Generic)
+    deriving (Eq,Ord,Read,Show ,Typeable)
 data Type ty  {-a -}=  Tapp (Type ty) (Type ty) | TLit (TCon) | TVar ty
-   deriving (Eq1,Ord1,Show1,Read1,Eq,Ord,Read,Show,Data,Typeable,Functor,Foldable,Traversable,Generic)
+   deriving (Eq1,Ord1,Show1,Read1,Eq,Ord,Read,Show,Typeable,Functor,Foldable,Traversable)
 
 
 {-

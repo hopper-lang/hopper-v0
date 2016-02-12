@@ -44,7 +44,7 @@ data Exp a
       --  this was the optional type annotation? (Maybe  () {-(Type ty,RigModel)-})
           !(Exp  a)   -- rhs which may have multi verses
           (Scope (Either Word64 Text) Exp  a) --  [Scope Int Exp a] (Scope Int Exp a)
-  deriving (Show1,Read1,Ord1,Eq1,Ord,Eq,Show,Read,Functor,Foldable,Typeable,Data,Generic,Traversable)
+  deriving (Show1,Read1,Ord1,Eq1,Ord,Eq,Show,Read,Functor,Foldable,Typeable,Traversable)
 
 
 -- instance Functor (Exp ty)  where fmap       = fmapDefault
