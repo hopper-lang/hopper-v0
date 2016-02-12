@@ -10,7 +10,14 @@
 {-# LANGUAGE DeriveGeneric, LambdaCase #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 
-module Language.Hopper.Internal.Core.ANF  where
+module Language.Hopper.Internal.Core.ANF(
+    Anf(..)
+    ,AppAnf(..)
+    ,AnfAlloc(..)
+    ,AnfVariable
+    ,AnfRHS(..)
+    )
+  where
 
 -- import Language.Hopper.Internal.Core.Type
 
@@ -36,36 +43,10 @@ import Numeric.Natural
 --import Language.Hopper.Internal.Core.Literal
 
 
+type AnfVariable = (Either Natural Text)
 
 
---- data ExpContext  ty a  = SCEmpty
---                         | LetContext
---                             (Maybe Text) -- we're not currently using / needing the variable name here
---                             (Scope (Maybe Text) (Exp ) a)
---                             (ExpContext ty a)
---                         | ThunkUpdate !a (ExpContext ty a)
---                         | FunAppCtxt  [Ref] [Exp ty a] (ExpContext  ty a)
---                           -- lets just treat the ref list as having the function ref at the
---                           -- "bottom of the stack", when [Exp] is empty, reverse ref list to resolve function and apply args
---                         | PrimAppCtxt  PrimOpId [Ref] [Exp ty a] (ExpContext  ty a)
-
---                         -- applications are their one hole contexts!
---    deriving (Typeable,Functor,Foldable,Traversable,Generic,Data,Eq,Ord,Show)
-
-
--- data InterpreterError
---   = PrimopTypeMismatch
---   | NonClosureInApplicationPosition
---   | ArityMismatchFailure
---   | HeapLookupFailure
---   | MalformedClosure
---   | MismatchedStackContext
---   | PrimFailure String
---   | UnsupportedTermConstructFailure String
---   deriving (Eq,Ord,Show,Typeable,Data)
-
-
-data AppANF  a
+data AppAnf  a
     = EnterThunk !a -- if a is neutral term OR a free variable, this becomes neutral
     | FunApp !a ![a] --- if function position of FunApp is neutral, its neutral
     | PrimApp  {-!a -} !Text ![a] -- if any arg of a primop is neutral, its neutral
@@ -79,13 +60,13 @@ data AnfAlloc a
                             -- this will change once we add support for stuff like
                             -- Double or Word64
    | ConstrApp {-a is this a resolved qname? -} {-!ty-} !ConstrId [a]
-   | AllocateThunk  (ANF   a) -- Thunks share their evaluations
+   | AllocateThunk  (Anf  a) -- Thunks share their evaluations
   --  | EvaluateThunk !a       -- Thunk evaluation is a special
   --                           -- no arg lambda plus sharing
                               -- thunks and closure should
                               -- record their free variables???
-   | AllocateClosure ![(Either Natural Text{-,Type ty,RigModel-})] -- arity >=0
-                             ({-Simple.Scope -} (ANF (Var (Either Natural Text) a)))  -- should we have global table of
+   | AllocateClosure ![(AnfVariable {-,Type ty,RigModel-})] -- arity >=0
+                             ({-Simple.Scope -} (Anf (Var (AnfVariable) a)))  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
      deriving (Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 
@@ -93,7 +74,7 @@ data AnfAlloc a
 
 data AnfRHS  {-ty-} a
     = AnfAllocRHS !(AnfAlloc a) -- only heap allocates, no control flow
-    | NonTailCallApp  (AppANF  a) -- control stack allocation; possibly heap allocation
+    | NonTailCallApp  (AppAnf a) -- control stack allocation; possibly heap allocation
 
    deriving (Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 
@@ -107,19 +88,19 @@ name rep
 
 
 -}
-data ANF  a
+data Anf a
     = ReturnNF  ![a] -- !(Atom ty a)
     | LetNF --  (Maybe Text) {-(Maybe(Type ty, RigModel)) -} (AnfRHS  a)
-          ![(Either Natural Text)]  -- should be Either Count [Text] later
+          ![AnfVariable]  -- should be Either Count [Text] later
           !(AnfRHS a) -- only ONE right hand side for now , which may have multiple return values
           -- this list of "independent" simultaneous let bindings must always be nonempty
           -- this is NOT a let rec construct and doesn't provide mutual recursion
           -- this is provided as an artifact of simplifying the term 2 anf translation
-          !(ANF (Var (Either Natural Text) a))
+          !(Anf (Var AnfVariable a))
 
           -- (Simple.Scope (Maybe Text) (ANF ) a)
     -- | LetNFMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
-    | TailCallANF (AppANF  a)
+    | TailCallAnf (AppAnf  a)
     -- future thing will have | LetNFRec maybe?
     deriving (Ord,Ord1,Eq1,Read1,Show1,Functor,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 

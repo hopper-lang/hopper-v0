@@ -35,7 +35,7 @@ import Control.Monad.IO.Class as MIO
 import  Control.Monad.STExcept
 import Data.Data
 import Data.Hop.Or
-
+import Language.Hopper.Internal.Core.HeapRef
 
 
 data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref val)   }
