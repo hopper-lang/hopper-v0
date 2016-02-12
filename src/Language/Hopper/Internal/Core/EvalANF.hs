@@ -15,6 +15,7 @@ module Language.Hopper.Internal.Core.EvalANF
 import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Heap
 import Language.Hopper.Internal.Core.ANF
+import Language.Hopper.Internal.Core.Closed
 --import Language.Hopper.Internal.Core.Value
 import Control.Monad.STExcept
 import Data.Hop.Or
@@ -23,7 +24,6 @@ import Data.Data
 import Language.Hopper.Internal.Core.HeapRef(Ref())
 import Prelude.Extras
 import qualified Data.Vector as V
-import Unsafe.Coerce(unsafeCoerce)
 --import qualified Data.Map as Map
 import GHC.Generics(type Generic)
 --import Numeric.Natural
@@ -46,9 +46,6 @@ evalANF (forall s . (ANF a, Map a Ref, Heap (v s))) -> ....
 probably not, but noting this for now
 -}
 
-newtype Closed f = Closed { unClosed :: forall a . f a  } deriving Typeable
-closedPoly :: Traversable f => f a -> Maybe (Closed f )
-closedPoly = \x -> unsafeCoerce $ traverse (const Nothing) x
 
 
 data ErrorEvalAnf = Boom

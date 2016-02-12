@@ -1,4 +1,4 @@
-{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts #-}
+{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts, Trustworthy #-}
 module Control.Monad.STExcept(
   STE
   ,runSTE

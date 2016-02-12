@@ -33,9 +33,7 @@ import Data.Data
 -- import  Control.Monad
 --import Data.Bifunctor.Wrapped
 import Prelude.Extras
--- import Bound hiding (Scope,unscope)
--- import Language.Hopper.Internal.Core.Term
--- import qualified   Bound.Scope.Simple as Simple
+
 import Bound.Var
 -- import Bound.Scope.Simple (Scope(..))
 -- import Control.Lens (view,over,_1,_2)
@@ -49,7 +47,7 @@ type AnfVariable = (Either Natural Text)
 data AppAnf  a
     = EnterThunk !a -- if a is neutral term OR a free variable, this becomes neutral
     | FunApp !a ![a] --- if function position of FunApp is neutral, its neutral
-    | PrimApp  {-!a -} !Text ![a] -- if any arg of a primop is neutral, its neutral
+    | PrimApp  {-!a -} !PrimOpId ![a] -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
         deriving ( Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Data,Eq,Read,Show)
 

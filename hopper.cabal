@@ -67,6 +67,8 @@ library
                     Language.Hopper.Internal.Core.GTerm
                     Language.Hopper.Internal.Core.NormalizeANF
                     Language.Hopper.Internal.Core.HeapRef
+                    Language.Hopper.Internal.Core.ClosureConvertedANF
+                    Language.Hopper.Internal.Core.Closed
                    --  Language.Hopper.Internal.Core.Eval
                    -- Language.Hopper.Internal.Core.EvalANF
   -- Modules included in this library but not exported.
