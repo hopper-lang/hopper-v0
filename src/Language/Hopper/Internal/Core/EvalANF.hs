@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE KindSignatures , RankNTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 {-# LANGUAGE TypeOperators#-}
@@ -18,25 +18,20 @@ import Language.Hopper.Internal.Core.ANF
 --import Language.Hopper.Internal.Core.Value
 import Control.Monad.STExcept
 import Data.Hop.Or
-import Numeric.Natural
 import Data.Text (Text)
 import Data.Data
 import Language.Hopper.Internal.Core.HeapRef(Ref())
 import Prelude.Extras
 import qualified Data.Vector as V
+import Unsafe.Coerce(unsafeCoerce)
 --import qualified Data.Map as Map
 import GHC.Generics(type Generic)
 --import Numeric.Natural
 --import Data.Typeable
 --import Control.Monad.Trans.State.Strict as State
-
 --import Bound hiding (Scope)
 --import qualified Bound.Scope.Simple as Simple
---import Data.Text (Text)
 
--- import  Control.Monad.Free
---import Control.Lens
---import qualified Data.Vector as V
 
 
 {-
@@ -51,11 +46,16 @@ evalANF (forall s . (ANF a, Map a Ref, Heap (v s))) -> ....
 probably not, but noting this for now
 -}
 
+newtype Closed f = Closed { unClosed :: forall a . f a  } deriving Typeable
+closedPoly :: Traversable f => f a -> Maybe (Closed f )
+closedPoly = \x -> unsafeCoerce $ traverse (const Nothing) x
+
+
 data ErrorEvalAnf = Boom
 data ControlStackAnf =
-      LetCSANF ![(Either Natural Text, () {- put types info here -})]
+      LetCSANF ![(AnfVariable, () {- put types info here -})]
                 !() -- this is the right hand side of the let thats being evaluated
-                !(Anf Ref)
+                !(Anf Ref) --- body of let
                 !ControlStackAnf -- what happens after the body of let returns!
       | CSANFEmpty  -- we're done!
       | Update
