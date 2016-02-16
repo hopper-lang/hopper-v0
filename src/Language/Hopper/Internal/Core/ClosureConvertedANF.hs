@@ -66,7 +66,7 @@ but in the future we can be clever about specialization / register-sized values
 -}
 data ClosureCodeRecord
   = ClosureCodeRecord !EnvSize
-                      ![Maybe Text]
+                      ![Maybe Text] -- source names, if applicable, for the captured free vars in the orig source
                       !CodeArity -- how many explicit arguments the function takes
                       --- later we'll have [arg rep]
                       !CcAnf

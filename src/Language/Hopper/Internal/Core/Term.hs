@@ -17,7 +17,7 @@ import Bound
 import Data.Word (Word64)
 import Prelude.Extras
 import Control.Monad
-import GHC.Generics (Generic)
+--import GHC.Generics (Generic)
 -- import Data.Traversable --  (fmapDefault,foldMapDefault)
 
 data Exp a
@@ -35,7 +35,8 @@ data Exp a
                     --- note: may need to change their semantics later?!
                     --- Q: is it valid to thunk a thunked value? (no?)
   | App !(Exp  a)  ![Exp  a]  --this is not curried :)
-  | PrimApp  !PrimOpId ![Exp  a] -- not sure if this is needed, but lets go with it for now
+  | PrimApp  !PrimOpId --
+             ![Exp  a] -- not sure if this is needed, but lets go with it for now
 
   | Lam ![(Text{-,Type ty,RigModel-})]
         !(Scope Text (Exp) a)
