@@ -17,7 +17,7 @@ import Language.Hopper.Internal.Core.Heap
 import Language.Hopper.Internal.Core.ANF
 import Language.Hopper.Internal.Core.Closed
 --import Language.Hopper.Internal.Core.Value
-import Control.Monad.STExcept
+import Control.Monad.STE
 import Data.Hop.Or
 import Data.Text (Text)
 import Data.Data

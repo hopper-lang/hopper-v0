@@ -1,5 +1,6 @@
 {-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts, Trustworthy #-}
-module Control.Monad.STExcept(
+module Control.Monad.STE
+(
   STE
   ,runSTE
   ,throwSTE

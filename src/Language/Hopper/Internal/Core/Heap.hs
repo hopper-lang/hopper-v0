@@ -32,7 +32,7 @@ import Control.Monad.Trans.State.Strict as State
 import Control.Monad.Trans.Class as MT
 import Control.Monad.Primitive as  Prim
 import Control.Monad.IO.Class as MIO
-import  Control.Monad.STExcept
+import  Control.Monad.STE
 import Data.Data
 import Data.Hop.Or
 import Language.Hopper.Internal.Core.HeapRef

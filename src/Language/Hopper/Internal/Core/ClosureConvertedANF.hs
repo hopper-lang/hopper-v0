@@ -21,7 +21,7 @@ import Language.Hopper.Internal.Core.ANF
 import Language.Hopper.Internal.Core.Heap
 import Language.Hopper.Internal.Core.HeapRef
 import Data.Hop.Or
-import Control.Monad.STExcept
+import Control.Monad.STE
 {-
 DESIGN
 - this is the closure-converted let normal form (ANF) sibling of the types-as-calling-conventions language/abstract machine
@@ -111,18 +111,11 @@ data CcAlloc
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving (Eq,Ord,Show,Typeable)
 
+data CodeRegistry = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecord)
+                                 !(Map.Map ClosureCodeId ClosureCodeRecord)
+
 -- TODO: implement this after ccAnf evaluator
 --
 closureConvert :: Closed Anf -> (CcAnf, CodeRegistry)
 closureConvert = error "_FINISHMEEEEEBRIANNNNN" -- TODO
-data CodeRegistry = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecord)
-                                 !(Map.Map ClosureCodeId ClosureCodeRecord)
 
-data CcAnfEnvStack
-data CcAnfControlStack
-data CcAnfEvalError
-
-evalCcAnf :: CodeRegistry -> CcAnfEnvStack -> CcAnfControlStack -> CcAnf -> HeapStepCounterM CcValueRep (STE (c :+ CcAnfEvalError :+ HeapError ) s) Ref
-evalCcAnf = error "finish this next week"
-
--- evalANF ::  Anf Ref -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
