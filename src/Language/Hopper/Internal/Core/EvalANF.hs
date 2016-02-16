@@ -61,7 +61,7 @@ data ControlStackAnf =
   deriving (Eq,Ord,Show,Read,Typeable)
 
 newtype WrappedVector a = WrappedVector { unWrappedVector :: V.Vector a }
-  deriving (Eq, Show,Ord,Read,Typeable,Functor,Foldable,Traversable)
+  deriving (Data,Eq, Show,Ord,Read,Typeable,Functor,Foldable,Traversable)
 instance Show1 WrappedVector
 instance Eq1 WrappedVector
 instance Ord1 WrappedVector
@@ -75,11 +75,11 @@ data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of ar
 --- | 'Closure' may need some rethinking ... later
 --- they're kinda the erasure of a lambda ... for now
 data Closure    a =  BORING  -- MkClosure ![Arity] !(Scope Text ast a)
-  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Typeable)
+  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Typeable,Data,Generic)
 
 
 -- | 'Tag' is a constructor tag sum
-newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Typeable)
+newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Data,Generic,Eq,Read, Show,Ord,Typeable)
 --type HeapVal ast     =  ValueF ast  Ref --  ValueF ty Ref (ValRec ty)
 
 data ValueF    v =    VLitF !Literal
@@ -101,7 +101,8 @@ data ValueF    v =    VLitF !Literal
       ,Functor
       ,Foldable
       ,Traversable
-
+      ,Data
+      ,Generic
       --
       ,Eq
       ,Ord
@@ -124,7 +125,7 @@ type InterpStack s  ty b a = IdentityT (HeapStepCounterM (Exp ty) (STE ((b :+ In
 evalExp :: (Ord ty,Show ty)=>  ExpContext ty Ref -> Exp ty Ref
  -> InterpStack s  ty b ((HeapVal (Exp ty)), Ref)
 -}
-evalANF ::  Anf Ref -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
+evalANF ::  Closed Anf  -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
 evalANF = undefined
 
 

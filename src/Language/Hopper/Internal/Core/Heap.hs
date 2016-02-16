@@ -21,8 +21,7 @@ module Language.Hopper.Internal.Core.Heap(
   )
 
     where
---import Language.Hopper.Internal.Core.ANF
-import Language.Hopper.Internal.Core.Value
+
 import qualified Data.Map as Map
 import GHC.Generics
 import Numeric.Natural
@@ -39,7 +38,7 @@ import Language.Hopper.Internal.Core.HeapRef
 
 
 data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref val)   }
-   deriving (  Typeable  , Eq, Ord, Show, Functor,Foldable,Traversable )
+   deriving (  Typeable  , Eq, Ord, Show, Functor,Foldable,Traversable ,Generic,Data)
 
 
 data HeapError

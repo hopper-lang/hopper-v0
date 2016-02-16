@@ -17,3 +17,5 @@ newtype Closed f
 
 closedPoly :: Traversable f => f a -> Maybe (Closed f )
 closedPoly = \x -> unsafeCoerce $ traverse (const Nothing) x
+--- this is safe because Closed is a new type, so it has NO runtime rep
+--- the safe Coerce machinery doesn't work because of the higher rank type

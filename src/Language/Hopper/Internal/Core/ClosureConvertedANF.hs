@@ -18,10 +18,10 @@ import Data.Text (Text)
 import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Closed
 import Language.Hopper.Internal.Core.ANF
-import Language.Hopper.Internal.Core.Heap
-import Language.Hopper.Internal.Core.HeapRef
-import Data.Hop.Or
-import Control.Monad.STE
+--import Language.Hopper.Internal.Core.Heap
+--import Language.Hopper.Internal.Core.HeapRef
+--import Data.Hop.Or
+--import Control.Monad.STE
 {-
 DESIGN
 - this is the closure-converted let normal form (ANF) sibling of the types-as-calling-conventions language/abstract machine

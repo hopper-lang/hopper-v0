@@ -15,13 +15,14 @@ import Bound
 import Prelude.Extras
 import Data.Text (Text)
 import Data.Data
+import GHC.Generics(Generic)
 import qualified Data.Vector as V
 import Language.Hopper.Internal.Core.Literal
 
 
 
 -- | 'Tag' is a constructor tag sum
-newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Eq,Read, Show,Ord,Typeable)
+newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Data,Generic,Eq,Read, Show,Ord,Typeable)
 
 -- type ValRec  ty   = Free (ValueF  ty Ref) Ref
 
@@ -43,7 +44,7 @@ data ValueF ast   v =    VLitF !Literal
                         --- in a manner thats parametric in the choice
                         -- of execution  semantics
    deriving
-     (Typeable
+     (Generic,Typeable
       ,Functor
       ,Foldable
       ,Traversable
@@ -102,7 +103,7 @@ instance (Ord1 ast,Monad ast) => Ord1 (ValueF ast) where
 
 
 newtype WrappedVector a = WrappedVector { unWrappedVector :: V.Vector a }
-  deriving (Eq, Show,Ord,Read,Typeable,Functor,Foldable,Traversable)
+  deriving (Data,Generic,Eq, Show,Ord,Read,Typeable,Functor,Foldable,Traversable)
 instance Show1 WrappedVector
 instance Eq1 WrappedVector
 instance Ord1 WrappedVector
@@ -111,12 +112,12 @@ instance Read1 WrappedVector
 data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of arity is boring and simple
                               -- for now lets keep the variable names?
                               -- it'll keep the debugging simpler (maybe?)
- deriving (Eq,Ord,Show,Read,Typeable)
+ deriving (Data,Generic,Eq,Ord,Show,Read,Typeable)
 
 --- | 'Closure' may need some rethinking ... later
 --- they're kinda the erasure of a lambda ... for now
 data Closure ast   a = MkClosure ![Arity] !(Scope Text ast a)
-  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Typeable)
+  deriving (Generic,Eq,Ord,Show,Read,Functor,Foldable,Traversable,Typeable)
 instance (Monad ast, Eq1 ast) => Eq1 (Closure ast)
 instance (Monad ast, Ord1 ast) => Ord1 (Closure ast)
 instance (Monad ast, Read1 ast) => Read1 (Closure ast)

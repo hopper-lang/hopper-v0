@@ -20,13 +20,13 @@ where
 
 import Data.Word
 import Data.Data
-
+import GHC.Generics
 
 
 
 -- | current theres no pointer tagging in 'Ref' but eventually that will
 -- probably change
-newtype Ref = Ref {refPointer :: Word64} deriving  (Eq,Read,Show,Ord,Typeable)
+newtype Ref = Ref {refPointer :: Word64} deriving  (Eq,Read,Show,Ord,Typeable,Data,Generic)
 
 
 instance Bounded Ref where

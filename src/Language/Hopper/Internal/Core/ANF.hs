@@ -25,6 +25,7 @@ import Language.Hopper.Internal.Core.Literal
 --import Data.Bifunctor
 import Data.Text (Text)
 import Data.Data
+import GHC.Generics
 -- import Data.Word (Word64)
 --import Data.Bifunctor.TH
 --import Data.Bitraversable
@@ -49,7 +50,7 @@ data AppAnf  a
     | FunApp !a ![a] --- if function position of FunApp is neutral, its neutral
     | PrimApp  {-!a -} !PrimOpId ![a] -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
-        deriving ( Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Eq,Read,Show)
+        deriving ( Data,Generic,Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Eq,Read,Show)
 
 
 data AnfAlloc a
@@ -66,7 +67,7 @@ data AnfAlloc a
    | AllocateClosure ![(AnfVariable {-,Type ty,RigModel-})] -- arity >=0
                              ({-Simple.Scope -} (Anf (Var (AnfVariable) a)))  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
-     deriving (Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
+     deriving (Data,Generic,Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
 
 
 
@@ -74,7 +75,7 @@ data AnfRHS  {-ty-} a
     = AnfAllocRHS !(AnfAlloc a) -- only heap allocates, no control flow
     | NonTailCallApp  (AppAnf a) -- control stack allocation; possibly heap allocation
 
-   deriving (Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
+   deriving (Data,Generic,Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
 
 
 {-
@@ -100,5 +101,5 @@ data Anf a
     -- | LetNFMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
     | TailCallAnf (AppAnf  a)
     -- future thing will have | LetNFRec maybe?
-    deriving (Ord,Ord1,Eq1,Read1,Show1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
+    deriving (Data,Generic,Ord,Ord1,Eq1,Read1,Show1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
 

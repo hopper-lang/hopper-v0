@@ -1,7 +1,10 @@
+{-# LANGUAGE TypeOperators #-}
 module Language.Hopper.Internal.Core.EvalClosureConvertedANF where
 
 import  Language.Hopper.Internal.Core.ClosureConvertedANF
 import  Language.Hopper.Internal.Core.Heap
+import  Language.Hopper.Internal.Core.HeapRef
+import Data.Hop.Or
 import Control.Monad.STE
 
 data CcAnfEnvStack
