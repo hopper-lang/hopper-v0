@@ -1,3 +1,6 @@
+# NOTE : we do not provide user support for the stack yaml_configuratio
+# this only exists
+
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
@@ -28,7 +31,8 @@ extra-package-dbs: []
 
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386
-# arch: x86_64
+arch: x86_64 # we only support 64 bit systems, and have not test 64 architectures
+##
 
 # Extra directories used by stack for building
 # extra-include-dirs: [/path/to/dir]
