@@ -13,7 +13,7 @@
 module Language.Hopper.Internal.Core.Anf where
 
 import Data.Word
-import Numeric.Natural
+--import Numeric.Natural
 import Data.Data
 import Prelude.Extras
 import GHC.Generics

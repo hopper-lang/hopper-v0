@@ -20,43 +20,43 @@ import Control.Monad
 --import GHC.Generics (Generic)
 -- import Data.Traversable --  (fmapDefault,foldMapDefault)
 
-data Exp a
+data Term a
   = V  !a
   | ELit !Literal
-  | Return ![ Exp a ] -- explicit multiple return values
+  | Return ![ Term a ] -- explicit multiple return values
                       -- should V x be replaced by Return [x] ?
                       --  once we lower to ANF
                       -- NOTE: for valid expressions,
-  | EnterThunk !(Exp a) -- because we're in a strict IR rep,
+  | EnterThunk !(Term a) -- because we're in a strict IR rep,
                         -- we dont need to provide a seq like operation
                           -- seq a b === let _ := enterThunk a in b
 
-  | Delay !(Exp a)  --- Delay is a Noop on Thunked values, otherwise creates a Thunked
+  | Delay !(Term a)  --- Delay is a Noop on Thunked values, otherwise creates a Thunked
                     --- note: may need to change their semantics later?!
                     --- Q: is it valid to thunk a thunked value? (no?)
-  | App !(Exp  a)  ![Exp  a]  --this is not curried :)
+  | App !(Term  a)  ![Term  a]  --this is not curried :)
   | PrimApp  !PrimOpId --
-             ![Exp  a] -- not sure if this is needed, but lets go with it for now
+             ![Term  a] -- not sure if this is needed, but lets go with it for now
 
   | Lam ![(Text{-,Type ty,RigModel-})]
-        !(Scope Text (Exp) a)
+        !(Scope Text (Term) a)
   | Let !(Either Word64  [Text]) -- either the # of multiple RVs from the rhs,
                                   -- or the names for the values on the RHS
       --  this was the optional type annotation? (Maybe  () {-(Type ty,RigModel)-})
-          !(Exp  a)   -- rhs which may have multi verses
-          (Scope (Either Word64 Text) Exp  a) --  [Scope Int Exp a] (Scope Int Exp a)
+          !(Term  a)   -- rhs which may have multi verses
+          (Scope (Either Word64 Text) Term  a) --  [Scope Int Term a] (Scope Int Term a)
   deriving (Show1,Read1,Ord1,Eq1,Ord,Eq,Show,Read,Functor,Foldable,Typeable,Traversable)
 
 
--- instance Functor (Exp ty)  where fmap       = fmapDefault
+-- instance Functor (Term ty)  where fmap       = fmapDefault
 
--- instance Foldable (Exp ty) where foldMap    = foldMapDefault
+-- instance Foldable (Term ty) where foldMap    = foldMapDefault
 
-instance Applicative (Exp ) where
+instance Applicative (Term ) where
   pure  = V
   (<*>) = ap
 
--- instance Traversable (Exp ty) where
+-- instance Traversable (Term ty) where
 --   traverse f (V a)      = V <$> f a
 --   traverse _f (ELit e) = pure $ ELit e
 --   -- traverse f (PrimApp nm ls) = PrimApp nm <$> traverse f ls
@@ -68,7 +68,7 @@ instance Applicative (Exp ) where
 --   traverse f (Let mname mtype  bs b) = Let  mname mtype <$>  (traverse f) bs <*> traverse f b
 
 
-instance Monad (Exp ) where
+instance Monad (Term ) where
   return = V
   V a         >>= f = f a
   (Return ls) >>= f =    Return (map (>>= f) ls )
@@ -91,7 +91,7 @@ abstract' vs b = abstract (\v' -> if v' `elem` vs
                                     else Nothing)
                           b
 
-lam :: [Text] -> Exp  Text -> Exp  Text
+lam :: [Text] -> Term  Text -> Term  Text
 lam vs b = Lam (zipWith (\v _n -> (v{-, TVar n, Omega-})) vs [0 :: Word64 ..])
                (abstract' vs b)
 
@@ -101,10 +101,10 @@ lam vs b = Lam (zipWith (\v _n -> (v{-, TVar n, Omega-})) vs [0 :: Word64 ..])
 -- Lam [("y",TVar 0,Omega)]
 --     (Scope (Lam [("x",TVar 0,Omega)]
 --            (Scope (V (B "x") :@ [V (F (V (B "y")))]))))
-lam1 :: Text -> Exp  Text -> Exp  Text
+lam1 :: Text -> Term  Text -> Term  Text
 lam1 v b = lam [v] b
 
-let_ :: Text -> Exp  Text -> Exp  Text -> Exp  Text
+let_ :: Text -> Term  Text -> Term  Text -> Term  Text
 let_ v rhs bod = Let (Right [ v])
                      {-(Just (TVar 0, Omega))-}
                      rhs
@@ -113,11 +113,11 @@ let_ v rhs bod = Let (Right [ v])
                                         else Nothing)
                                bod)
 
-callPrim :: Text -> [Exp  a] -> Exp  a
+callPrim :: Text -> [Term  a] -> Term  a
 callPrim name = PrimApp (PrimopId name)
 
 infixr 0 !
-(!) :: Text -> Exp  Text -> Exp  Text
+(!) :: Text -> Term  Text -> Term  Text
 (!) = lam1
 
 -- let_ "False" ("f" ! "t" ! V"f") (V "False")
