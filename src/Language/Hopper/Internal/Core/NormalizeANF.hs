@@ -11,7 +11,7 @@
 module Language.Hopper.Internal.Core.NormalizeANF where
 
 
-import Language.Hopper.Internal.Core.ANF
+import Language.Hopper.Internal.Core.OldANF
 import Data.Data
 -- put normalizer here
 
@@ -27,7 +27,7 @@ is this a ghc 7.10 bug? investigate and report when time permits
 -}
 data NeutralTermsANF gv a
     =  NeutVarANF  !gv
-    | NeutralComp (AppAnf a) -- see notes at AppANF for when these constitute neutral terms
+    | NeutralComp (OldAppAnf a) -- see notes at AppANF for when these constitute neutral terms
     -- this doesn't guarantee that one of the args is a neutral term
     -- but one value on the heap MUST be a neutral term,
     --- for a primapp to be a neutral term

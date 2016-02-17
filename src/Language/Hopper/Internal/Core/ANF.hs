@@ -2,55 +2,49 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
--- {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
--- {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE DeriveGeneric, LambdaCase #-}
--- {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DeriveGeneric #-}
 
-module Language.Hopper.Internal.Core.ANF(
-    Anf(..)
-    ,AppAnf(..)
-    ,AnfAlloc(..)
-    ,AnfVariable
-    ,AnfRHS(..)
-    )
-  where
+--{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
+module Language.Hopper.Internal.Core.Anf where
 
--- import Language.Hopper.Internal.Core.Type
-
-import Language.Hopper.Internal.Core.Literal
---import Data.Bifunctor
-import Data.Text (Text)
-import Data.Data
-import GHC.Generics
--- import Data.Word (Word64)
---import Data.Bifunctor.TH
---import Data.Bitraversable
---import Data.Bifoldable
--- import GHC.Generics
--- import  Control.Monad
---import Data.Bifunctor.Wrapped
-import Prelude.Extras
-
-import Bound.Var
--- import Bound.Scope.Simple (Scope(..))
--- import Control.Lens (view,over,_1,_2)
+import Data.Word
 import Numeric.Natural
---import Language.Hopper.Internal.Core.Literal
+import Data.Data
+import Prelude.Extras
+import GHC.Generics
+import Language.Hopper.Internal.Core.Literal
+       --Language.Hopper.Internal.Core.ANF
 
+{-
+TODO : think about Debruijn rep for telescope binders
 
-type AnfVariable = (Either Natural Text)
+-}
 
+data AnfVariable a =
+    AnfLocalVar !Word64
+    | AnfFullyQualifiedName !a
+  deriving (Data,Generic,Ord1,Eq1,Read1,Show1,Ord,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
+
+data AnfBinderInfo  a  = AnfBI_Stub -- fill me in!
+ deriving (Data,Generic,Ord1,Eq1,Read1,Show1,Ord,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
+{-
+  relevance = irrelevant, linear, general ( wild card/ignore binders should be marked irrev??)
+  source name, if it exists
+  type???
+-}
 
 data AppAnf  a
-    = EnterThunk !a -- if a is neutral term OR a free variable, this becomes neutral
-    | FunApp !a ![a] --- if function position of FunApp is neutral, its neutral
-    | PrimApp  {-!a -} !PrimOpId ![a] -- if any arg of a primop is neutral, its neutral
+    = EnterThunk !(AnfVariable a) -- if a is neutral term OR a free variable, this becomes neutral
+    | FunApp !(AnfVariable a) ![AnfVariable a] --- if function position of FunApp is neutral, its neutral
+    | PrimApp  {-!a -} !PrimOpId ![AnfVariable a] -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
         deriving ( Data,Generic,Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Eq,Read,Show)
+
 
 
 data AnfAlloc a
@@ -58,14 +52,14 @@ data AnfAlloc a
                             -- so for now all literals are heap allocated
                             -- this will change once we add support for stuff like
                             -- Double or Word64
-   | ConstrApp {-a is this a resolved qname? -} {-!ty-} !ConstrId [a]
-   | AllocateThunk  (Anf  a) -- Thunks share their evaluations
-  --  | EvaluateThunk !a       -- Thunk evaluation is a special
-  --                           -- no arg lambda plus sharing
-                              -- thunks and closure should
-                              -- record their free variables???
-   | AllocateClosure ![(AnfVariable {-,Type ty,RigModel-})] -- arity >=0
-                             ({-Simple.Scope -} (Anf (Var (AnfVariable) a)))  -- should we have global table of
+   | ConstrApp {-a is this a resolved qname? -} {-!ty-}
+        !ConstrId {- this should be in the same name space as runtime values, sort of!  -}
+        ![AnfVariable a]
+   | AllocateThunk
+        !(Anf  a) -- Thunks share their evaluations
+   | AllocateClosure
+          ![(AnfBinderInfo a {-,Type ty,RigModel-})] -- arity >=0
+          !( (Anf a))  -- should we have global table of
                                                               -- "pointers" to lambdas? THINK ME + FIX ME
      deriving (Data,Generic,Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
 
@@ -73,7 +67,7 @@ data AnfAlloc a
 
 data AnfRHS  {-ty-} a
     = AnfAllocRHS !(AnfAlloc a) -- only heap allocates, no control flow
-    | NonTailCallApp  (AppAnf a) -- control stack allocation; possibly heap allocation
+    | NonTailCallApp  !(AppAnf a) -- control stack allocation; possibly heap allocation
 
    deriving (Data,Generic,Ord,Ord1,Eq1,Show1,Read1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
 
@@ -81,25 +75,28 @@ data AnfRHS  {-ty-} a
 {-
 name rep
     binder id :: Word64
-    debrujin nexting :: Word64
+    debrujin nesting :: Word64
     sourcename :: Maybe (Fully qualified name)
     sourcloc :: something something something
 
 
 -}
+
+
+
 data Anf a
-    = ReturnNF  ![a] -- !(Atom ty a)
+    = ReturnNF
+          ![AnfVariable a] -- !(Atom ty a)
     | LetNF --  (Maybe Text) {-(Maybe(Type ty, RigModel)) -} (AnfRHS  a)
-          ![AnfVariable]  -- should be Either Count [Text] later
+          ![AnfBinderInfo a]  --  should track type, computational relevance, etc  of the
           !(AnfRHS a) -- only ONE right hand side for now , which may have multiple return values
-          -- this list of "independent" simultaneous let bindings must always be nonempty
           -- this is NOT a let rec construct and doesn't provide mutual recursion
           -- this is provided as an artifact of simplifying the term 2 anf translation
-          !(Anf (Var AnfVariable a))
+          !(Anf  a)
 
           -- (Simple.Scope (Maybe Text) (ANF ) a)
     -- | LetNFMulti ![AnfRHS ty a] !(Scope Word64 (ANF ty) a)
-    | TailCallAnf (AppAnf  a)
+    | TailCallAnf
+        !(AppAnf  a)
     -- future thing will have | LetNFRec maybe?
     deriving (Data,Generic,Ord,Ord1,Eq1,Read1,Show1,Functor,Foldable,Traversable,Typeable,Eq,Read,Show)
-

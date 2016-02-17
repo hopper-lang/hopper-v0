@@ -14,7 +14,7 @@ module Language.Hopper.Internal.Core.EvalANF
     where
 import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Heap
-import Language.Hopper.Internal.Core.ANF
+import Language.Hopper.Internal.Core.OldANF
 import Language.Hopper.Internal.Core.Closed
 --import Language.Hopper.Internal.Core.Value
 import Control.Monad.STE
@@ -48,16 +48,16 @@ probably not, but noting this for now
 
 
 
-data ErrorEvalAnf = Boom
-data ControlStackAnf =
-      LetCSANF ![(AnfVariable, () {- put types info here -})]
+data ErrorEvalOldAnf = Boom
+data ControlStackOldAnf =
+      LetCSANF ![(OldAnfVariable, () {- put types info here -})]
                 !() -- this is the right hand side of the let thats being evaluated
-                !(Anf Ref) --- body of let
-                !ControlStackAnf -- what happens after the body of let returns!
+                !(OldAnf Ref) --- body of let
+                !ControlStackOldAnf -- what happens after the body of let returns!
       | CSANFEmpty  -- we're done!
       | Update
             !Ref
-            !ControlStackAnf
+            !ControlStackOldAnf
   deriving (Eq,Ord,Show,Read,Typeable)
 
 newtype WrappedVector a = WrappedVector { unWrappedVector :: V.Vector a }
@@ -84,7 +84,7 @@ newtype Tag = Tag { unTag :: Text {-Word64-} } deriving (Data,Generic,Eq,Read, S
 
 data ValueF    v =    VLitF !Literal
               | ConstructorF  !Tag  !(WrappedVector v)
-              | ThunkF !(Anf   v )
+              | ThunkF !(OldAnf   v )
               --  should this be a heap ref to
               -- closure to have the right sharing ?
               | DirectClosureF !(Closure   v) -- heap ref?
@@ -125,7 +125,7 @@ type InterpStack s  ty b a = IdentityT (HeapStepCounterM (Exp ty) (STE ((b :+ In
 evalExp :: (Ord ty,Show ty)=>  ExpContext ty Ref -> Exp ty Ref
  -> InterpStack s  ty b ((HeapVal (Exp ty)), Ref)
 -}
-evalANF ::  Closed Anf  -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
+evalANF ::  Closed OldAnf  -> ControlStackOldAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalOldAnf :+ HeapError ) s) Ref
 evalANF = undefined
 
 

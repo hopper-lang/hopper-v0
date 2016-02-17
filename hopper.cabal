@@ -59,7 +59,9 @@ library
                     Language.Hopper.Internal.Core.Term
                     Language.Hopper.Internal.Core.Type
                     Language.Hopper.Internal.Core.Value
-                    Language.Hopper.Internal.Core.ANF
+                    Language.Hopper.Internal.Core.Anf
+                    Language.Hopper.Internal.Core.AnfIndexed
+                    Language.Hopper.Internal.Core.OldANF
                     Language.Hopper.Internal.Core.EvalANF
                     Language.Hopper.Internal.Core.Literal
                     Language.Hopper.Internal.Core.Heap
@@ -70,6 +72,7 @@ library
                     Language.Hopper.Internal.Core.ClosureConvertedANF
                     Language.Hopper.Internal.Core.EvalClosureConvertedANF
                     Language.Hopper.Internal.Core.Closed
+                    Data.List.Sized
                    --  Language.Hopper.Internal.Core.Eval
                    -- Language.Hopper.Internal.Core.EvalANF
   -- Modules included in this library but not exported.
@@ -98,6 +101,7 @@ library
                       ,bifunctors >= 5 &&  < 5.2
                       ,lens >= 4.12 && < 4.14
                       ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
+
 
   -- Directories containing source files.
   hs-source-dirs:      src

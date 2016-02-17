@@ -17,7 +17,7 @@ import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 import Data.Text (Text)
 import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Closed
-import Language.Hopper.Internal.Core.ANF
+import Language.Hopper.Internal.Core.OldANF
 --import Language.Hopper.Internal.Core.Heap
 --import Language.Hopper.Internal.Core.HeapRef
 --import Data.Hop.Or
@@ -116,6 +116,6 @@ data CodeRegistry = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecord)
 
 -- TODO: implement this after ccAnf evaluator
 --
-closureConvert :: Closed Anf -> (CcAnf, CodeRegistry)
+closureConvert :: Closed OldAnf {-  FIX -} -> (CcAnf, CodeRegistry)
 closureConvert = error "_FINISHMEEEEEBRIANNNNN" -- TODO
 
