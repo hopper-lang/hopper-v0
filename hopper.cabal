@@ -36,6 +36,8 @@ maintainer:          carter.schonwald@gmail.com
 
 category:            Language
 
+tested-with         : GHC==7.10.2, GHC==7.10.3
+
 build-type:          Simple
 
 -- Extra files to be distributed with the package, such as examples or a
