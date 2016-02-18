@@ -2,7 +2,7 @@ module HopSpec.STESpec (spec) where
 
 import Test.Hspec
 import Control.Exception
-import Control.Monad.STExcept
+import Control.Monad.STE
 
 spec :: Spec
 spec = describe "STE Spec " $ do
