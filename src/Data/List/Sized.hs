@@ -44,6 +44,19 @@ data Shape :: Nat -> * -> * where
   Nil :: Shape 0 a
   (:*) :: a -> Shape n  a -> Shape ( 1 + n) a
 
+
+infixr 7 :||
+
+data TeleList :: Nat -> Nat -> (Nat  -> * -> * ) -> * ->  * where
+  TNil :: KnownNat m => Proxy m -> TeleList m 0 f a
+  (:||) :: f n a -> TeleList m n  f a -> TeleList m (1+ n) f a
+
+newtype FF (n :: Nat) (a :: * ) = FFC a
+
+example :: TeleList 7 2 FF Int
+example = FFC  1 :|| FFC 2  :||  TNil Proxy
+
+
 reverseShape :: Shape n a -> Shape n a
 reverseShape Nil = Nil
 reverseShape list = go SZero Nil list

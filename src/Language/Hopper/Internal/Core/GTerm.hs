@@ -7,7 +7,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE MagicHash, DataKinds, KindSignatures,GADTs, TypeFamilies  #-}
 {-# LANGUAGE TypeOperators #-}
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
+-- {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 module Language.Hopper.Internal.Core.GTerm where
 {-
 this module is for experiments in representation choices that are kept for retrospective
