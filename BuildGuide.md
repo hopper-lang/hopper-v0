@@ -2,6 +2,8 @@
   1) make sure you have a GHC installed and in your path whose reported `ghc --version` matches
 one of the configurations listed in the tested-with field of the `hopper.cabal` file.
   2) have an up to date version of cabal-install installed.
+  3) `cabal update ; cabal install`
+  4) done!
 
 ## Can I use stack to build this?
 No, we do not provide user facing support for using the stack build facilities,
