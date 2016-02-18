@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
@@ -18,6 +18,7 @@ import Data.Text (Text)
 import Language.Hopper.Internal.Core.Literal
 import Language.Hopper.Internal.Core.Closed
 import Language.Hopper.Internal.Core.Term
+import GHC.Generics
 --import Language.Hopper.Internal.Core.Heap
 --import Language.Hopper.Internal.Core.HeapRef
 --import Data.Hop.Or
@@ -44,22 +45,34 @@ maybe
 -}
 
 -- | LocalVariableCC is a local variable that is operationally an offset in an environment structure
-newtype CcLocalVariable = CcLV Word64
-  deriving(Eq,Ord,Show,Enum,Typeable)
+newtype LocalVariableCc = LocalVarCc Word64
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-newtype ThunkCodeId = ThunkCodeId { unThunkCodeId :: Word64 } deriving (Eq,Ord, Show,Typeable)
-newtype ClosureCodeId = ClosureCodeId { unClosureCodeId :: Word64 } deriving (Eq,Ord,Show,Typeable)
-newtype EnvSize = EnvSize { unEnvSize :: Word64 } deriving (Eq, Ord,Show,Typeable)
-newtype CodeArity = CodeArity { getCodeArity :: Word64 } deriving (Eq,Ord,Show,Typeable)
+newtype ThunkCodeId =
+    ThunkCodeId { unThunkCodeId :: Word64 }
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+newtype ClosureCodeId =
+    ClosureCodeId { unClosureCodeId :: Word64 }
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+newtype EnvSize =
+    EnvSize { unEnvSize :: Word64 }
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+newtype CodeArity =
+    CodeArity { getCodeArity :: Word64 }
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
+
+data AnfBinderInfoCc =  BinderInfoCc {} --- this needs to be fleshed out
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data CcValueRep = FIXMEEEEEEANFCC --- TODO
 
 data ThunkCodeRecord
   = ThunkCodeRecord !EnvSize      -- number of slots in the environment struct
                     ![Maybe Text] -- source names, if applicable, for the captured free vars in the orig source
-                    !CcAnf        -- the code
-    deriving (Eq,Ord,Show,Typeable)
+                                  -- TODO, replace the sourcenames list field with V.Vector CcAnfBinderInfo
+                    !AnfCc        -- the code
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 {- |
 for now we pass all function args as references to boxed heap values,
 but in the future we can be clever about specialization / register-sized values
@@ -67,10 +80,13 @@ but in the future we can be clever about specialization / register-sized values
 data ClosureCodeRecord
   = ClosureCodeRecord !EnvSize
                       ![Maybe Text] -- source names, if applicable, for the captured free vars in the orig source
-                      !CodeArity -- how many explicit arguments the function takes
+                                    --- TODO / FIXME replace with CcAnfBinderInfo
+                      !CodeArity
+                      -- ![CcAnfBinderInfo] -- info about the function args
+                      -- how many explicit arguments the function takes
                       --- later we'll have [arg rep]
-                      !CcAnf
-  deriving (Eq,Ord,Show,Typeable)
+                      !AnfCc
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 
 {- DESIGN QUESTION
@@ -78,49 +94,50 @@ data ClosureCodeRecord
 
 -}
 
-data CcAnf
-    = CcReturn ![CcLocalVariable]
-    | CcLetNF
+data AnfCc
+    = CReturnCc ![LocalVariableCc]
+    | LetNFCc
           {- TODO: src loc info -}
-          ![(Bool,Maybe Text)] -- the length == size of RHS multiple return value tuple
+          ![(Bool,Maybe Text)]   -- TODO FIXME, replace with CcAnfBinderInfo
+            -- the length == size of RHS multiple return value tuple
                  -- the True positions are the ones whose heap refs are copied into the
                  -- local environment stack
                  -- this is like a wimpy version of pattern matching on products
-          !(CcRhs) -- right hand side of let binder, closure converted
-          !(CcAnf) -- body of the let
-    | CcTailCall !(CcApp)
-  deriving (Eq,Ord,Show,Typeable)
+          !(RhsCc) -- right hand side of let binder, closure converted
+          !(AnfCc) -- body of the let
+    | TailCallCc !(AppCc)
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-data CcApp
-    = CcEnterThunk !CcLocalVariable -- if a is neutral term OR a free variable, this becomes neutral
-    | CcFunApp !CcLocalVariable ![CcLocalVariable] --- if function position of FunApp is neutral, its neutral
-    | CcPrimApp !PrimOpId ![CcLocalVariable] -- if any arg of a primop is neutral, its neutral
+data AppCc
+    = EnterThunkCc !LocalVariableCc -- if a is neutral term OR a free variable, this becomes neutral
+    | FunAppCc !LocalVariableCc ![LocalVariableCc] --- if function position of FunApp is neutral, its neutral
+    | CcPrimApp !PrimOpId ![LocalVariableCc] -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
-  deriving (Eq,Ord,Show,Typeable)
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-data CcRhs
-  = CcAllocRhs !CcAlloc
-  | CcNonTailCallApp !CcApp
- deriving (Eq,Ord,Show,Typeable)
+data RhsCc
+  = AllocRhsCc !AllocCc
+  | NonTailCallAppCc !AppCc
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-data CcAlloc
-  = CcSharedLiteral !Literal
-  | CcConstrApp !ConstrId
-                ![CcLocalVariable]
-  | CcAllocateThunk
-        ![CcLocalVariable] -- the set of local variables captured in the thunk environment, in this order
+data AllocCc
+  = SharedLiteralCc !Literal
+  | ConstrAppCc !ConstrId
+                ![LocalVariableCc]
+  | AllocateThunkCc
+        ![LocalVariableCc] -- the set of local variables captured in the thunk environment, in this order
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
-  | CcAllocateClosure
-        ![CcLocalVariable] -- set of local variables captured in the thunk environment, in this order
+  | AllocateClosureCc
+        ![LocalVariableCc] -- set of local variables captured in the thunk environment, in this order
         !Word64 --- arity of closure
         !ClosureCodeId -- the code id for the "code pointer" of a closure
-  deriving (Eq,Ord,Show,Typeable)
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data CodeRegistry = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecord)
                                  !(Map.Map ClosureCodeId ClosureCodeRecord)
 
 -- TODO: implement this after ccAnf evaluator
 --
-closureConvert :: Closed Term {-  FIX -} -> (CcAnf, CodeRegistry)
+closureConvert :: Closed Term {-  FIX -} -> (AnfCc, CodeRegistry)
 closureConvert = error "_FINISHMEEEEEBRIANNNNN" -- TODO
 
