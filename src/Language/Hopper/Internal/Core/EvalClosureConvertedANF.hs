@@ -20,23 +20,25 @@ import Data.Data
 import GHC.Generics
 import qualified Data.Vector as V
 
--- | CcAnfEnvStack will eventually blur into whatever register allocation execution model we adopt
-data EnvStackCcAnf = EnvConsCcA !Ref !EnvStackCcAnf | EnvEmptyCcA
-    deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
-data ControlStackCcA  =
-      LetCSANF !(V.Vector AnfBinderInfoCc)
+-- | CCAnfEnvStack will eventually blur into whatever register allocation execution model we adopt
+data EnvStackCC =
+    EnvConsCC !Ref !EnvStackCC
+    | EnvEmptyCC
+  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
+data ControlStackCC  =
+      LetBinderCC !(V.Vector BinderInfoCC)
                 !()
-                !(AnfCc) --- body of let
-                !ControlStackCcA -- what happens after the body of let returns!
-      | ControlStackEmptyCcA  -- we're done!
-      | Update
+                !AnfCC --- body of let
+                !ControlStackCC -- what happens after the body of let returns!
+      | ControlStackEmptyCC  -- we're done!
+      | UpdateHeapRefCC
             !Ref
-            !ControlStackCcA
-  deriving (Eq,Ord,Show,Read,Typeable)
+            !ControlStackCC
+  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
-data CcAnfEvalError
+data CCAnfEvalError
 
-evalCcAnf :: CodeRegistry -> EnvStackCcAnf -> ControlStackCcA -> AnfCc -> HeapStepCounterM CcValueRep (STE (c :+ CcAnfEvalError :+ HeapError ) s) Ref
-evalCcAnf = error "finish this next week"
+evalCCAnf :: CodeRegistry -> EnvStackCC -> ControlStackCC -> AnfCC -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ CCAnfEvalError :+ HeapError ) s) [Ref]
+evalCCAnf = error "finish this next week"
 
 -- evalANF ::  Anf Ref -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
