@@ -117,7 +117,7 @@ library
 source-repository head
   type:     git
   location: https://domainname.tld/account/reponame
-  -- todo: once opened update this
+  -- todo: once opened update this to the real URL
 
 test-suite hspec
   type: exitcode-stdio-1.0
