@@ -2,6 +2,16 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE UnboxedTuples #-}
 
+
+{- |
+Design note:
+for now `Hopper.Internal.Core.Literal` corresponds specifically with built in datatypes
+and operations whose reduction count complexity must be wired in directly,
+along with
+
+-}
+
+
 module Hopper.Internal.Core.Literal
   ( Literal(..)
   , PrimOpId(..)

@@ -11,7 +11,7 @@
 module Hopper.Internal.Core.NormalizeANF where
 
 
-import Hopper.Internal.Core.OldANF
+--import Hopper.Internal.Core.OldANF
 import Data.Data
 -- put normalizer here
 

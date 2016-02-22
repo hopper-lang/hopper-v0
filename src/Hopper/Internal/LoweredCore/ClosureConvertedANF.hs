@@ -8,7 +8,7 @@
 {-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
 
 
-module Hopper.Internal.Core.ClosureConvertedANF where
+module Hopper.Internal.LoweredCore.ClosureConvertedANF where
 
 import Data.Word
 import Data.Data
@@ -16,7 +16,7 @@ import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 
 import Data.Text (Text)
 import Hopper.Internal.Core.Literal
-import Hopper.Internal.Core.Closed
+import Hopper.Utils.Closed
 import Hopper.Internal.Core.Term
 import GHC.Generics
 import qualified  Data.Vector as V

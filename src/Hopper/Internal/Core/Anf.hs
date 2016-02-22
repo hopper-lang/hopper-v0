@@ -9,7 +9,6 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 
---{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 module Hopper.Internal.Core.Anf where
 
 import Data.Word

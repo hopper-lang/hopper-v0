@@ -13,8 +13,8 @@ packages:
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
 - vector-0.11.0.0
-- ghc-typelits-natnormalise-0.4.1
-- ghc-tcplugins-extra-0.2
+# - ghc-typelits-natnormalise-0.4.1
+# - ghc-tcplugins-extra-0.2
 
 # Override default flag values for local packages and extra-deps
 flags: {}

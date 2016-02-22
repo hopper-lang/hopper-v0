@@ -36,7 +36,7 @@ maintainer:          carter.schonwald@gmail.com
 
 category:            Language
 
-tested-with         : GHC==7.10.2, GHC==7.10.3
+tested-with         :  GHC==7.10.3
 
 build-type:          Simple
 
@@ -54,28 +54,19 @@ library
                     Data.Hop.Or
                     Control.Monad.STE
                     Hopper.Internal.State
-                    Hopper.Internal.Core.CPS
                     Hopper.HBound
                     Hopper.Utils.Swap
+                    Hopper.Utils.Closed
                     Hopper.Internal.Runtime.Heap
                     Hopper.Internal.Runtime.HeapRef
                     Hopper.Internal.Core.Term
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Value
                     Hopper.Internal.Core.Anf
-                    Hopper.Internal.Core.AnfIndexed
-                    Hopper.Internal.Core.OldANF
-                    Hopper.Internal.Core.EvalANF
                     Hopper.Internal.Core.Literal
+                    Hopper.Internal.LoweredCore.ClosureConvertedANF
+                    Hopper.Internal.LoweredCore.EvalClosureConvertedANF
 
-                    --  Hopper.Internal.Core.EvalTerm
-                    Hopper.Internal.Core.NormalizeANF
-                    Hopper.Internal.Core.ClosureConvertedANF
-                    Hopper.Internal.Core.EvalClosureConvertedANF
-                    Hopper.Internal.Core.Closed
-                    Data.List.Sized
-                    --  Hopper.Internal.Core.Eval
-                    -- Hopper.Internal.Core.EvalANF
   -- Modules included in this library but not exported.
   -- other-modules:
 
@@ -101,13 +92,14 @@ library
                       ,text >= 1.2 && < 1.3
                       ,bifunctors >= 5 &&  < 5.3
                       ,lens >= 4.12 && < 4.14
-                      ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
+                     --  ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
                       ,integer-gmp >= 1.0 && < 1.1
 
 
   -- Directories containing source files.
   hs-source-dirs:      src
   ghc-options: -Wall
+  ghc-prof-options: -fprof-auto -fprof-auto-calls -fprof-cafs
 
   -- Base language which the package is written in.
   default-language:    Haskell2010

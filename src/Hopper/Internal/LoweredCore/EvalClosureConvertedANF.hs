@@ -9,9 +9,9 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
-module Hopper.Internal.Core.EvalClosureConvertedANF where
+module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
-import Hopper.Internal.Core.ClosureConvertedANF
+import Hopper.Internal.LoweredCore.ClosureConvertedANF
 import Hopper.Internal.Runtime.Heap
 import Hopper.Internal.Runtime.HeapRef
 import Data.Hop.Or
