@@ -72,7 +72,19 @@ all the fields of the
 -- whether the binder position is a variable, wild card,
 -- live/dead, type/runtime rep info?
 
-data BinderInfoCC =  BinderInfoDataCC {} --- this needs to be fleshed out
+--- kill these stubs later
+type Relevance = ()
+type TypeCC = ()
+data BinderInfoCC =
+      BinderInfoDataCC
+        { relevanceBICC :: Relevance
+        , typeBICC :: TypeCC  -- at least for now, closure converted stuff may need a
+          -- slightly different type system fragment than the Core layer Terms?
+          -- NB: once we have existentials, should just be an "equivalent" subset
+          -- of the full type theory
+        , sourceInfo :: Maybe String --- this isn't quite right ...
+        -- also should add
+          } --- this needs to be fleshed out
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data ValueRepCC ref =

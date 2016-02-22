@@ -59,6 +59,7 @@ library
                     Hopper.Utils.Closed
                     Hopper.Internal.Runtime.Heap
                     Hopper.Internal.Runtime.HeapRef
+                    Hopper.Internal.Type.Relevance
                     Hopper.Internal.Core.Term
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Value

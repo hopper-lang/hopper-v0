@@ -39,6 +39,6 @@ data ControlStackCC  =
 data CCAnfEvalError
 
 evalCCAnf :: CodeRegistry -> EnvStackCC -> ControlStackCC -> AnfCC -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ CCAnfEvalError :+ HeapError ) s) [Ref]
-evalCCAnf = error "finish this next week"
+evalCCAnf codeReg envStack contStack  = error "finish this next week"
 
 -- evalANF ::  Anf Ref -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
