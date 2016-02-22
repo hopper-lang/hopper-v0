@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE UnboxedTuples #-}
-
+{-# LANGUAGE MagicHash #-}
 
 {- |
 Design note:
@@ -17,15 +17,19 @@ module Hopper.Internal.Core.Literal
   , PrimOpId(..)
   , ConstrId(..)
   , evalTotalPrimopCode
+  , integerLog
   ) where
 
-import Numeric.Natural
 import Data.Data
 import Data.Text (Text)
+import Data.Ratio (numerator, denominator)
+import GHC.Exts (Word(W#))
 import GHC.Generics
-import GHC.Integer.GMP.Internals ({-powModInteger,-} sqrInteger, lcmInteger,
-                                  gcdInteger, gcdExtInteger, recipModInteger)
-import GHC.Natural (powModNatural)
+import GHC.Integer.GMP.Internals (sqrInteger, lcmInteger, gcdInteger,
+                                  gcdExtInteger, recipModInteger,
+                                  sizeInBaseInteger)
+import GHC.Natural (powModNatural, wordToNatural)
+import Numeric.Natural
 
 data Literal
   = LInteger !Integer
@@ -71,8 +75,35 @@ data LiteralOp
   | NatPowMod   Natural  Natural  Natural -- a^b mod c
   deriving (Show)
 
--- NOTE: currently this function is non-total. see comments inline.
---       these non-total cases need a Maybe or a proof argument.
+integerLog :: Integral a => a -> Natural
+integerLog i = wordToNatural (W# (sizeInBaseInteger (toInteger i) 2#))
+
+ratNSquaredCost :: Rational -> Rational -> Natural
+ratNSquaredCost x y = n * n
+  where
+    n = maximum (fmap integerLog [ numerator x, denominator x
+                                 , numerator y, denominator y])
+
+-- TODO:
+-- - determine how to equate math and heap costs
+-- - increment counter before evaluating math op
+
+cost :: LiteralOp -> Natural
+cost (IntAdd  x y) = integerLog (max x y)
+cost (IntSub  x y) = integerLog (max x y)
+cost (IntMult x y) = integerLog x * integerLog y
+cost (IntSquare x) = integerLog x * integerLog x
+cost (IntRecipMod _ m) = integerLog m * integerLog m -- euclid's
+cost (IntLcm x y) = integerLog x * integerLog y -- due to (a*b)/gcd(a,b)
+cost (IntGcd x y) = integerLog x * integerLog y -- euclid's
+cost (IntGcdExt x y) = integerLog x * integerLog y -- euclid's
+cost (RatAdd x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
+cost (RatSub x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
+cost (RatMult x y) = 5 * ratNSquaredCost x y -- 2 mult, 1 gcd, 2 div
+cost (NatAdd  x y) = integerLog (max x y)
+cost (NatMult x y) = integerLog x * integerLog y
+cost (NatPowMod x y m) = integerLog x * integerLog y * integerLog m
+
 evalTotalPrimopCode :: LiteralOp -> [Literal]
 evalTotalPrimopCode (IntAdd      a b) = [LInteger (a + b)]
 evalTotalPrimopCode (IntSub      a b) = [LInteger (a - b)]
