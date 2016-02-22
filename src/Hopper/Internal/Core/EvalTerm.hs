@@ -9,14 +9,14 @@
 {-# LANGUAGE RankNTypes #-}
 
 {-#  OPTIONS_GHC -fno-warn-unused-imports #-} -- suppressing this warning for a wee bit
-module Language.Hopper.Internal.Core.EvalTerm where
+module Hopper.Internal.Core.EvalTerm where
 
 --import Bound
 
-import Language.Hopper.Internal.Core.Term
-import Language.Hopper.Internal.Core.Value
-import Language.Hopper.Internal.Core.Heap
-import Language.Hopper.Internal.Core.Literal
+import Hopper.Internal.Core.Term
+import Hopper.Internal.Core.Value
+import Hopper.Internal.Core.Heap
+import Hopper.Internal.Core.Literal
 import qualified Data.Map as Map
 import GHC.Generics
 -- import Numeric.Natural

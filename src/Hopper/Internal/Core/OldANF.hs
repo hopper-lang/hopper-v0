@@ -10,7 +10,7 @@
 {-# LANGUAGE DeriveGeneric, LambdaCase #-}
 -- {-# LANGUAGE TemplateHaskell #-}
 
-module Language.Hopper.Internal.Core.OldANF(
+module Hopper.Internal.Core.OldANF(
     OldAnf(..)
     ,OldAppAnf(..)
     ,OldAnfAlloc(..)
@@ -19,9 +19,9 @@ module Language.Hopper.Internal.Core.OldANF(
     )
   where
 
--- import Language.Hopper.Internal.Core.Type
+-- import Hopper.Internal.Core.Type
 
-import Language.Hopper.Internal.Core.Literal
+import Hopper.Internal.Core.Literal
 --import Data.Bifunctor
 import Data.Text (Text)
 import Data.Data
@@ -39,7 +39,7 @@ import Bound.Var
 -- import Bound.Scope.Simple (Scope(..))
 -- import Control.Lens (view,over,_1,_2)
 import Numeric.Natural
---import Language.Hopper.Internal.Core.Literal
+--import Hopper.Internal.Core.Literal
 
 
 type OldAnfVariable = (Either Natural Text)

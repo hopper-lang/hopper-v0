@@ -8,20 +8,20 @@
 {-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
 
 
-module Language.Hopper.Internal.Core.ClosureConvertedANF where
+module Hopper.Internal.Core.ClosureConvertedANF where
 
 import Data.Word
 import Data.Data
 import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 
 import Data.Text (Text)
-import Language.Hopper.Internal.Core.Literal
-import Language.Hopper.Internal.Core.Closed
-import Language.Hopper.Internal.Core.Term
+import Hopper.Internal.Core.Literal
+import Hopper.Internal.Core.Closed
+import Hopper.Internal.Core.Term
 import GHC.Generics
 import qualified  Data.Vector as V
---import Language.Hopper.Internal.Core.Heap
---import Language.Hopper.Internal.Core.HeapRef
+--import Hopper.Internal.Core.Heap
+--import Hopper.Internal.Core.HeapRef
 --import Data.Hop.Or
 --import Control.Monad.STE
 {-

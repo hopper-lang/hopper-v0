@@ -9,7 +9,7 @@
 
 
 
-module Language.Hopper.Utils.Swap where
+module Hopper.Utils.Swap where
 import GHC.Generics (Generic)
 
 import Data.Bifunctor

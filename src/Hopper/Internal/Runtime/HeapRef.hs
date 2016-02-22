@@ -9,7 +9,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Language.Hopper.Internal.Core.HeapRef(
+module Hopper.Internal.Runtime.HeapRef(
       Ref(Ref)
       ,refRepLens
       ,refTransform

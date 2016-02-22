@@ -9,11 +9,11 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
-module Language.Hopper.Internal.Core.EvalClosureConvertedANF where
+module Hopper.Internal.Core.EvalClosureConvertedANF where
 
-import Language.Hopper.Internal.Core.ClosureConvertedANF
-import Language.Hopper.Internal.Core.Heap
-import Language.Hopper.Internal.Core.HeapRef
+import Hopper.Internal.Core.ClosureConvertedANF
+import Hopper.Internal.Runtime.Heap
+import Hopper.Internal.Runtime.HeapRef
 import Data.Hop.Or
 import Control.Monad.STE
 import Data.Data

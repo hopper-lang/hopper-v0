@@ -9,19 +9,19 @@
 
 {-# LANGUAGE TypeOperators#-}
 
-module Language.Hopper.Internal.Core.EvalANF
+module Hopper.Internal.Core.EvalANF
 
     where
-import Language.Hopper.Internal.Core.Literal
-import Language.Hopper.Internal.Core.Heap
-import Language.Hopper.Internal.Core.OldANF
-import Language.Hopper.Internal.Core.Closed
---import Language.Hopper.Internal.Core.Value
+import Hopper.Internal.Core.Literal
+import Hopper.Internal.Runtime.Heap
+import Hopper.Internal.Core.OldANF
+import Hopper.Internal.Core.Closed
+--import Hopper.Internal.Core.Value
 import Control.Monad.STE
 import Data.Hop.Or
 import Data.Text (Text)
 import Data.Data
-import Language.Hopper.Internal.Core.HeapRef(Ref())
+import Hopper.Internal.Runtime.HeapRef(Ref())
 import Prelude.Extras
 import qualified Data.Vector as V
 --import qualified Data.Map as Map

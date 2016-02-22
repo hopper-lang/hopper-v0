@@ -8,10 +8,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveGeneric, LambdaCase #-}
 
-module Language.Hopper.Internal.Core.NormalizeANF where
+module Hopper.Internal.Core.NormalizeANF where
 
 
-import Language.Hopper.Internal.Core.OldANF
+import Hopper.Internal.Core.OldANF
 import Data.Data
 -- put normalizer here
 

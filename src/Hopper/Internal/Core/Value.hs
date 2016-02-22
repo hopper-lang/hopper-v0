@@ -9,7 +9,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Language.Hopper.Internal.Core.Value where
+module Hopper.Internal.Core.Value where
 
 import Bound
 import Prelude.Extras
@@ -17,7 +17,7 @@ import Data.Text (Text)
 import Data.Data
 import GHC.Generics(Generic)
 import qualified Data.Vector as V
-import Language.Hopper.Internal.Core.Literal
+import Hopper.Internal.Core.Literal
 
 
 

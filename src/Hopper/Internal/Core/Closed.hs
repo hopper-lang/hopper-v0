@@ -2,7 +2,7 @@
 {-# LANGUAGE Trustworthy #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 
-module Language.Hopper.Internal.Core.Closed
+module Hopper.Internal.Core.Closed
     (Closed(..)
     ,closedPoly
     )

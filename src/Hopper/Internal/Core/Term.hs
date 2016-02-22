@@ -7,10 +7,10 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE KindSignatures #-}
 
-module Language.Hopper.Internal.Core.Term where
+module Hopper.Internal.Core.Term where
 
-import Language.Hopper.Internal.Core.Literal
--- import Language.Hopper.Internal.Core.Type
+import Hopper.Internal.Core.Literal
+-- import Hopper.Internal.Core.Type
 import Data.Text (Text)
 import Data.Data
 import Bound

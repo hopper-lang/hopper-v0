@@ -10,15 +10,15 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 --{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
-module Language.Hopper.Internal.Core.Anf where
+module Hopper.Internal.Core.Anf where
 
 import Data.Word
 --import Numeric.Natural
 import Data.Data
 import Prelude.Extras
 import GHC.Generics
-import Language.Hopper.Internal.Core.Literal
-       --Language.Hopper.Internal.Core.ANF
+import Hopper.Internal.Core.Literal
+       --Hopper.Internal.Core.ANF
 
 {-
 TODO : think about Debruijn rep for telescope binders

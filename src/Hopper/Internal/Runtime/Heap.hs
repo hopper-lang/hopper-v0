@@ -9,7 +9,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies, TypeOperators #-}
 
-module Language.Hopper.Internal.Core.Heap(
+module Hopper.Internal.Runtime.Heap(
   HeapError(..)
   ,HeapStepCounterM(..)
   ,unsafeHeapUpdate
@@ -34,7 +34,7 @@ import Control.Monad.IO.Class as MIO
 import  Control.Monad.STE
 import Data.Data
 import Data.Hop.Or
-import Language.Hopper.Internal.Core.HeapRef
+import Hopper.Internal.Runtime.HeapRef
 
 
 data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref val)   }

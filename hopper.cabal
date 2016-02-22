@@ -10,7 +10,7 @@ name:                hopper
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.1.0.0
+version:             0.2.0.0
 
 -- A short (one-line) description of the package.
 synopsis: awesome transaction description language
@@ -51,32 +51,31 @@ cabal-version:       >=1.22
 library
   -- Modules exported by the library.
   exposed-modules:
-
                     Data.Hop.Or
                     Control.Monad.STE
-                    Language.Hopper.Internal.State
-                    Language.Hopper.Internal.Core.CPS
-                    Language.Hopper.HBound
-                    Language.Hopper.Utils.Swap
-                    Language.Hopper.Internal.Core.Term
-                    Language.Hopper.Internal.Core.Type
-                    Language.Hopper.Internal.Core.Value
-                    Language.Hopper.Internal.Core.Anf
-                    Language.Hopper.Internal.Core.AnfIndexed
-                    Language.Hopper.Internal.Core.OldANF
-                    Language.Hopper.Internal.Core.EvalANF
-                    Language.Hopper.Internal.Core.Literal
-                    Language.Hopper.Internal.Core.Heap
-                   --  Language.Hopper.Internal.Core.EvalTerm
-                    Language.Hopper.Internal.Core.GTerm
-                    Language.Hopper.Internal.Core.NormalizeANF
-                    Language.Hopper.Internal.Core.HeapRef
-                    Language.Hopper.Internal.Core.ClosureConvertedANF
-                    Language.Hopper.Internal.Core.EvalClosureConvertedANF
-                    Language.Hopper.Internal.Core.Closed
+                    Hopper.Internal.State
+                    Hopper.Internal.Core.CPS
+                    Hopper.HBound
+                    Hopper.Utils.Swap
+                    Hopper.Internal.Runtime.Heap
+                    Hopper.Internal.Runtime.HeapRef
+                    Hopper.Internal.Core.Term
+                    Hopper.Internal.Core.Type
+                    Hopper.Internal.Core.Value
+                    Hopper.Internal.Core.Anf
+                    Hopper.Internal.Core.AnfIndexed
+                    Hopper.Internal.Core.OldANF
+                    Hopper.Internal.Core.EvalANF
+                    Hopper.Internal.Core.Literal
+
+                    --  Hopper.Internal.Core.EvalTerm
+                    Hopper.Internal.Core.NormalizeANF
+                    Hopper.Internal.Core.ClosureConvertedANF
+                    Hopper.Internal.Core.EvalClosureConvertedANF
+                    Hopper.Internal.Core.Closed
                     Data.List.Sized
-                   --  Language.Hopper.Internal.Core.Eval
-                   -- Language.Hopper.Internal.Core.EvalANF
+                    --  Hopper.Internal.Core.Eval
+                    -- Hopper.Internal.Core.EvalANF
   -- Modules included in this library but not exported.
   -- other-modules:
 
@@ -86,21 +85,21 @@ library
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.8.1 && <4.9
                       ,bound >= 1.0 && < 1.1
-                      ,containers
-                      ,transformers >= 0.3 && < 0.5
-                      ,profunctors >= 5.1 && < 5.2
-                      ,bytes
-                      ,mtl >= 2.2 && < 2.3
+                      ,containers >= 0.5 && < 0.6
+                      ,transformers >= 0.3 && < 0.6
+                      ,profunctors >= 5.1 && < 5.3
+                      ,bytes >= 0.14 && < 0.16
+                      ,mtl >= 2.2 && < 2.4
                       -- ,hoopl
                       ,free >= 4.12 && < 4.13
-                      ,comonad
+                      ,comonad >= 4.2 && < 5.1
                       ,vector >= 0.11 && < 0.12
                       ,primitive >= 0.6 && < 0.7
                       -- ,z3 >=4.1.0 && < 4.2
                       ,ghc-prim >= 0.4 && <0.5
                       ,prelude-extras >= 0.4
-                      ,text
-                      ,bifunctors >= 5 &&  < 5.2
+                      ,text >= 1.2 && < 1.3
+                      ,bifunctors >= 5 &&  < 5.3
                       ,lens >= 4.12 && < 4.14
                       ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
                       ,integer-gmp >= 1.0 && < 1.1

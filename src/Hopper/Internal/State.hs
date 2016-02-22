@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 
 
-module Language.Hopper.Internal.State where
+module Hopper.Internal.State where
 
 -- import Bound
 -- import Data.Set

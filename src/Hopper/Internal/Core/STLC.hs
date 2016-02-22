@@ -14,7 +14,7 @@
 #error "this code base only supports 64-bit haskell because certain mapping data structures are keyed by Int"
 #endif
 
-module Language.Hopper.Internal.Core.STLC where
+module Hopper.Internal.Core.STLC where
 
 
 import Bound

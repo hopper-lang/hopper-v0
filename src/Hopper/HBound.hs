@@ -10,7 +10,7 @@
 Higher order bound http://hpaste.org/73764 hpaste by kmett
 -}
 
-module Language.Hopper.HBound where
+module Hopper.HBound where
 
 import Control.Applicative
 import Control.Category

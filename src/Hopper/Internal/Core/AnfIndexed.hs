@@ -11,7 +11,7 @@
 {-# LANGUAGE DataKinds, GADTs #-}
 
 --{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
-module Language.Hopper.Internal.Core.AnfIndexed where
+module Hopper.Internal.Core.AnfIndexed where
 
 import Data.Data
 import Data.Word
@@ -20,8 +20,8 @@ import Data.Word
 --import GHC.Generics
 import Data.List.Sized
 import GHC.TypeLits
-import Language.Hopper.Internal.Core.Literal
-       --Language.Hopper.Internal.Core.ANF
+import Hopper.Internal.Core.Literal
+       --Hopper.Internal.Core.ANF
 
 {-
 TODO : think about Debruijn rep for telescope binders

@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE UnboxedTuples #-}
 
-module Language.Hopper.Internal.Core.Literal
+module Hopper.Internal.Core.Literal
   ( Literal(..)
   , PrimOpId(..)
   , ConstrId(..)

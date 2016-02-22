@@ -7,7 +7,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module Language.Hopper.Internal.Core.Type where
+module Hopper.Internal.Core.Type where
 
 import Data.Data
 import qualified Data.Map as Map
