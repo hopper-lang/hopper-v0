@@ -20,12 +20,13 @@ what are some Laws that instances must have?
 
 1) if  p <= 0 then p == 0
   thus isZero p = p <= 0
-2) <= needs to be reflexive, transitive, and play nice with
+2) <= needs to be reflexive, transitive, and play nice with Rig multiplication and factorization rules as follows
+
 -}
 module Hopper.Internal.Type.Relevance where
 
 import qualified Prelude as P  -- (Eq(..),Read,Show,Num(..),Integer,Bool)
-import Prelude (Eq,Bool(..),Ord,Num,Show,Read,($),not,(&&))
+import Prelude (Eq(..), Maybe(..),Bool(..),Ord,Num,Show,Read,($),not,(&&), (||))
 import Numeric.Natural
 import GHC.Integer.GMP.Internals (gcdInteger)
 import GHC.Generics
@@ -39,8 +40,9 @@ data GCD a = GCD {extractGCD :: !a, leftCoprime :: !a, rightCoprime :: !a }
   deriving(Eq,Ord,P.Show,P.Read)
 --checkGCD :: (Eq a, Rig a) => a -> a -> GCD a -> Bool
 --ched
-gcdNat :: Natural -> Natural -> GCD Natural
-gcdNat a b = P.undefined theGCD
+gcdNat :: Natural -> Natural -> Maybe  (GCD Natural)
+gcdNat a b  |  (a== 0 ||  b == 0) =  Nothing -- if either factor is zero, gcd is zero
+gcdNat a b  = Just $ P.undefined theGCD
   where
    theGCD :: Natural
    theGCD = P.fromInteger $ gcdInteger (P.fromIntegral a ) (P.fromIntegral b)
@@ -66,7 +68,10 @@ class Rig a where
 
 instance Rig Natural
 
-data Relevance = Zero | One | Omega
+data Relevance =
+    Zero  -- irrelevant
+    | One -- linear
+    | Omega -- normal / any usage between 0 and \infty!
   deriving(Eq,Ord,Show,Read,Data,Typeable,Generic)
   -- i define vanilla ord
 instance Rig Relevance where
@@ -92,10 +97,13 @@ incomparableElements :: PartialOrd a => a -> a -> Bool
 incomparableElements a b = (not  $ a <= b) && (not $ b <= a)
 -- this comes up with the lattice structure we're using here!
 instance  PartialOrd Natural
+
+-- we have incomparableElements Zero One == True
+-- for our model of relevance
 instance PartialOrd Relevance where
   Zero <= Omega = True
   Zero <= Zero = True
-  Zero <= One = False --- YES, surprising but important
+  Zero <= One = False --- YES, surprising but important, we're in a lattice!
   One <= Omega = True
   One <= One = True
   One <= Zero = False
