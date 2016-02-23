@@ -11,13 +11,15 @@
 
 module Hopper.Internal.Runtime.Heap(
   HeapError(..)
-  ,HeapStepCounterM(..)
+  ,HeapStepCounterM  -- keeping HeapStepCounterM abstract for now, as long as theres NO TH hijinks
   ,unsafeHeapUpdate
   ,unsafeRunHSCM
   ,runEmptyHeap
   ,heapAllocate
   ,heapLookup
   ,checkedCounterIncrement
+  ,checkedCounterJump
+  ,throwHeapErrorWithStepInfoSTE
   )
 
     where
@@ -36,6 +38,12 @@ import Data.Data
 import Data.Hop.Or
 import Hopper.Internal.Runtime.HeapRef
 
+
+throwHeapErrorWithStepInfoSTE :: (Natural -> err) -> HeapStepCounterM val (STE err  s) result
+throwHeapErrorWithStepInfoSTE f =
+                            do  cah <- getHSCM
+                                ct <- return $  _extractStepCounterCAH cah
+                                lift $ throwSTE $! (f ct)
 
 data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref val)   }
    deriving (  Typeable  , Eq, Ord, Show, Functor,Foldable,Traversable ,Generic,Data)
@@ -111,11 +119,16 @@ setHSCM v = HSCM $ State.put  v
 may be a useful way of "addressing" a point in a programs execution
 within a debugging tool at some future point -}
 checkedCounterIncrement ::   HeapStepCounterM  val  (STE (b :+ HeapError ) s) ()
-checkedCounterIncrement = do  cah <- getHSCM
+checkedCounterIncrement =  checkedCounterJump 1
+
+checkedCounterJump ::  Natural ->  HeapStepCounterM  val  (STE (b :+ HeapError ) s) ()
+checkedCounterJump  jumpSize =
+                          do  cah <- getHSCM
                               ct <- return $  _extractStepCounterCAH cah
                               if ct > _extractMaxStepCounter cah
-                                then throwHeapError HeapStepCounterExceeded-- error "allowed step count exceeded, aborting"
-                                else setHSCM cah{_extractStepCounterCAH = ct + 1}
+                               then throwHeapError HeapStepCounterExceeded-- error "allowed step count exceeded, aborting"
+                               else setHSCM cah{_extractStepCounterCAH = ct + jumpSize}
+
 
 unsafeHeapUpdate :: Ref -> val  -> HeapStepCounterM val (STE (b :+ HeapError ) s) ()
 unsafeHeapUpdate rf val = do  cah <- getHSCM
