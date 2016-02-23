@@ -113,8 +113,9 @@ let_ v rhs bod = Let (Right [ v])
                                         else Nothing)
                                bod)
 
-callPrim :: Text -> [Term  a] -> Term  a
-callPrim name = PrimApp (PrimopId name)
+callPrim :: (Either Text GmpMathOpId) -> [Term  a] -> Term  a
+callPrim (Left name) = PrimApp  (PrimopIdGeneral name)
+callPrim (Right gmpid) = PrimApp (TotalMapthOpGmp gmpid)
 
 infixr 0 !
 (!) :: Text -> Term  Text -> Term  Text

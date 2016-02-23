@@ -27,8 +27,12 @@ module Hopper.Internal.Core.Literal
   ( Literal(..)
   , PrimOpId(..)
   , ConstrId(..)
-  , evalTotalPrimopCode
+  , evalTotalMathPrimopCode
   , integerLog
+  , hoistTotalMathLiteralOp
+  , GmpMathOpId(..)
+  , gmpMathCost
+  , LiteralOp(..)
   ) where
 
 import Data.Data
@@ -57,9 +61,65 @@ newtype ConstrId
   deriving (Eq,Show,Typeable,Ord,Read,Data,Generic)
 
 -- Primops for a language have names
-newtype PrimOpId
-  = PrimopId { unPrimopId :: Text }
+data PrimOpId =
+    PrimopIdGeneral  !Text
+    | TotalMapthOpGmp !GmpMathOpId
+
   deriving (Eq,Show,Typeable,Ord,Read,Data,Generic)
+
+data GmpMathOpId =
+    IntAddOpId
+  | IntSubOpId
+  | IntMultOpId
+  | IntSquareOpId
+  | IntRecipModOpId
+  | IntLcmOpId
+  | IntGcdOpId
+  | IntGcdExtOpId
+  | RatAddOpId
+  | RatSubOpId
+  | RatMultOpId
+  | NatAddOpId
+  | NatMultOpId
+  | NatPowModOpId
+  deriving (Eq,Ord,Show,Read,Data,Typeable,Generic )
+
+
+
+hoistTotalMathLiteralOp :: GmpMathOpId -> [Literal] -> Either String LiteralOp
+hoistTotalMathLiteralOp gmoOp args = go gmoOp args
+  where
+    go :: GmpMathOpId -> [Literal] -> Either String LiteralOp
+    go IntAddOpId     [LInteger a, LInteger b] = Right $ IntAdd a b
+    go op@IntAddOpId       ls = Left (show (op,ls))
+    go IntSubOpId     [LInteger a, LInteger b] = Right $ IntSub a b
+    go op@IntSubOpId       ls = Left (show (op,ls))
+    go IntMultOpId    [LInteger a, LInteger b] = Right $ IntMult a b
+    go op@IntMultOpId        ls = Left (show (op,ls))
+    go IntSquareOpId  [LInteger a ] =   Right $ IntSquare a
+    go op@IntSquareOpId        ls = Left (show (op,ls))
+    go IntRecipModOpId [LInteger a, LInteger b] =     Right $ IntRecipMod a b
+    go op@IntRecipModOpId       ls = Left (show (op,ls))
+    go IntLcmOpId     [LInteger a, LInteger b] = Right $ IntLcm a b
+    go op@IntLcmOpId       ls = Left (show (op,ls))
+    go IntGcdOpId     [LInteger a, LInteger b] = Right $ IntGcd a b
+    go op@IntGcdOpId       ls = Left (show (op,ls))
+    go IntGcdExtOpId  [LInteger a, LInteger b] =   Right $ IntGcdExt a b
+    go op@IntGcdExtOpId        ls = Left (show (op,ls))
+    go RatAddOpId     [LRational a, LRational b] = Right $ RatAdd a b
+    go op@RatAddOpId       ls = Left (show (op,ls))
+    go RatSubOpId     [LRational a, LRational b] = Right $ RatSub a b
+    go op@RatSubOpId       ls = Left (show (op,ls))
+    go RatMultOpId    [LRational a, LRational b] = Right $ RatMult a b
+    go op@RatMultOpId        ls = Left (show (op,ls))
+    go NatAddOpId     [LNatural a, LNatural b] = Right $ NatAdd a b
+    go op@NatAddOpId       ls = Left (show (op,ls))
+    go NatMultOpId    [LNatural a, LNatural b] = Right $ NatMult a b
+    go op@NatMultOpId        ls = Left (show (op,ls))
+    go NatPowModOpId  [LNatural a, LNatural b, LNatural c] =   Right $ NatPowMod a b c
+    go op@NatPowModOpId        ls = Left (show (op,ls))
+
+
 
 -- Evaluation
 --- currently we only provide the operations which are total for
@@ -99,46 +159,48 @@ ratNSquaredCost x y = n * n
 -- - determine how to equate math and heap costs
 -- - increment counter before evaluating math op
 
-cost :: LiteralOp -> Natural
-cost (IntAdd  x y) = integerLog (max x y)
-cost (IntSub  x y) = integerLog (max x y)
-cost (IntMult x y) = integerLog x * integerLog y
-cost (IntSquare x) = integerLog x * integerLog x
-cost (IntRecipMod _ m) = integerLog m * integerLog m -- euclid's
-cost (IntLcm x y) = integerLog x * integerLog y -- due to (a*b)/gcd(a,b)
-cost (IntGcd x y) = integerLog x * integerLog y -- euclid's
-cost (IntGcdExt x y) = integerLog x * integerLog y -- euclid's
-cost (RatAdd x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
-cost (RatSub x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
-cost (RatMult x y) = 5 * ratNSquaredCost x y -- 2 mult, 1 gcd, 2 div
-cost (NatAdd  x y) = integerLog (max x y)
-cost (NatMult x y) = integerLog x * integerLog y
-cost (NatPowMod x y m) = integerLog x * integerLog y * integerLog m
 
-evalTotalPrimopCode :: LiteralOp -> [Literal]
-evalTotalPrimopCode (IntAdd      a b) = [LInteger (a + b)]
-evalTotalPrimopCode (IntSub      a b) = [LInteger (a - b)]
-evalTotalPrimopCode (IntMult     a b) = [LInteger (a * b)]
-evalTotalPrimopCode (IntSquare   a)   = [LInteger (sqrInteger a)]
---evalTotalPrimopCode (IntQuotRem  a b) = [LInteger q, LInteger r] -- UNDEFINED for b = 0
+
+gmpMathCost :: LiteralOp -> Natural
+gmpMathCost (IntAdd  x y) = integerLog (max x y)
+gmpMathCost (IntSub  x y) = integerLog (max x y)
+gmpMathCost (IntMult x y) = integerLog x * integerLog y
+gmpMathCost (IntSquare x) = integerLog x * integerLog x
+gmpMathCost (IntRecipMod _ m) = integerLog m * integerLog m -- euclid's
+gmpMathCost (IntLcm x y) = integerLog x * integerLog y -- due to (a*b)/gcd(a,b)
+gmpMathCost (IntGcd x y) = integerLog x * integerLog y -- euclid's
+gmpMathCost (IntGcdExt x y) = integerLog x * integerLog y -- euclid's
+gmpMathCost (RatAdd x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
+gmpMathCost (RatSub x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
+gmpMathCost (RatMult x y) = 5 * ratNSquaredCost x y -- 2 mult, 1 gcd, 2 div
+gmpMathCost (NatAdd  x y) = integerLog (max x y)
+gmpMathCost (NatMult x y) = integerLog x * integerLog y
+gmpMathCost (NatPowMod x y m) = integerLog x * integerLog y * integerLog m
+
+evalTotalMathPrimopCode :: LiteralOp -> [Literal]
+evalTotalMathPrimopCode (IntAdd      a b) = [LInteger (a + b)]
+evalTotalMathPrimopCode (IntSub      a b) = [LInteger (a - b)]
+evalTotalMathPrimopCode (IntMult     a b) = [LInteger (a * b)]
+evalTotalMathPrimopCode (IntSquare   a)   = [LInteger (sqrInteger a)]
+--evalTotalMathPrimopCode (IntQuotRem  a b) = [LInteger q, LInteger r] -- UNDEFINED for b = 0
 --  where (q, r) = a `quotRem` b
---evalTotalPrimopCode (IntDivMod   a b) = [LInteger d, LInteger m] -- UNDEFINED for b = 0
+--evalTotalMathPrimopCode (IntDivMod   a b) = [LInteger d, LInteger m] -- UNDEFINED for b = 0
 --  where (d, m) = a `divMod` b
---evalTotalPrimopCode (IntPowMod   b e m) = [LInteger (powModInteger b e m)] -- UNDEFINED for some e < 0
-evalTotalPrimopCode (IntRecipMod a b) = [LInteger (recipModInteger a b)]
-evalTotalPrimopCode (IntLcm      a b) = [LInteger (lcmInteger a b)]
-evalTotalPrimopCode (IntGcd      a b) = [LInteger (gcdInteger a b)]
-evalTotalPrimopCode (IntGcdExt   a b) = [LInteger g, LInteger s]
+--evalTotalMathPrimopCode (IntPowMod   b e m) = [LInteger (powModInteger b e m)] -- UNDEFINED for some e < 0
+evalTotalMathPrimopCode (IntRecipMod a b) = [LInteger (recipModInteger a b)]
+evalTotalMathPrimopCode (IntLcm      a b) = [LInteger (lcmInteger a b)]
+evalTotalMathPrimopCode (IntGcd      a b) = [LInteger (gcdInteger a b)]
+evalTotalMathPrimopCode (IntGcdExt   a b) = [LInteger g, LInteger s]
   where (# g, s #) = gcdExtInteger a b
-evalTotalPrimopCode (RatAdd      a b) = [LRational (a + b)]
-evalTotalPrimopCode (RatSub      a b) = [LRational (a - b)]
-evalTotalPrimopCode (RatMult     a b) = [LRational (a * b)]
---evalTotalPrimopCode (RatDiv      a b) = [LRational (a / b)]         -- UNDEFINED for b = 0
-evalTotalPrimopCode (NatAdd      a b) = [LNatural (a + b)]
-evalTotalPrimopCode (NatMult     a b) = [LNatural (a * b)]
+evalTotalMathPrimopCode (RatAdd      a b) = [LRational (a + b)]
+evalTotalMathPrimopCode (RatSub      a b) = [LRational (a - b)]
+evalTotalMathPrimopCode (RatMult     a b) = [LRational (a * b)]
+--evalTotalMathPrimopCode (RatDiv      a b) = [LRational (a / b)]         -- UNDEFINED for b = 0
+evalTotalMathPrimopCode (NatAdd      a b) = [LNatural (a + b)]
+evalTotalMathPrimopCode (NatMult     a b) = [LNatural (a * b)]
 -- NOTE: for nats, QuotRem and DivMod are identical
---evalTotalPrimopCode (NatQuotRem a b) = let (q, r) = a `quotRem` b  -- UNDEFINED for b = 0
+--evalTotalMathPrimopCode (NatQuotRem a b) = let (q, r) = a `quotRem` b  -- UNDEFINED for b = 0
 --                        in [LNatural q, LNatural r]
---evalTotalPrimopCode (NatDivMod  a b) = let (d, m) = a `divMod` b   -- UNDEFINED for b = 0
+--evalTotalMathPrimopCode (NatDivMod  a b) = let (d, m) = a `divMod` b   -- UNDEFINED for b = 0
 --                        in [LNatural d, LNatural m]
-evalTotalPrimopCode (NatPowMod  b e m) = [LNatural (powModNatural b e m)]
+evalTotalMathPrimopCode (NatPowMod  b e m) = [LNatural (powModNatural b e m)]
