@@ -183,7 +183,7 @@ data AllocCC
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-data CodeRegistryCC = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecordCC)
+data CodeRegistryCC = CodeRegistryCC !(Map.Map ThunkCodeId ThunkCodeRecordCC)
                                  !(Map.Map ClosureCodeId ClosureCodeRecordCC)
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
