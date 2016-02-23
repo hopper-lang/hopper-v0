@@ -14,7 +14,7 @@ import Data.Word
 import Data.Data
 import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 
-import Data.Text (Text)
+--import Data.Text (Text)
 import Hopper.Internal.Core.Literal
 import Hopper.Utils.Closed
 import Hopper.Internal.Core.Term
@@ -139,7 +139,7 @@ data ClosureCodeRecord
 -}
 
 data AnfCC
-    = ReturnCC ![LocalVariableCC]
+    = ReturnCC !(V.Vector LocalVariableCC)
     | LetNFCC
           {- TODO: src loc info -}
           !(V.Vector BinderInfoCC)  -- TODO FIXME, replace with CCAnfBinderInfo

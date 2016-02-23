@@ -20,6 +20,7 @@ import Data.Data
 import Data.Word(Word64)
 import GHC.Generics
 import qualified Data.Vector as V
+import Control.Monad.Trans.Class (lift)
 
 -- | CCAnfEnvStack will eventually blur into whatever register allocation execution model we adopt
 data EnvStackCC =
@@ -29,6 +30,8 @@ data EnvStackCC =
 data ControlStackCC  =
       LetBinderCC !(V.Vector BinderInfoCC)
                 !()
+                !EnvStackCC -- the current environment, only needed on nontail calls, not on simple allocations
+                            -- this can be optimized / analyzed away later, for now lets conflate the two
                 !AnfCC --- body of let
                 !ControlStackCC -- what happens after the body of let returns!
       | ControlStackEmptyCC  -- we're done!
@@ -46,10 +49,16 @@ localEnvLookup env var@(LocalVarCC theVar) = go env theVar
   where
     go :: EnvStackCC -> Word64 ->  (STE (c :+ CCAnfEvalError :+ HeapError ) s  Ref )
     go EnvEmptyCC _ = throwSTE $ InR $   InL  $ BadLocalVariable var
+    go (EnvConsCC theRef _) 0  = return theRef
+    go (EnvConsCC _ rest) w = go rest (w - 1)
 
 evalCCAnf :: CodeRegistry -> EnvStackCC -> ControlStackCC -> AnfCC -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ CCAnfEvalError :+ HeapError ) s) (V.Vector Ref)
-evalCCAnf codeReg envStack contStack  (ReturnCC localVarLS) = error "finish this next week"
-evalCCAnf codeReg envStack contStack  (LetNFCC binders rhscc bodcc) = enterRHSCC codeReg envStack (LetBinderCC binders () bodcc contStack) rhscc
+evalCCAnf codeReg envStack contStack  (ReturnCC localVarLS) =  do resRefs <- lift  $ traverse (localEnvLookup envStack) localVarLS
+                                                                  enterControlStackCC codeReg contStack resRefs
+evalCCAnf codeReg envStack contStack  (LetNFCC binders rhscc bodcc) =
+                        enterRHSCC codeReg envStack
+                                  (LetBinderCC binders () envStack bodcc contStack)
+                                  rhscc
 evalCCAnf codeReg envStack contStack  (TailCallCC appcc ) = applyCC codeReg envStack contStack appcc
 
 enterRHSCC::  CodeRegistry -> EnvStackCC -> ControlStackCC -> RhsCC -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ CCAnfEvalError :+ HeapError ) s) (V.Vector Ref)
@@ -58,7 +67,8 @@ enterRHSCC = undefined
 applyCC :: CodeRegistry -> EnvStackCC -> ControlStackCC -> AppCC -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ CCAnfEvalError :+ HeapError ) s) (V.Vector Ref)
 applyCC = undefined
 
-
+enterControlStackCC :: CodeRegistry  -> ControlStackCC -> (V.Vector Ref) -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ CCAnfEvalError :+ HeapError ) s) (V.Vector Ref)
+enterControlStackCC = undefined
 
 {-    = ReturnCC ![LocalVariableCC]
     | LetNFCC
