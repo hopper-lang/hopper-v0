@@ -80,17 +80,17 @@ data Relevance =
 instance Rig Relevance where
   one = One
   zero = Zero
-  Zero + (!a) = a --- zero doesn't change a thing
+  Zero + (!a) = a -- audit this if we augment Relevance
   One + Zero = One
   One + One = Omega
   One + Omega = Omega
-  Omega + Zero = Omega --- omega plus anything is zero
+  Omega + Zero = Omega
   Omega + One = Omega
   Omega + Omega = Omega
-  Zero * (!_) = Zero
-  One * (!a) = a
+  Zero * (!_) = Zero -- audit this if we  extend Relevance
+  One * (!a) = a -- audit this if we  extend Relevance
   Omega * Zero = Zero
-  Omega * (!_) = Omega
+  Omega * (!_) = Omega -- audit if we extend Relevance
 
 incomparableElements :: PartialOrd a => a -> a -> Bool
 incomparableElements a b = (not  $ a `leq`b) && (not $ b `leq` a)
@@ -102,7 +102,7 @@ incomparableElements a b = (not  $ a `leq`b) && (not $ b `leq` a)
 instance PartialOrd Relevance where
   Zero `leq` Omega = True
   Zero `leq` Zero = True
-  Zero `leq` One = False --- Zero and One are incomparable, maybe?
+  Zero `leq` One = False --- Zero and One are incomparable, see Rig type system paper
   One `leq` Omega = True
   One `leq` One = True
   One `leq` Zero = False
@@ -111,9 +111,17 @@ instance PartialOrd Relevance where
   Omega `leq` Zero = False
 
 
+{- question: CAN i just do (== zero) -}
 {-# SPECIALIZE isZero :: Relevance -> Bool #-}
 isZero :: (Rig a,PartialOrd a)=> a -> Bool
-isZero a = if a `leq` zero then True else False
+isZero a = if a `leq` zero
+            &&  (a `leq` a)
+              -- this is to guard against hypothetical Nan like elements
+              -- which might arise if we complete the set theoretic lattice
+              -- that corresponds
+
+            then True
+            else False
 
 {-
 our "Relevance type" kinda is a subset of the lattice induced by
@@ -126,6 +134,10 @@ what would augmenting our partial order with a member corresponding to {}, the e
 mean?
 Would that come up in external language elaboration when we have a type error
 in unification because of mismatch in demand/useages?
+
+
+fuzzy idea, it would be like Nan,
+that  is
 -}
 
 -- we are a Joint lattice becquse  Omega \/ x = Omega <--> x `leq` Omega, which is always true
