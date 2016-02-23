@@ -20,6 +20,7 @@ import Hopper.Utils.Closed
 import Hopper.Internal.Core.Term
 import GHC.Generics
 import qualified  Data.Vector as V
+import Hopper.Internal.Type.Relevance
 --import Hopper.Internal.Core.Heap
 --import Hopper.Internal.Core.HeapRef
 --import Data.Hop.Or
@@ -73,15 +74,21 @@ all the fields of the
 -- live/dead, type/runtime rep info?
 
 --- kill these stubs later
-type Relevance = ()
-type TypeCC = ()
+--type Relevance = ()
+type TypeCC = () -- TODO FIXME, wire in the real type info?
 data BinderInfoCC =
       BinderInfoDataCC
-        { relevanceBICC :: Relevance
+        { relevanceBICC :: Relevance -- if zero, during evaluation we need not pass around
+                                     --  BUT during NORMALIZATION, we probably do
+                                     --  so the normalizer WILL thread around irrelevant values
+                                     -- to properly support dependent type checking
+                                     -- as is proper, because a runtime irrelevant value
+                                     -- SHOULD be relevant during type checking, or
+                                     -- it has no reason to exist
         , typeBICC :: TypeCC  -- at least for now, closure converted stuff may need a
           -- slightly different type system fragment than the Core layer Terms?
           -- NB: once we have existentials, should just be an "equivalent" subset
-          -- of the full type theory
+          -- of the full type theory?
         , sourceInfo :: Maybe String --- this isn't quite right ...
         -- also should add
           } --- this needs to be fleshed out
@@ -132,10 +139,10 @@ data ClosureCodeRecord
 -}
 
 data AnfCC
-    = CReturnCC ![LocalVariableCC]
+    = ReturnCC ![LocalVariableCC]
     | LetNFCC
           {- TODO: src loc info -}
-          ![(Bool,Maybe Text)]   -- TODO FIXME, replace with CCAnfBinderInfo
+          !(V.Vector BinderInfoCC)  -- TODO FIXME, replace with CCAnfBinderInfo
             -- the length == size of RHS multiple return value tuple
                  -- the True positions are the ones whose heap refs are copied into the
                  -- local environment stack
@@ -160,12 +167,12 @@ data RhsCC
 data AllocCC
   = SharedLiteralCC !Literal
   | ConstrAppCC !ConstrId
-                ![LocalVariableCC]
+                !(V.Vector LocalVariableCC)
   | AllocateThunkCC
-        ![LocalVariableCC] -- the set of local variables captured in the thunk environment, in this order
+        !(V.Vector LocalVariableCC) -- the set of local variables captured in the thunk environment, in this order
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
   | AllocateClosureCC
-        ![LocalVariableCC] -- set of local variables captured in the thunk environment, in this order
+        !(V.Vector LocalVariableCC) -- set of local variables captured in the thunk environment, in this order
         !Word64 --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
