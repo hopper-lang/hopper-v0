@@ -94,20 +94,26 @@ data BinderInfoCC =
           } --- this needs to be fleshed out
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
+
+{-
+forward looking design question:
+how should the heap rep for Constructors, Thunks and Closures be related
+-}
+
 data ValueRepCC ref =
-             VLitF !Literal
-              | ConstructorF  !ConstrId  !(V.Vector ref)
-              | ThunkF  !(V.Vector ref)  !(ThunkCodeId)
+                ValueLitCC !Literal
+              | ConstructorCC !ConstrId  !(V.Vector ref)
+              | ThunkCC !(V.Vector ref)  !(ThunkCodeId)
               --  should this be a heap ref to
               -- closure to have the right sharing ?
-              | DirectClosureCC !(V.Vector ref) !(ClosureCodeId)  -- heap ref?
+              | ClosureCC !(V.Vector ref) !(ClosureCodeId)  -- heap ref?
               | BlackHoleCC
-              | IndirectionF ref
+              | IndirectionCC ref
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 
-data ThunkCodeRecord
-  = ThunkCodeRecord !EnvSize      -- number of slots in the environment struct
+data ThunkCodeRecordCC
+  = ThunkCodeRecordCC !EnvSize      -- number of slots in the environment struct
                                   --
                     !(V.Vector BinderInfoCC) -- source names, if applicable, for the captured free vars in the orig source
                                   -- TODO, replace the sourcenames list field with V.Vector CCAnfBinderInfo
@@ -119,8 +125,8 @@ but in the future we can be clever about specialization / register-sized values.
 Additionally
 
 -}
-data ClosureCodeRecord
-  = ClosureCodeRecord !EnvSize -- is this redundant
+data ClosureCodeRecordCC
+  = ClosureCodeRecordCC !EnvSize -- is this redundant
                       !(V.Vector BinderInfoCC)
                       -- source names, if applicable, for the captured free vars in the orig source
                                     --- TODO / FIXME replace with CCAnfBinderInfo
@@ -154,8 +160,8 @@ data AnfCC
 
 data AppCC
     = EnterThunkCC !LocalVariableCC -- if a is neutral term OR a free variable, this becomes neutral
-    | FunAppCC !LocalVariableCC ![LocalVariableCC] --- if function position of FunApp is neutral, its neutral
-    | CCPrimApp !PrimOpId ![LocalVariableCC] -- if any arg of a primop is neutral, its neutral
+    | FunAppCC !LocalVariableCC !(V.Vector LocalVariableCC) --- if function position of FunApp is neutral, its neutral
+    | PrimAppCC !PrimOpId !(V.Vector LocalVariableCC) -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
@@ -177,12 +183,12 @@ data AllocCC
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-data CodeRegistry = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecord)
-                                 !(Map.Map ClosureCodeId ClosureCodeRecord)
+data CodeRegistryCC = CodeRegistry !(Map.Map ThunkCodeId ThunkCodeRecordCC)
+                                 !(Map.Map ClosureCodeId ClosureCodeRecordCC)
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 -- TODO: implement this after ccAnf evaluator
 --
-closureConvert :: Closed Term {-  FIX -} -> (AnfCC, CodeRegistry)
+closureConvert :: Closed Term {-  FIX -} -> (AnfCC, CodeRegistryCC)
 closureConvert = error "_FINISHMEEEEEBRIANNNNN" -- TODO
 
