@@ -12,6 +12,17 @@ along with
 -}
 
 
+
+{-
+TODO / FIXME
+use GMP limb count instead of integer log
+
+later on
+look at gmp-impl.h for how the algorithm selection for different asymptotic ranges is done
+for the default routines
+
+-}
+
 module Hopper.Internal.Core.Literal
   ( Literal(..)
   , PrimOpId(..)

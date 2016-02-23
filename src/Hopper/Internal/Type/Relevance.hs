@@ -31,10 +31,13 @@ import Numeric.Natural
 import GHC.Integer.GMP.Internals (gcdInteger)
 import GHC.Generics
 import Data.Data
+import Algebra.PartialOrd
+import Algebra.Lattice
+--import JoinSemiLattice
 
 infixl 7 *
 infixl 6 +
-infix 4 <=
+--infix 4 <=
 
 data GCD a = GCD {extractGCD :: !a, leftCoprime :: !a, rightCoprime :: !a }
   deriving(Eq,Ord,P.Show,P.Read)
@@ -77,39 +80,65 @@ data Relevance =
 instance Rig Relevance where
   one = One
   zero = Zero
-  Zero + (!a) = a
+  Zero + (!a) = a --- zero doesn't change a thing
   One + Zero = One
   One + One = Omega
   One + Omega = Omega
-  Omega + (!_) = Omega
+  Omega + Zero = Omega --- omega plus anything is zero
+  Omega + One = Omega
+  Omega + Omega = Omega
   Zero * (!_) = Zero
   One * (!a) = a
   Omega * Zero = Zero
   Omega * (!_) = Omega
-class (Eq a, Rig a )=> PartialOrd a where
-  -- this is a weak or perhaps even "partial" order
-  (<=) :: a -> a -> Bool
-  default (<=) :: Ord a => a -> a -> Bool
-  (<=) = (P.<=)
-  {-# INLINE (<=)#-}
 
 incomparableElements :: PartialOrd a => a -> a -> Bool
-incomparableElements a b = (not  $ a <= b) && (not $ b <= a)
+incomparableElements a b = (not  $ a `leq`b) && (not $ b `leq` a)
 -- this comes up with the lattice structure we're using here!
-instance  PartialOrd Natural
+--instance  PartialOrd Natural
 
 -- we have incomparableElements Zero One == True
 -- for our model of relevance
 instance PartialOrd Relevance where
-  Zero <= Omega = True
-  Zero <= Zero = True
-  Zero <= One = False --- YES, surprising but important, we're in a lattice!
-  One <= Omega = True
-  One <= One = True
-  One <= Zero = False
-  Omega <= Omega = True
-  Omega <= One = False
-  Omega <= Zero = False
+  Zero `leq` Omega = True
+  Zero `leq` Zero = True
+  Zero `leq` One = False --- Zero and One are incomparable, maybe?
+  One `leq` Omega = True
+  One `leq` One = True
+  One `leq` Zero = False
+  Omega `leq` Omega = True
+  Omega `leq` One = False
+  Omega `leq` Zero = False
+
+
+{-# SPECIALIZE isZero :: Relevance -> Bool #-}
+isZero :: (Rig a,PartialOrd a)=> a -> Bool
+isZero a = if a `leq` zero then True else False
+
+{-
+our "Relevance type" kinda is a subset of the lattice induced by
+the collection of sets {}, {1}, {0}, and {0,1}, but without {}
+
+ie our partial order is the one modeled by the collection of sets
+{0}, {1}, {0,1} with ordering by the subset relation and the Join operator
+being set Union
+what would augmenting our partial order with a member corresponding to {}, the empty set,
+mean?
+Would that come up in external language elaboration when we have a type error
+in unification because of mismatch in demand/useages?
+-}
+
+-- we are a Joint lattice becquse  Omega \/ x = Omega <--> x `leq` Omega, which is always true
+instance JoinSemiLattice Relevance where
+    Zero \/ Zero = Zero
+    Zero \/ One = Omega
+    Zero \/ Omega = Omega
+    One \/ Zero = Omega --- this is the funny looking spot here :)
+    One \/ One = One
+    One \/ Omega = Omega
+    Omega  \/ Zero = Omega
+    Omega \/ One = Omega
+    Omega \/ Omega = Omega
 
 
 
