@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -145,7 +146,7 @@ heapAllocate val = do   cah <-  getHSCM
                         setHSCM cah'
                         return rf
 
-heapLookup :: Ref -> HeapStepCounterM val (STE (b :+ HeapError) s) val
+heapLookup :: Ref -> forall b. HeapStepCounterM val (STE (b :+ HeapError) s) val
 heapLookup ref = do
   checkedCounterIncrement
   heapHandle <- _extractHeapCAH <$> getHSCM

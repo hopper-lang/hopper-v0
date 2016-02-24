@@ -139,11 +139,6 @@ data ClosureCodeRecordCC
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 
-{- DESIGN QUESTION
-
-
--}
-
 data AnfCC
     = ReturnCC !(V.Vector LocalVariableCC)
     | LetNFCC
@@ -191,4 +186,3 @@ data CodeRegistryCC = CodeRegistryCC !(Map.Map ThunkCodeId ThunkCodeRecordCC)
 --
 closureConvert :: Closed Term {-  FIX -} -> (AnfCC, CodeRegistryCC)
 closureConvert = error "_FINISHMEEEEEBRIANNNNN" -- TODO
-

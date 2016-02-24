@@ -9,10 +9,11 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UnboxedTuples #-}
+
 module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
 import Hopper.Internal.LoweredCore.ClosureConvertedANF
+import Unsafe.Coerce
 import Hopper.Internal.Runtime.Heap (
   HeapError(..)
   ,HeapStepCounterM
@@ -34,6 +35,10 @@ import qualified Data.Vector as V
 import Hopper.Internal.Core.Literal(PrimOpId)
 --import Control.Monad.Trans.Class (lift)
 
+type EvalCC c s a
+  = HeapStepCounterM (ValueRepCC Ref)
+                     (STE (c :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError) s)
+                     a
 
 -- once i have explicit exports in this module, this will be dead code
 suppressUnusedWarnings :: Int
@@ -72,8 +77,10 @@ data ControlStackCC  =
 newtype InterpreterStepCC = InterpreterStepCC { unInterpreterStep :: Natural } deriving (Eq, Read,Show,Ord,Typeable,Generic,Data)
 
 
+
 {- |  EvalErrorCC is for runtime errors!
-TODO: add code location and stack trace meta data -}
+TODO: add code location and stack trace meta data
+TODO: refactor duplicated fields into an outer ADT?-}
 data EvalErrorCC val =
     BadLocalVariableCC
                       {eeCCOffendingOpenLocalVariable :: !LocalVariableCC
@@ -152,19 +159,67 @@ AND/OR, should we use unboxed/storable vector for fixed size element types like 
 this will require analyzing core, and designing some sort of performance measurement!
 -}
 
-{- | enterClosureCC has to resolve its first heap ref argument to the closure code id
-and then it pushes  -}
-enterClosureCC :: CodeRegistryCC -> EnvStackCC -> ControlStackCC
-        -> (LocalVariableCC,V.Vector LocalVariableCC)
-        -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError ) s) (V.Vector Ref)
-enterClosureCC  _codReg@(CodeRegistryCC _thunk _closureMap )
-                envStack
-                controlstack
-                (localClosureVar,localArgs)
-                 = undefined    envStack
-                                controlstack
-                                (localClosureVar,localArgs)
+-- FIXME : think about ways to make error extension easier
 
+hoistUpError
+  :: forall s.
+     (forall b.
+      HeapStepCounterM (ValueRepCC Ref)
+                       (STE (b :+ HeapError) s)
+                       (ValueRepCC Ref))
+  -> forall c.
+     HeapStepCounterM (ValueRepCC Ref)
+                      (STE (c :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError)) s)
+                      (ValueRepCC Ref)
+hoistUpError = unsafeCoerce
+
+hoistedLookup
+  :: forall c s.
+     Ref
+  -> HeapStepCounterM (ValueRepCC Ref)
+                      (STE (c :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError)) s)
+                      (ValueRepCC Ref)
+hoistedLookup ref = hoistUpError $ heapLookup ref
+
+lookupHeapClosure
+  :: forall c s. CodeRegistryCC
+  -> ControlStackCC
+  -> LocalVariableCC
+  -> Ref
+  -> EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
+lookupHeapClosure registry controlStack localVar initialRef =
+  undefined $ go 1 initialRef
+  where
+    go :: Natural -> Ref -> EvalCC c s (V.Vector Ref, ClosureCodeId)
+    go lookups ref = do
+      val <- hoistedLookup ref
+      case val of
+        IndirectionCC nextRef -> go (lookups + 1) nextRef
+        ClosureCC a b -> return (a, b)
+        x -> throwHeapErrorWithStepInfoSTE $ \step -> InR $ InL $
+               UnexpectedNotAClosureInFunctionPosition localVar
+                                                       (x :: ValueRepCC Ref)
+                                                       controlStack
+                                                       lookups
+                                                       (InterpreterStepCC step)
+
+
+{- | enterClosureCC has to resolve its first heap ref argument to the closure code id
+and then it pushes
+-}
+enterClosureCC
+  :: CodeRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> (LocalVariableCC, V.Vector LocalVariableCC)
+  -> EvalCC c s (V.Vector Ref)
+enterClosureCC _codReg@(CodeRegistryCC _thunk _closureMap)
+               envStack
+               controlstack
+               (localClosureVar, localArgs)
+                = undefined    envStack
+                               controlstack
+                               (localClosureVar,localArgs)
 
 --lookupClosureRecordCC
 
