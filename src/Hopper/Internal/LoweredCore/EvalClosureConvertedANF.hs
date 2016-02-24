@@ -43,7 +43,13 @@ suppressUnusedWarnings = undefined unsafeHeapUpdate
   checkedCounterIncrement
   checkedCounterJump
 
+{- FIXME: we currently have a quadratic blowup for high-arity curried functions
+   with this naive (implicit) closure conversion setup. we can fix this by
+   making packs and unpacks explicit and cons-style sharing when we desugar
+   curried functions (or, more generally, user code that has similar semantics).
 
+   we can assign metadata to our lambdas to hint at such optimizations
+-}
 
 -- | CCAnfEnvStack will eventually blur into whatever register allocation execution model we adopt
 data EnvStackCC =
