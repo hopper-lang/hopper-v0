@@ -162,7 +162,7 @@ this will require analyzing core, and designing some sort of performance measure
 -- FIXME : think about ways to make error extension easier
 
 extendError
-  :: forall s h tm a. MonadTrans tm =>
+  :: forall s (h :: *) (tm :: (* -> *) -> * -> *) (a :: *). MonadTrans tm =>
      (forall b.
       tm (STE (b :+ h) s)
       a)
