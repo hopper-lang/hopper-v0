@@ -9,6 +9,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE CPP #-}
 
 module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
@@ -28,6 +29,7 @@ import Hopper.Internal.Runtime.HeapRef (Ref)
 import Data.Hop.Or
 import Control.Monad.STE
 import Data.Data
+import qualified Data.Map as Map
 import Data.Word(Word64)
 import GHC.Generics
 import Numeric.Natural
@@ -98,7 +100,26 @@ data EvalErrorCC val =
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
                       ,eeCCReductionStepAtError:: !InterpreterStepCC }
+   | HardFaultImpossiblePanicError
+                      {eeCCcontrolStackAtError :: !ControlStackCC
+                      ,eeCCHeapLookupStepOffset :: !Natural -- this is a number to
+                                                   -- subtract from the reported
+                                                   -- interpreter step
+                      ,eeCCReductionStepAtError:: !InterpreterStepCC
+                      ,eeCCErrorPanicMessage :: String
+                      ,eeCCErrorPanicFileName :: String
+                      ,eeCCErrorPanicFileLine :: Int
+                      -- TODO: add filename and line of haskell source
+                      }
    deriving (Eq,Ord,Show,Typeable,Read)
+
+#define PanicMessageConstructor(constack,stepAdjust,reductionStep,msg) \
+  (HardFaultImpossiblePanicError (constack) (stepAdjust) \
+      (reductionStep) (msg) \
+      __FILE__ \
+      __LINE__ \
+      )
+
 
 {-
 NB: the use of the words enter, apply etc shouldn't be taken to mean push/enter vs eval/apply
@@ -181,14 +202,31 @@ hoistedLookup
 hoistedLookup ref = extendError (heapLookup ref)
 
 lookupHeapClosure
-  :: forall c s. CodeRegistryCC
+  :: forall  s. CodeRegistryCC
   -> ControlStackCC
   -> LocalVariableCC
   -> Ref
-  -> EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
-lookupHeapClosure registry controlStack localVar initialRef =
-  undefined $ go 1 initialRef
+  -> forall c . EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
+lookupHeapClosure (CodeRegistryCC _thunk closureMap) controlStack localVar initialRef = do
+  (closureEnvRefs, codeId) <- go 1 initialRef
+  mCodeRecord <- return $ Map.lookup codeId closureMap
+  case mCodeRecord of
+   Just cdRecord | compatibleEnv2CodeRecord closureEnvRefs cdRecord
+                                    -> return (closureEnvRefs,codeId,cdRecord)
+                 | otherwise -> throwHeapErrorWithStepInfoSTE (\ step -> InR $ InL $
+     PanicMessageConstructor(controlStack, 1, InterpreterStepCC step, "closure env size mismatch"))
+   Nothing -> throwHeapErrorWithStepInfoSTE (\ step -> InR $ InL $
+     PanicMessageConstructor(controlStack, 1, InterpreterStepCC step, "closure code ID " ++ show codeId ++ " not in code registry"))
+
   where
+    compatibleEnv2CodeRecord :: V.Vector a -> ClosureCodeRecordCC -> Bool
+    compatibleEnv2CodeRecord envVect
+          (ClosureCodeRecordCC envSize
+           envBinderInfo _ _ _) = V.length envVect == V.length envBinderInfo
+                             && V.length envVect ==  (fromIntegral $ getEnvSize envSize)
+                                     -- is this redundant checking/info?
+
+    -- TODO: rename go
     go :: Natural -> Ref -> EvalCC c s (V.Vector Ref, ClosureCodeId)
     go lookups ref = do
       val <- hoistedLookup ref
