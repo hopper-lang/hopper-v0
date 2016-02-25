@@ -46,7 +46,9 @@ build-type:          Simple
 
 -- Constraint on the version of Cabal needed to build this package.
 cabal-version:       >=1.22
-
+flag fullprofiling
+  default: False
+  manual: True
 
 library
   -- Modules exported by the library.
@@ -101,7 +103,9 @@ library
   -- Directories containing source files.
   hs-source-dirs:      src
   ghc-options: -Wall
-  ghc-prof-options: -fprof-auto -fprof-auto-calls -fprof-cafs
+
+  if flag(fullprofiling)
+    ghc-prof-options: -fprof-auto -fprof-auto-calls -fprof-cafs
 
   -- Base language which the package is written in.
   default-language:    Haskell2010

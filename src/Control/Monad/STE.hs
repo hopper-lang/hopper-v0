@@ -1,10 +1,12 @@
-{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts, Trustworthy #-}
+{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts, Trustworthy,TypeOperators #-}
 module Control.Monad.STE
 (
   STE
   ,runSTE
   ,throwSTE
   ,handleSTE
+  ,extendError
+  ,extendErrorTrans
   )
 
   where
@@ -16,6 +18,25 @@ import Control.Monad (ap)
 import Control.Monad.Primitive
 import Data.Typeable
 import Unsafe.Coerce (unsafeCoerce)
+import Control.Monad.Trans.Class
+import Data.Hop.Or
+
+{-# INLINE extendErrorTrans #-}
+extendErrorTrans
+  :: forall s (h :: *) (tm :: (* -> *) -> * -> *) (a :: *). MonadTrans tm =>
+     (forall b.
+      tm (STE (b :+ h) s) a)
+  -> forall c err.
+     tm (STE (c :+ err :+ h ) s)  a
+extendErrorTrans = unsafeCoerce
+
+
+{-# INLINE extendError  #-}
+extendError
+  :: forall s (h :: *) (a :: *).
+     (forall b.  (STE (b :+ h) s) a)
+  -> forall c err.  (STE (c :+ err :+ h ) s)  a
+extendError = unsafeCoerce
 
 -- maybe this constructor shouldn't be private?
 newtype STE e s a = STE  (STRep s a)

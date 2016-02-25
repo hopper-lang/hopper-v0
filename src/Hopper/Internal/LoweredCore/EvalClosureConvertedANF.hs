@@ -14,7 +14,6 @@
 module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
 import Hopper.Internal.LoweredCore.ClosureConvertedANF
-import Unsafe.Coerce
 import Hopper.Internal.Runtime.Heap (
   HeapError(..)
   ,HeapStepCounterM
@@ -35,7 +34,6 @@ import GHC.Generics
 import Numeric.Natural
 import qualified Data.Vector as V
 import Hopper.Internal.Core.Literal(PrimOpId)
-import Control.Monad.Trans.Class (MonadTrans)
 
 type EvalCC c s a
   = HeapStepCounterM (ValueRepCC Ref)
@@ -182,15 +180,6 @@ this will require analyzing core, and designing some sort of performance measure
 
 -- FIXME : think about ways to make error extension easier
 
-extendError
-  :: forall s (h :: *) (tm :: (* -> *) -> * -> *) (a :: *). MonadTrans tm =>
-     (forall b.
-      tm (STE (b :+ h) s)
-      a)
-  -> forall c err.
-     tm (STE (c :+ err :+ h ) s)
-        a
-extendError = unsafeCoerce
 
 hoistedLookup
   :: forall s.
@@ -199,7 +188,7 @@ hoistedLookup
      HeapStepCounterM (ValueRepCC Ref)
                       (STE (c :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError)) s)
                       (ValueRepCC Ref)
-hoistedLookup ref = extendError (heapLookup ref)
+hoistedLookup ref = extendErrorTrans (heapLookup ref)
 
 lookupHeapClosure
   :: forall  s. CodeRegistryCC
