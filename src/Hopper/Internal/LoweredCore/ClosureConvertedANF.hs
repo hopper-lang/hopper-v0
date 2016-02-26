@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
 
 
@@ -20,9 +21,9 @@ import Hopper.Utils.Closed
 import Hopper.Internal.Core.Term
 import GHC.Generics
 import qualified  Data.Vector as V
-import Hopper.Internal.Type.Relevance
---import Hopper.Internal.Core.Heap
---import Hopper.Internal.Core.HeapRef
+import Hopper.Internal.Type.Relevance(Relevance)
+import Hopper.Internal.Runtime.Heap(TransitiveLookup(..),heapLookup)
+import Hopper.Internal.Runtime.HeapRef(Ref)
 --import Data.Hop.Or
 --import Control.Monad.STE
 {-
@@ -93,6 +94,17 @@ data BinderInfoCC =
         -- also should add
           } --- this needs to be fleshed out
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+
+
+instance TransitiveLookup (ValueRepCC Ref) where
+  transitiveHeapLookup initref = go 1 initref
+    where
+      go !step !ref =
+        do newval <- heapLookup ref
+           case newval of
+             (IndirectionCC newref) -> go (step + 1 ) newref
+             _ -> return (step ,newval)
 
 
 {-

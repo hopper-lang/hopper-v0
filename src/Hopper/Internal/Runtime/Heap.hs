@@ -21,6 +21,7 @@ module Hopper.Internal.Runtime.Heap(
   ,checkedCounterIncrement
   ,checkedCounterJump
   ,throwHeapErrorWithStepInfoSTE
+  ,TransitiveLookup(..)
   )
 
     where
@@ -40,6 +41,12 @@ import Data.Hop.Or
 import Hopper.Internal.Runtime.HeapRef
 
 
+
+class TransitiveLookup valRep  where
+   --{-# INLINABLE transitiveHeapLookup #-}
+   transitiveHeapLookup :: Ref -> forall c . HeapStepCounterM valRep (STE (c  :+ HeapError ) s) (Natural,valRep)
+
+
 throwHeapErrorWithStepInfoSTE :: (Natural -> err) -> HeapStepCounterM val (STE err  s) result
 throwHeapErrorWithStepInfoSTE f =
                             do  cah <- getHSCM
@@ -53,7 +60,6 @@ data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref va
 data HeapError
   = HeapStepCounterExceeded
   | InvalidHeapLookup
-  | BlackholeEncounteredDuringLookup
   | HeapLookupOutOfBounds
   deriving (Eq,Ord,Show,Read,Typeable)
 
@@ -167,10 +173,4 @@ unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap 0 cnt hp)
 runEmptyHeap :: Monad m =>  Natural -> HeapStepCounterM val m  b-> m (b,CounterAndHeap val )
 runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap 0 ct $ Heap (Ref 1) Map.empty)
 
--- heapRefLookupTransitive :: Ref -> HeapStepCounterM val (STE (b :+ HeapError) s) (val , Ref)
--- heapRefLookupTransitive ref = do
---   next <- heapLookup ref
---   case next of
---     BlackHoleF -> throwHeapError BlackholeEncounteredDuringLookup
---     IndirectionF nextRef -> heapRefLookupTransitive nextRef
---     val -> return (val, ref)
+
