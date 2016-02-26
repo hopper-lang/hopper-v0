@@ -250,7 +250,6 @@ lookupHeapClosure (CodeRegistryCC _thunk closureMap) controlStack localVar initi
 
 -- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
 --       e.g. logic for whether env is "compatible"
-
 lookupHeapThunk
   :: CodeRegistryCC
   -> ControlStackCC
@@ -291,6 +290,8 @@ lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
 {- | enterClosureCC has to resolve its first heap ref argument to the closure code id
 and then it pushes
 -}
+-- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
+--       e.g. logic for whether env is "compatible"
 enterClosureCC
   :: CodeRegistryCC
   -> EnvStackCC
@@ -305,17 +306,15 @@ enterClosureCC _codReg@(CodeRegistryCC _thunk _closureMap)
                                controlstack
                                (localClosureVar,localArgs)
 
---lookupClosureRecordCC
-
- {- | enterPrimAppCC is special in a manner similar to enterOrResolveThunkCC
- this is because some primitive operations are ONLY defined on suitably typed Literals,
- such as natural number addition. So enterPrimAppCC will have to chase indirections for those operations,
- AND validate that it has the right arguments etc.
- This may sound like defensive programming, because a sound type system and type preserving
- compiler / interpreter transformations DO guarantee that this shall never happen,
- but cosmic radiation, a bug in GHC, or a bug in the hopper infrastructure (the most likely :) )  could
- result in a mismatch between reality and our expectations, so never hurts to check.
- -}
+{- | enterPrimAppCC is special in a manner similar to enterOrResolveThunkCC
+this is because some primitive operations are ONLY defined on suitably typed Literals,
+such as natural number addition. So enterPrimAppCC will have to chase indirections for those operations,
+AND validate that it has the right arguments etc.
+This may sound like defensive programming, because a sound type system and type preserving
+compiler / interpreter transformations DO guarantee that this shall never happen,
+but cosmic radiation, a bug in GHC, or a bug in the hopper infrastructure (the most likely :) )  could
+result in a mismatch between reality and our expectations, so never hurts to check.
+-}
 enterPrimAppCC
   :: CodeRegistryCC
   -> EnvStackCC
@@ -330,17 +329,5 @@ enterControlStackCC
   -> V.Vector Ref
   -> forall c. EvalCC c s (V.Vector Ref)
 enterControlStackCC = undefined
-
-{-    = ReturnCC ![LocalVariableCC]
-    | LetNFCC
-          {- TODO: src loc info -}
-          ![(Bool,Maybe Text)]   -- TODO FIXME, replace with CCAnfBinderInfo
-            -- the length == size of RHS multiple return value tuple
-                 -- the True positions are the ones whose heap refs are copied into the
-                 -- local environment stack
-                 -- this is like a wimpy version of pattern matching on products
-          !(RhsCC) -- right hand side of let binder, closure converted
-          !(AnfCC) -- body of the let
-    | TailCallCC !(AppCC)-}
 
 -- evalANF ::  Anf Ref -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
