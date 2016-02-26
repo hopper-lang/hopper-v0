@@ -23,6 +23,7 @@ import Hopper.Internal.Runtime.Heap (
   ,checkedCounterIncrement
   ,checkedCounterJump
   ,throwHeapErrorWithStepInfoSTE
+  ,transitiveHeapLookup
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Data.Hop.Or
@@ -206,10 +207,10 @@ this will require analyzing core, and designing some sort of performance measure
 
 -- FIXME : think about ways to make error extension easier
 
-hoistedLookup
+hoistedTransitiveLookup
   :: Ref
-  -> forall c. EvalCC c s (ValueRepCC Ref)
-hoistedLookup ref = extendErrorTrans (heapLookup ref)
+  -> forall c. EvalCC c s (Natural, ValueRepCC Ref)
+hoistedTransitiveLookup ref = extendErrorTrans (transitiveHeapLookup ref)
 
 lookupHeapClosure
   :: CodeRegistryCC
@@ -217,16 +218,16 @@ lookupHeapClosure
   -> LocalVariableCC
   -> Ref
   -> forall c. EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
-lookupHeapClosure (CodeRegistryCC _thunk closureMap) controlStack localVar initialRef = do
-  (closureEnvRefs, codeId) <- go 1 initialRef
+lookupHeapClosure (CodeRegistryCC _thunk closureMap) stack var initialRef = do
+  (closureEnvRefs, codeId) <- deref initialRef
   mCodeRecord <- return $ Map.lookup codeId closureMap
   case mCodeRecord of
    Just cdRecord | compatibleEnv2CodeRecord closureEnvRefs cdRecord
                                     -> return (closureEnvRefs,codeId,cdRecord)
-                 | otherwise -> throwHeapErrorWithStepInfoSTE (\ step -> InR $ InL $
-     PanicMessageConstructor(controlStack, 1, InterpreterStepCC step, "closure env size mismatch"))
-   Nothing -> throwHeapErrorWithStepInfoSTE (\ step -> InR $ InL $
-     PanicMessageConstructor(controlStack, 1, InterpreterStepCC step, "closure code ID " ++ show codeId ++ " not in code registry"))
+                 | otherwise -> throwHeapErrorWithStepInfoSTE (\step -> InR $ InL $
+     PanicMessageConstructor(stack, 1, InterpreterStepCC step, "closure env size mismatch"))
+   Nothing -> throwHeapErrorWithStepInfoSTE (\step -> InR $ InL $
+     PanicMessageConstructor(stack, 1, InterpreterStepCC step, "closure code ID " ++ show codeId ++ " not in code registry"))
 
   where
     compatibleEnv2CodeRecord :: V.Vector a -> ClosureCodeRecordCC -> Bool
@@ -236,19 +237,17 @@ lookupHeapClosure (CodeRegistryCC _thunk closureMap) controlStack localVar initi
                              && V.length envVect ==  (fromIntegral $ getEnvSize envSize)
                                      -- is this redundant checking/info?
 
-    -- TODO: rename go
-    go :: Natural -> Ref -> EvalCC c s (V.Vector Ref, ClosureCodeId)
-    go lookups ref = do
-      val <- hoistedLookup ref
+    deref :: Ref -> EvalCC c s (V.Vector Ref, ClosureCodeId)
+    deref ref = do
+      (lookups, val) <- hoistedTransitiveLookup ref
       case val of
-        IndirectionCC nextRef -> go (lookups + 1) nextRef
-        ClosureCC a b -> return (a, b)
-        x -> throwHeapErrorWithStepInfoSTE $ \step -> InR $ InL $
-               UnexpectedNotAClosureInFunctionPosition localVar
-                                                       (x :: ValueRepCC Ref)
-                                                       controlStack
-                                                       lookups
-                                                       (InterpreterStepCC step)
+         ClosureCC envRefs codeId -> return (envRefs, codeId)
+         _ -> throwHeapErrorWithStepInfoSTE $ \step -> InR $ InL $
+           UnexpectedNotAClosureInFunctionPosition var
+                                                   val
+                                                   stack
+                                                   lookups
+                                                   (InterpreterStepCC step)
 
 -- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
 --       e.g. logic for whether env is "compatible"
@@ -259,7 +258,7 @@ lookupHeapThunk
   -> Ref
   -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId, ThunkCodeRecordCC)
 lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
-  (envRefs, codeId) <- deref 1 initialRef
+  (envRefs, codeId) <- deref initialRef
   let mCodeRecord = Map.lookup codeId thunks
   case mCodeRecord of
     Just codeRec
@@ -276,15 +275,14 @@ lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
       where
         refCount = V.length envRefs
 
-    deref :: Natural -> Ref -> EvalCC c s (V.Vector Ref, ThunkCodeId)
-    deref lookups ref = do
-      val <- hoistedLookup ref
+    deref :: Ref -> EvalCC c s (V.Vector Ref, ThunkCodeId)
+    deref ref = do
+      (lookups, val) <- hoistedTransitiveLookup ref
       case val of
-         IndirectionCC nextRef -> deref (succ lookups) nextRef
          ThunkCC envRefs codeId -> return (envRefs, codeId)
-         nonThunk -> throwHeapErrorWithStepInfoSTE $ \step -> InR $ InL $
+         _ -> throwHeapErrorWithStepInfoSTE $ \step -> InR $ InL $
            UnexpectedNotThunkInForcePosition var
-                                             (nonThunk :: ValueRepCC Ref)
+                                             val
                                              stack
                                              lookups
                                              (InterpreterStepCC step)
