@@ -229,6 +229,45 @@ lookupHeapClosure (CodeRegistryCC _thunk closureMap) controlStack localVar initi
                                                        lookups
                                                        (InterpreterStepCC step)
 
+-- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
+--       e.g. logic for whether env is "compatible"
+
+lookupHeapThunk
+  :: CodeRegistryCC
+  -> ControlStackCC
+  -> LocalVariableCC
+  -> Ref
+  -> forall c . EvalCC c s (V.Vector Ref, ThunkCodeId, ThunkCodeRecordCC)
+lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
+  (envRefs, codeId) <- deref 1 initialRef
+  let mCodeRecord = Map.lookup codeId thunks
+  case mCodeRecord of
+    Just codeRec
+      | compatibleEnv envRefs codeRec -> return (envRefs, codeId, codeRec)
+      | otherwise -> throwHeapErrorWithStepInfoSTE (\step -> InR $ InL $
+          PanicMessageConstructor(stack, 1, InterpreterStepCC step, "thunk env size mismatch"))
+    Nothing -> throwHeapErrorWithStepInfoSTE (\ step -> InR $ InL $
+      PanicMessageConstructor(stack, 1, InterpreterStepCC step, "thunk code ID " ++ show codeId ++ " not in code registry"))
+
+  where
+    compatibleEnv :: V.Vector a -> ThunkCodeRecordCC -> Bool
+    compatibleEnv envRefs (ThunkCodeRecordCC env binderInfos _) =
+      refCount == V.length binderInfos && refCount == fromIntegral (getEnvSize env)
+      where
+        refCount = V.length envRefs
+
+    deref :: Natural -> Ref -> EvalCC c s (V.Vector Ref, ThunkCodeId)
+    deref lookups ref = do
+      val <- hoistedLookup ref
+      case val of
+         IndirectionCC nextRef -> deref (succ lookups) nextRef
+         ThunkCC envRefs codeId -> return (envRefs, codeId)
+         nonThunk -> throwHeapErrorWithStepInfoSTE $ \step -> InR $ InL $
+           UnexpectedNotThunkInForcePosition var
+                                             (nonThunk :: ValueRepCC Ref)
+                                             stack
+                                             lookups
+                                             (InterpreterStepCC step)
 
 {- | enterClosureCC has to resolve its first heap ref argument to the closure code id
 and then it pushes
