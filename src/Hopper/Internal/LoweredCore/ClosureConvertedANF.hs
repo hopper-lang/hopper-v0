@@ -123,6 +123,9 @@ data ValueRepCC ref =
               | IndirectionCC ref
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
+class CodeRecord a where
+  envSize :: a -> Word64
+  envBinders :: a -> V.Vector BinderInfoCC
 
 data ThunkCodeRecordCC
   = ThunkCodeRecordCC !EnvSize      -- number of slots in the environment struct
@@ -131,6 +134,13 @@ data ThunkCodeRecordCC
                                   -- TODO, replace the sourcenames list field with V.Vector CCAnfBinderInfo
                     !AnfCC        -- the code
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance CodeRecord ThunkCodeRecordCC where
+  envSize (ThunkCodeRecordCC size _ _) = getEnvSize size
+  {-# INLINE envSize #-}
+  envBinders (ThunkCodeRecordCC _ bs _) = bs
+  {-# INLINE envBinders #-}
+
 {- |
 for now we pass all function args as references to boxed heap values,
 but in the future we can be clever about specialization / register-sized values.
@@ -150,6 +160,11 @@ data ClosureCodeRecordCC
                       !AnfCC
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
+instance CodeRecord ClosureCodeRecordCC where
+  envSize (ClosureCodeRecordCC size _ _ _ _) = getEnvSize size
+  {-# INLINE envSize #-}
+  envBinders (ClosureCodeRecordCC _ bs _ _ _) = bs
+  {-# INLINE envBinders #-}
 
 data AnfCC
     = ReturnCC !(V.Vector LocalVariableCC)

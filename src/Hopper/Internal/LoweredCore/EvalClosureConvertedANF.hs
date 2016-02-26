@@ -216,6 +216,14 @@ hoistedTransitiveLookup
   -> forall c. EvalCC c s (Natural, ValueRepCC Ref)
 hoistedTransitiveLookup ref = extendErrorTrans (transitiveHeapLookup ref)
 
+{-# SPECIALIZE compatibleEnv :: V.Vector a -> ClosureCodeRecordCC -> Bool #-}
+{-# SPECIALIZE compatibleEnv :: V.Vector a -> ThunkCodeRecordCC -> Bool #-}
+compatibleEnv :: CodeRecord r => V.Vector a -> r -> Bool
+compatibleEnv envRefs rec = refCount == V.length (envBinders rec)
+                         && refCount == fromIntegral (envSize rec)
+  where
+    refCount = V.length envRefs
+
 lookupHeapClosure
   :: CodeRegistryCC
   -> ControlStackCC
@@ -226,21 +234,14 @@ lookupHeapClosure (CodeRegistryCC _thunk closureMap) stack var initialRef = do
   (closureEnvRefs, codeId) <- deref initialRef
   mCodeRecord <- return $ Map.lookup codeId closureMap
   case mCodeRecord of
-   Just cdRecord | compatibleEnv2CodeRecord closureEnvRefs cdRecord
-                                    -> return (closureEnvRefs,codeId,cdRecord)
-                 | otherwise -> throwEvalError (\step ->
-     PanicMessageConstructor(stack, 1, InterpreterStepCC step, "closure env size mismatch"))
-   Nothing -> throwEvalError (\step ->
-     PanicMessageConstructor(stack, 1, InterpreterStepCC step, "closure code ID " ++ show codeId ++ " not in code registry"))
+    Just cdRecord | compatibleEnv closureEnvRefs cdRecord ->
+                      return (closureEnvRefs, codeId, cdRecord)
+                  | otherwise -> throwEvalError (\step ->
+                      PanicMessageConstructor(stack, 1, InterpreterStepCC step, "closure env size mismatch"))
+    Nothing -> throwEvalError (\step ->
+      PanicMessageConstructor(stack, 1, InterpreterStepCC step, "closure code ID " ++ show codeId ++ " not in code registry"))
 
   where
-    compatibleEnv2CodeRecord :: V.Vector a -> ClosureCodeRecordCC -> Bool
-    compatibleEnv2CodeRecord envVect
-          (ClosureCodeRecordCC envSize
-           envBinderInfo _ _ _) = V.length envVect == V.length envBinderInfo
-                             && V.length envVect ==  (fromIntegral $ getEnvSize envSize)
-                                     -- is this redundant checking/info?
-
     deref :: Ref -> forall c. EvalCC c s (V.Vector Ref, ClosureCodeId)
     deref ref = do
       (lookups, val) <- hoistedTransitiveLookup ref
@@ -267,18 +268,12 @@ lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
   case mCodeRecord of
     Just codeRec
       | compatibleEnv envRefs codeRec -> return (envRefs, codeId, codeRec)
-      | otherwise -> throwEvalError (\step ->
-          PanicMessageConstructor(stack, 1, InterpreterStepCC step, "thunk env size mismatch"))
-    Nothing -> throwEvalError (\step ->
-      PanicMessageConstructor(stack, 1, InterpreterStepCC step, "thunk code ID " ++ show codeId ++ " not in code registry"))
+      | otherwise -> throwEvalError $ \step ->
+          PanicMessageConstructor(stack, 1, InterpreterStepCC step, "thunk env size mismatch")
+    Nothing -> throwEvalError $ \step ->
+      PanicMessageConstructor(stack, 1, InterpreterStepCC step, "thunk code ID " ++ show codeId ++ " not in code registry")
 
   where
-    compatibleEnv :: V.Vector a -> ThunkCodeRecordCC -> Bool
-    compatibleEnv envRefs (ThunkCodeRecordCC env binderInfos _) =
-      refCount == V.length binderInfos && refCount == fromIntegral (getEnvSize env)
-      where
-        refCount = V.length envRefs
-
     deref :: Ref -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId)
     deref ref = do
       (lookups, val) <- hoistedTransitiveLookup ref
