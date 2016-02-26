@@ -172,5 +172,3 @@ unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap 0 cnt hp)
 -- run a program in an empty heap
 runEmptyHeap :: Monad m =>  Natural -> HeapStepCounterM val m  b-> m (b,CounterAndHeap val )
 runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap 0 ct $ Heap (Ref 1) Map.empty)
-
-
