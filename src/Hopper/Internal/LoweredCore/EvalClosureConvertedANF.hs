@@ -34,7 +34,7 @@ import Data.Word(Word64)
 import GHC.Generics
 import Numeric.Natural
 import qualified Data.Vector as V
-import Hopper.Internal.Core.Literal(PrimOpId)
+import Hopper.Internal.Core.Literal (Literal, PrimOpId)
 
 type EvalCC c s a
   = HeapStepCounterM (ValueRepCC Ref)
@@ -110,6 +110,12 @@ data EvalErrorCC val =
                       ,eeCCErrorPanicFileLine :: Int
                       -- TODO: add filename and line of haskell source
                       }
+   | UnexpectedNotLiteral
+                      {eeCCOffendingClosureLocalVariable :: !LocalVariableCC
+                      ,eeCCOffendingNotAClosure :: !val
+                      ,eeCCcontrolStackAtError :: !ControlStackCC
+                      ,eeCCHeapLookupStepOffset :: !Natural --
+                      ,eeCCReductionStepAtError:: !InterpreterStepCC }
    deriving (Eq,Ord,Show,Typeable,Read)
 
 #define PanicMessageConstructor(constack,stepAdjust,reductionStep,msg) \
@@ -131,12 +137,11 @@ throwEvalError
 throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InR . InL . handler
 
 localEnvLookup
-  :: CodeRegistryCC -- TODO: will we need this here?
-  -> EnvStackCC
+  :: EnvStackCC
   -> ControlStackCC
   -> LocalVariableCC
   -> forall c. EvalCC c s Ref
-localEnvLookup _codeReg env controlStack var@(LocalVarCC theVar) = go env theVar
+localEnvLookup env controlStack var@(LocalVarCC theVar) = go env theVar
   where
     go :: EnvStackCC -> Word64 -> EvalCC c s Ref
     go EnvEmptyCC _ = throwEvalError (\n ->
@@ -151,7 +156,7 @@ evalCCAnf
   -> AnfCC
   -> forall c. EvalCC c s (V.Vector Ref)
 evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
-  resRefs <- traverse (localEnvLookup codeReg envStack contStack) localVarLS
+  resRefs <- traverse (localEnvLookup envStack contStack) localVarLS
   enterControlStackCC codeReg contStack resRefs
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
   dispatchRHSCC codeReg
@@ -285,6 +290,28 @@ lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
                                              stack
                                              lookups
                                              (InterpreterStepCC step)
+
+lookupHeapLiteral
+  :: EnvStackCC
+  -> ControlStackCC
+  -> LocalVariableCC
+  -> forall c. EvalCC c s Literal
+lookupHeapLiteral envStack controlStack var = do
+  initRef <- localEnvLookup envStack controlStack var
+  deref initRef
+
+  where
+    deref :: Ref -> forall c. EvalCC c s Literal
+    deref ref = do
+      (lookups, val) <- hoistedTransitiveLookup ref
+      case val of
+        ValueLitCC l -> return l
+        _ -> throwEvalError $ \step ->
+          UnexpectedNotLiteral var
+                               val
+                               controlStack
+                               lookups
+                               (InterpreterStepCC step)
 
 {- | enterClosureCC has to resolve its first heap ref argument to the closure code id
 and then it pushes
