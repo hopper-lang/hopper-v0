@@ -125,39 +125,59 @@ because this is sort of in between! :)
 -}
 
 
-localEnvLookup ::    CodeRegistryCC -> EnvStackCC -> ControlStackCC  -> LocalVariableCC
-    -> HeapStepCounterM (ValueRepCC Ref)  (STE (c :+ EvalErrorCC  (ValueRepCC Ref) :+ HeapError ) s   ) Ref
+localEnvLookup
+  :: CodeRegistryCC -- TODO: will we need this here?
+  -> EnvStackCC
+  -> ControlStackCC
+  -> LocalVariableCC
+  -> forall c. EvalCC c s Ref
 localEnvLookup _codeReg env controlStack var@(LocalVarCC theVar) = go env theVar
   where
-    go :: EnvStackCC -> Word64 ->  HeapStepCounterM (ValueRepCC Ref)  (STE (c :+ EvalErrorCC val :+ HeapError ) s   ) Ref
-    go EnvEmptyCC _ = throwHeapErrorWithStepInfoSTE (\n -> InR $   InL  $ BadLocalVariableCC var  controlStack (InterpreterStepCC n) )
-    go (EnvConsCC theRef _) 0  = return theRef
+    go :: EnvStackCC -> Word64 -> EvalCC c s Ref
+    go EnvEmptyCC _ = throwHeapErrorWithStepInfoSTE (\n ->
+                        InR $ InL $ BadLocalVariableCC var controlStack (InterpreterStepCC n))
+    go (EnvConsCC theRef _) 0 = return theRef
     go (EnvConsCC _ rest) w = go rest (w - 1)
 
-evalCCAnf :: CodeRegistryCC -> EnvStackCC -> ControlStackCC
-  -> AnfCC -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC (ValueRepCC Ref)  :+ HeapError ) s) (V.Vector Ref)
-evalCCAnf codeReg envStack contStack  (ReturnCC localVarLS) =
+evalCCAnf
+  :: CodeRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> AnfCC
+  -> forall c. EvalCC c s (V.Vector Ref)
+evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) =
       do  resRefs <- traverse (localEnvLookup codeReg envStack contStack) localVarLS
           enterControlStackCC codeReg contStack resRefs
-evalCCAnf codeReg envStack contStack  (LetNFCC binders rhscc bodcc) =
+evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
                         dispatchRHSCC codeReg envStack
                                   (LetBinderCC binders () envStack bodcc contStack)
                                   rhscc
-evalCCAnf codeReg envStack contStack  (TailCallCC appcc ) = applyCC codeReg envStack contStack appcc
+evalCCAnf codeReg envStack contStack (TailCallCC appcc ) = applyCC codeReg envStack contStack appcc
 
 -- | dispatchRHSCC is a wrapper for calling either allocateCC OR applyCC
-dispatchRHSCC::  CodeRegistryCC -> EnvStackCC -> ControlStackCC -> RhsCC
-  -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError ) s) (V.Vector Ref)
+dispatchRHSCC
+  :: CodeRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> RhsCC
+  -> forall c. EvalCC c s (V.Vector Ref)
 dispatchRHSCC = undefined
 
 --- allocateRHSCC always constructs a SINGLE heap ref to whatever it just allocated,
-allocateRHSCC::  CodeRegistryCC -> EnvStackCC -> ControlStackCC -> AllocCC
-  -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError ) s) (V.Vector Ref)
+allocateRHSCC
+  :: CodeRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> AllocCC
+  -> forall c. EvalCC c s (V.Vector Ref)
 allocateRHSCC = undefined
 
-applyCC :: CodeRegistryCC -> EnvStackCC
-  -> ControlStackCC -> AppCC
-  -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError ) s) (V.Vector Ref)
+applyCC
+  :: CodeRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> AppCC
+  -> forall c. EvalCC c s (V.Vector Ref)
 applyCC = undefined
 
 -- enterOrResolveThunkCC will push a update Frame onto the control stack if its evaluating a thunk closure that hasn't been computed
@@ -166,8 +186,12 @@ applyCC = undefined
 -- if the initial lookup IS a blackhole, we have an infinite loop, abort!
 -- because our type system will distinguish thunks from ordinary values
 -- this is the only location that expects a black hole in our code base ??? (not sure, but maybe)
-enterOrResolveThunkCC :: CodeRegistryCC -> EnvStackCC -> ControlStackCC -> LocalVariableCC
-   -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC  (ValueRepCC Ref) :+ HeapError ) s) (V.Vector Ref)
+enterOrResolveThunkCC
+  :: CodeRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> LocalVariableCC
+  -> forall c. EvalCC c s (V.Vector Ref)
 enterOrResolveThunkCC = undefined
 
 {-
@@ -180,22 +204,17 @@ this will require analyzing core, and designing some sort of performance measure
 
 -- FIXME : think about ways to make error extension easier
 
-
 hoistedLookup
-  :: forall s.
-     Ref
-  -> forall c.
-     HeapStepCounterM (ValueRepCC Ref)
-                      (STE (c :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError)) s)
-                      (ValueRepCC Ref)
+  :: Ref
+  -> forall c. EvalCC c s (ValueRepCC Ref)
 hoistedLookup ref = extendErrorTrans (heapLookup ref)
 
 lookupHeapClosure
-  :: forall  s. CodeRegistryCC
+  :: CodeRegistryCC
   -> ControlStackCC
   -> LocalVariableCC
   -> Ref
-  -> forall c . EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
+  -> forall c. EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
 lookupHeapClosure (CodeRegistryCC _thunk closureMap) controlStack localVar initialRef = do
   (closureEnvRefs, codeId) <- go 1 initialRef
   mCodeRecord <- return $ Map.lookup codeId closureMap
@@ -237,7 +256,7 @@ lookupHeapThunk
   -> ControlStackCC
   -> LocalVariableCC
   -> Ref
-  -> forall c . EvalCC c s (V.Vector Ref, ThunkCodeId, ThunkCodeRecordCC)
+  -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId, ThunkCodeRecordCC)
 lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
   (envRefs, codeId) <- deref 1 initialRef
   let mCodeRecord = Map.lookup codeId thunks
@@ -277,7 +296,7 @@ enterClosureCC
   -> EnvStackCC
   -> ControlStackCC
   -> (LocalVariableCC, V.Vector LocalVariableCC)
-  -> EvalCC c s (V.Vector Ref)
+  -> forall c. EvalCC c s (V.Vector Ref)
 enterClosureCC _codReg@(CodeRegistryCC _thunk _closureMap)
                envStack
                controlstack
@@ -297,13 +316,19 @@ enterClosureCC _codReg@(CodeRegistryCC _thunk _closureMap)
  but cosmic radiation, a bug in GHC, or a bug in the hopper infrastructure (the most likely :) )  could
  result in a mismatch between reality and our expectations, so never hurts to check.
  -}
-enterPrimAppCC :: CodeRegistryCC -> EnvStackCC -> ControlStackCC
-        -> (PrimOpId,V.Vector LocalVariableCC)
-        -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC  (ValueRepCC Ref) :+ HeapError ) s) (V.Vector Ref)
+enterPrimAppCC
+  :: CodeRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> (PrimOpId, V.Vector LocalVariableCC)
+  -> forall c. EvalCC c s (V.Vector Ref)
 enterPrimAppCC = undefined
 
-enterControlStackCC :: CodeRegistryCC  -> ControlStackCC -> (V.Vector Ref)
-  -> HeapStepCounterM (ValueRepCC Ref) (STE (c :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError ) s) (V.Vector Ref)
+enterControlStackCC
+  :: CodeRegistryCC
+  -> ControlStackCC
+  -> V.Vector Ref
+  -> forall c. EvalCC c s (V.Vector Ref)
 enterControlStackCC = undefined
 
 {-    = ReturnCC ![LocalVariableCC]
