@@ -330,4 +330,4 @@ enterControlStackCC
   -> forall c. EvalCC c s (V.Vector Ref)
 enterControlStackCC = undefined
 
--- evalANF ::  Anf Ref -> ControlStackAnf -> HeapStepCounterM hepRep (STE (c :+ ErrorEvalAnf :+ HeapError ) s) Ref
+-- evalANF ::  Anf Ref -> ControlStackAnf -> EvalCC c s Ref
