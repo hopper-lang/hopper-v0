@@ -145,14 +145,16 @@ evalCCAnf
   -> ControlStackCC
   -> AnfCC
   -> forall c. EvalCC c s (V.Vector Ref)
-evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) =
-      do  resRefs <- traverse (localEnvLookup codeReg envStack contStack) localVarLS
-          enterControlStackCC codeReg contStack resRefs
+evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
+  resRefs <- traverse (localEnvLookup codeReg envStack contStack) localVarLS
+  enterControlStackCC codeReg contStack resRefs
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
-                        dispatchRHSCC codeReg envStack
-                                  (LetBinderCC binders () envStack bodcc contStack)
-                                  rhscc
-evalCCAnf codeReg envStack contStack (TailCallCC appcc ) = applyCC codeReg envStack contStack appcc
+  dispatchRHSCC codeReg
+                envStack
+                (LetBinderCC binders () envStack bodcc contStack)
+                rhscc
+evalCCAnf codeReg envStack contStack (TailCallCC appcc) =
+  applyCC codeReg envStack contStack appcc
 
 -- | dispatchRHSCC is a wrapper for calling either allocateCC OR applyCC
 dispatchRHSCC
