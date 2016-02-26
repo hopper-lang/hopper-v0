@@ -1,3 +1,4 @@
+[![Master Build Status](https://travis-ci.org/hopper-lang/hopper.svg?branch=master)](https://travis-ci.org/hopper-lang/hopper)
 # Hopper a sound modern language for computation and transactional resource logic
 
 ## Tell me about what hopper can do
