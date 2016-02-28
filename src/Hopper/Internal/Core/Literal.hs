@@ -32,6 +32,8 @@ module Hopper.Internal.Core.Literal
   , GmpMathOpId(..)
   , gmpMathCost
   , LiteralOp(..)
+  ,naturalLimbSize
+  ,integerLimbSize
   ) where
 
 import Data.Data
