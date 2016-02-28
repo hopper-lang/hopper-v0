@@ -57,10 +57,10 @@ library
   exposed-modules:
                     Data.Hop.Or
                     Control.Monad.STE
-                    Hopper.Internal.State
                     Hopper.HBound
                     Hopper.Utils.Swap
                     Hopper.Utils.Closed
+                    Hopper.Utils.BigMath
                     Hopper.Internal.Runtime.Heap
                     Hopper.Internal.Runtime.HeapRef
                     Hopper.Internal.Type.Relevance

@@ -2,12 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies, TypeOperators #-}
 
 module Hopper.Internal.Runtime.Heap(

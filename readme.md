@@ -10,7 +10,8 @@
 
 
 # Contributing
-Awesome, lets talk!
+Awesome, lets talk!, we can be found on the '#hopper' channel on freenode.
+
 
 # Build Guide
 Read [The Build Guide ](./BuildGuide.md) and if it doesn't work, please file a ticket

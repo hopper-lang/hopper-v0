@@ -6,7 +6,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 module Hopper.Internal.Core.Anf where

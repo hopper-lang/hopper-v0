@@ -28,7 +28,6 @@ module Hopper.Internal.Core.Literal
   , PrimOpId(..)
   , ConstrId(..)
   , evalTotalMathPrimopCode
-  , integerLog
   , hoistTotalMathLiteralOp
   , GmpMathOpId(..)
   , gmpMathCost
@@ -36,15 +35,16 @@ module Hopper.Internal.Core.Literal
   ) where
 
 import Data.Data
+import Data.Word
 import Data.Text (Text)
 import Data.Ratio (numerator, denominator)
-import GHC.Exts (Word(W#))
+--import GHC.Exts (Word(W#))
 import GHC.Generics
-import GHC.Integer.GMP.Internals (sqrInteger, lcmInteger, gcdInteger,
-                                  gcdExtInteger, recipModInteger,
-                                  sizeInBaseInteger)
-import GHC.Natural (powModNatural, wordToNatural)
+import GHC.Integer.GMP.Internals (sqrInteger ,lcmInteger , gcdInteger
+                                 ,gcdExtInteger, recipModInteger )
+import GHC.Natural (powModNatural)
 import Numeric.Natural
+import Hopper.Utils.BigMath
 
 data Literal
   = LInteger !Integer
@@ -146,36 +146,43 @@ data LiteralOp
   | NatPowMod   Natural  Natural  Natural -- a^b mod c
   deriving (Show)
 
-integerLog :: Integral a => a -> Natural
-integerLog i = wordToNatural (W# (sizeInBaseInteger (toInteger i) 2#))
+naturalLimbSize :: Natural -> Word64
+naturalLimbSize = naturalSizeInWord64
 
-ratNSquaredCost :: Rational -> Rational -> Natural
+integerLimbSize :: Integer -> Word64
+integerLimbSize = integerSizeInWord64
+
+ratNSquaredCost :: Rational -> Rational -> Word64
 ratNSquaredCost x y = n * n
   where
-    n = maximum (fmap integerLog [ numerator x, denominator x
+    n = maximum (fmap integerLimbSize [ numerator x, denominator x
                                  , numerator y, denominator y])
 
 -- TODO:
 -- - determine how to equate math and heap costs
 -- - increment counter before evaluating math op
 
+{- | gmpMathCost is an approximation of the complexity of the operations
+that ghc exposes from GMP.
 
+these are currently VERY VERY crude upper bounds on complexity
+-}
 
-gmpMathCost :: LiteralOp -> Natural
-gmpMathCost (IntAdd  x y) = integerLog (max x y)
-gmpMathCost (IntSub  x y) = integerLog (max x y)
-gmpMathCost (IntMult x y) = integerLog x * integerLog y
-gmpMathCost (IntSquare x) = integerLog x * integerLog x
-gmpMathCost (IntRecipMod _ m) = integerLog m * integerLog m -- euclid's
-gmpMathCost (IntLcm x y) = integerLog x * integerLog y -- due to (a*b)/gcd(a,b)
-gmpMathCost (IntGcd x y) = integerLog x * integerLog y -- euclid's
-gmpMathCost (IntGcdExt x y) = integerLog x * integerLog y -- euclid's
+gmpMathCost :: LiteralOp -> Word64
+gmpMathCost (IntAdd  x y) = integerLimbSize (max x y)
+gmpMathCost (IntSub  x y) = integerLimbSize (max x y)
+gmpMathCost (IntMult x y) = integerLimbSize x * integerLimbSize y
+gmpMathCost (IntSquare x) = integerLimbSize x * integerLimbSize x
+gmpMathCost (IntRecipMod _ m) = integerLimbSize m *  integerLimbSize m -- euclid's
+gmpMathCost (IntLcm x y) = integerLimbSize x * integerLimbSize y -- due to (a*b)/gcd(a,b)
+gmpMathCost (IntGcd x y) = integerLimbSize x * integerLimbSize y -- euclid's
+gmpMathCost (IntGcdExt x y) = integerLimbSize x * integerLimbSize y -- euclid's
 gmpMathCost (RatAdd x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
 gmpMathCost (RatSub x y) = 6 * ratNSquaredCost x y -- 3 mult, 1 gcd, 2 div
 gmpMathCost (RatMult x y) = 5 * ratNSquaredCost x y -- 2 mult, 1 gcd, 2 div
-gmpMathCost (NatAdd  x y) = integerLog (max x y)
-gmpMathCost (NatMult x y) = integerLog x * integerLog y
-gmpMathCost (NatPowMod x y m) = integerLog x * integerLog y * integerLog m
+gmpMathCost (NatAdd  x y) = naturalLimbSize (max x y)
+gmpMathCost (NatMult x y) = naturalLimbSize x * naturalLimbSize y
+gmpMathCost (NatPowMod x y m) = naturalLimbSize x * naturalLimbSize y * naturalLimbSize m
 
 evalTotalMathPrimopCode :: LiteralOp -> [Literal]
 evalTotalMathPrimopCode (IntAdd      a b) = [LInteger (a + b)]
