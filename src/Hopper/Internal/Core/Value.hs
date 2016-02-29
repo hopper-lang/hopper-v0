@@ -11,7 +11,7 @@
 
 module Hopper.Internal.Core.Value where
 
-import Bound
+--import Bound
 import Prelude.Extras
 import Data.Text (Text)
 import Data.Data
@@ -34,7 +34,7 @@ data ValueF ast   v =    VLitF !Literal
               | ThunkF !(ast   v )
               --  should this be a heap ref to
               -- closure to have the right sharing ?
-              | DirectClosureF !(Closure ast  v) -- heap ref?
+              | DirectClosureF !(Closure   v) -- heap ref?
               | BlackHoleF
               | IndirectionF !v
               --- in the types are calling conventions paper,
@@ -116,9 +116,10 @@ data Arity = ArityBoxed {_extractArityInfo :: !Text} --- for now our model of ar
 
 --- | 'Closure' may need some rethinking ... later
 --- they're kinda the erasure of a lambda ... for now
-data Closure ast   a = MkClosure ![Arity] !(Scope Text ast a)
+--- TODO FIXME, this module is dead code
+data Closure   a = MkClosure ![Arity] !( a)
   deriving (Generic,Eq,Ord,Show,Read,Functor,Foldable,Traversable,Typeable)
-instance (Monad ast, Eq1 ast) => Eq1 (Closure ast)
-instance (Monad ast, Ord1 ast) => Ord1 (Closure ast)
-instance (Monad ast, Read1 ast) => Read1 (Closure ast)
-instance (Monad ast, Show1 ast) => Show1 (Closure ast)
+instance Eq1 (Closure )
+instance  Ord1 (Closure )
+instance Read1 (Closure )
+instance  Show1 (Closure )
