@@ -224,7 +224,7 @@ hoistedTransitiveLookup ref = extendErrorTrans (transitiveHeapLookup ref)
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ClosureCodeRecordCC -> Bool #-}
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ThunkCodeRecordCC -> Bool #-}
 compatibleEnv :: CodeRecord r => V.Vector a -> r -> Bool
-compatibleEnv envRefs rec = refCount == V.length (envBinders rec)
+compatibleEnv envRefs rec = refCount == V.length (envBindersInfo rec)
                          && refCount == fromIntegral (envSize rec)
   where
     refCount = V.length envRefs
