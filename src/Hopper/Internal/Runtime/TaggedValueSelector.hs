@@ -1,4 +1,7 @@
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, FunctionalDependencies, ScopedTypeVariables #-}
+{-# LANGUAGE  MultiParamTypeClasses, FunctionalDependencies  #-}
+{-# LANGUAGE ScopedTypeVariables,RankNTypes #-}
+{-# LANGUAGE TypeFamilies, DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Hopper.Internal.Runtime.TaggedValueSelector where
 
@@ -8,9 +11,7 @@ import qualified Data.Vector as V
 
 import Control.Lens.Prism(Prism')
 import Control.Lens.Fold(preview)
-import Control.Lens.Review(review,AReview)
-import qualified Control.Lens.Getter
-import qualified Data.Monoid
+import Control.Lens.Review(review)
 {-
 not sure about this data model, but trying it out to see what happens
 though will likely move away from this pretty quickly
@@ -21,8 +22,9 @@ data ClosureF a = ClosureF (V.Vector (RefOf a)) (ClosureCodeOf a)
 data ThunkF a = ThunkF (V.Vector (RefOf a)) (ThunkCodeOf a)
 data BlackHoleF a = BlackHoleF
 data IndirectionF a = IndirectionF (RefOf a)
+data NeutralF a =  NeutralF (NeutralOf a (RefOf a))
 --type family EnvOf (closureLike :: *) :: *
-type family NeutralOf v :: *
+type family NeutralOf (v :: *  ):: *  -> *
 type family RefOf (a :: *) :: *
 
 {-
@@ -34,14 +36,14 @@ type family ClosureCodeOf (a :: *) :: *
 type family ThunkCodeOf ( a :: * ) :: *
 
 
-{-# INLINE get #-}
-get :: forall a s.
-  Control.Lens.Getter.Getting (Data.Monoid.First a) s a
-               -> s -> Maybe a
-get s v = preview s v
+{-# INLINE extract #-}
+extract :: forall a s.
+  Prism' s a  -> s -> Maybe a
+extract s v = preview s v
 
-set :: forall t b. AReview t b -> b -> t
-set s v = review s v
+{-# INLINE inject #-}
+inject :: forall t b. Prism' t b  -> b -> t
+inject s v = review s v
 
 class TaggedHeapValue v   where
   asLit :: Prism' v  (LiteralF v)
