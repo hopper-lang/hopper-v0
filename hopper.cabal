@@ -67,7 +67,6 @@ library
                     Hopper.Internal.Type.Relevance
                     Hopper.Internal.Core.Term
                     Hopper.Internal.Core.Type
-                    Hopper.Internal.Core.Value
                     Hopper.Internal.Core.Anf
                     Hopper.Internal.Core.Literal
                     Hopper.Internal.LoweredCore.ClosureConvertedANF

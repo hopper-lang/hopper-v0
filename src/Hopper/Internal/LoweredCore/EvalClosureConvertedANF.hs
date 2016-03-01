@@ -21,7 +21,7 @@ import Hopper.Internal.Runtime.Heap (
   ,heapAllocate
   ,heapLookup
   ,checkedCounterIncrement
-  ,checkedCounterJump
+  ,checkedCounterCost
   ,throwHeapErrorWithStepInfoSTE
   ,transitiveHeapLookup
   )
@@ -47,7 +47,7 @@ suppressUnusedWarnings = undefined unsafeHeapUpdate
   heapAllocate
   heapLookup
   checkedCounterIncrement
-  checkedCounterJump
+  checkedCounterCost
 
 {- FIXME: we currently have a quadratic blowup for high-arity curried functions
    with this naive (implicit) closure conversion setup. we can fix this by
