@@ -9,13 +9,35 @@
 {-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
 
 
-module Hopper.Internal.LoweredCore.ClosureConvertedANF where
+module Hopper.Internal.LoweredCore.ClosureConvertedANF(
+  AnfCC(..)
+  ,LocalNamelessVar(..) --- this should move out
+  ,VariableCC(..) -- this should move out????
+  ,AllocCC(..)
+  ,AppCC(..)
+  ,RhsCC(..)
+  ,GlobalSymbol(..) --- this should move out
+  ,ClosureCodeId(..)
+  ,ThunkCodeId(..)
+  ,EnvSize(..) --- not sure if this is needed
+  ,CodeArity(..) -- not sure if this is needed
+   -- ,TypeCC(..) --- this shouldn't need to exist
+  ,BinderInfoCC(..) --- not sure if there need be a lowered form of binders except to lower types?
+  ,TransitiveLookup(..) -- this is a class reexport
+  ,CodeRecord(..) -- this is an adhoc class that shouldn't be living here :)
+  ,ValueRepCC(..)
+  ,ClosureCodeRecordCC(..)
+  ,ThunkCodeRecordCC(..)
+  ,SymbolRegistryCC(..)
+  ,lookupThunkCodeId
+  ,lookupClosureCodeId
+  ) where
 
 import Data.Word
 import Data.Data
 import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 
---import Data.Text (Text)
+import qualified Data.Text as T (Text)
 import Hopper.Internal.Core.Literal
 import Hopper.Utils.Closed
 import Hopper.Internal.Core.Term
@@ -47,9 +69,29 @@ may also want to think about some values only being listed in the local environm
 maybe
 -}
 
--- | LocalVariableCC is a local variable that is operationally an offset in an environment structure
-newtype LocalVariableCC = LocalVarCC Word64
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+--- | GlobalSymbol should correspond to the fully qualified name
+--- of a reachable value that is induced UNIQUELY by a module's name and
+--- set of dependencies and how it was built.
+--- NB: this might be more subtle in the presence of linearity, but lets table that for now
+---
+--- this may or may not  actually need to just be a functory parametery in the AST
+--- but lets keep it simple fo rnow
+newtype GlobalSymbol = GlobalSymbol T.Text
+  deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
+
+data LocalNamelessVar =
+   LocalNamelessVar {localBinderDepth :: {-# UNPACK #-}  !Word32
+           ,localBinderArg :: {-# UNPACK #-}   !Word32
+           ,  localDebruijnDepth :: {-# UNPACK #-}  !Word64}
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic )
+
+-- | VariableCC is either a local env variable or a globally fixed symbol (think like linkers and object code)
+-- TODO: later lowering passes will induce register / stack placements and
+-- veer into forcing specification of caller/callee saving conventions on code control tranfers
+data VariableCC  =
+    LocalVarCC {-# UNPACK #-} !LocalNamelessVar
+    | GlobalVarSym {-# UNPACK #-}  !GlobalSymbol
+  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic )
 
 newtype ThunkCodeId =
     ThunkCodeId { unThunkCodeId :: Word64 }
@@ -113,22 +155,22 @@ how should the heap rep for Constructors, Thunks and Closures be related
 -}
 
 data ValueRepCC ref =
-                ValueLitCC !Literal
+                ValueLitCC   !Literal
               | ConstructorCC !ConstrId  !(V.Vector ref)
-              | ThunkCC !(V.Vector ref)  !(ThunkCodeId)
+              | ThunkCC !(V.Vector ref)  {-# UNPACK #-}  !(ThunkCodeId)
               --  should this be a heap ref to
               -- closure to have the right sharing ?
-              | ClosureCC !(V.Vector ref) !(ClosureCodeId)  -- heap ref?
+              | ClosureCC !(V.Vector ref)  {-# UNPACK #-}  !(ClosureCodeId)  -- heap ref?
               | BlackHoleCC
-              | IndirectionCC ref
+              | IndirectionCC !ref
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 class CodeRecord a where
   envSize :: a -> Word64
   envBindersInfo :: a -> V.Vector BinderInfoCC
 
-data ThunkCodeRecordCC
-  = ThunkCodeRecordCC !EnvSize      -- number of slots in the environment struct
+data ThunkCodeRecordCC =
+  ThunkCodeRecordCC {-# UNPACK #-}  !EnvSize      -- number of slots in the environment struct
                                   --
                     !(V.Vector BinderInfoCC) -- source names, if applicable, for the captured free vars in the orig source
                                   -- TODO, replace the sourcenames list field with V.Vector CCAnfBinderInfo
@@ -147,12 +189,12 @@ but in the future we can be clever about specialization / register-sized values.
 Additionally
 
 -}
-data ClosureCodeRecordCC
-  = ClosureCodeRecordCC !EnvSize -- is this redundant
+data ClosureCodeRecordCC =
+  ClosureCodeRecordCC  {-# UNPACK #-}  !EnvSize -- is this redundant
                       !(V.Vector BinderInfoCC)
                       -- source names, if applicable, for the captured free vars in the orig source
                                     --- TODO / FIXME replace with CCAnfBinderInfo
-                      !CodeArity  -- is this redundant?
+                      {-# UNPACK #-}  !CodeArity  -- is this redundant?
                       !(V.Vector BinderInfoCC) -- explicit
                       -- ![CCAnfBinderInfo] -- info about the function args
                       -- how many explicit arguments the function takes
@@ -166,8 +208,8 @@ instance CodeRecord ClosureCodeRecordCC where
   envBindersInfo (ClosureCodeRecordCC _ bs _ _ _) = bs
   {-# INLINE envBindersInfo #-}
 
-data AnfCC
-    = ReturnCC !(V.Vector LocalVariableCC)
+data AnfCC  =
+    ReturnCC !(V.Vector VariableCC)
     | LetNFCC
           {- TODO: src loc info -}
           !(V.Vector BinderInfoCC)  -- TODO FIXME, replace with CCAnfBinderInfo
@@ -180,11 +222,35 @@ data AnfCC
     | TailCallCC !(AppCC)
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-data AppCC
-    = EnterThunkCC !LocalVariableCC -- if a is neutral term OR a free variable, this becomes neutral
-    | FunAppCC !LocalVariableCC !(V.Vector LocalVariableCC) --- if function position of FunApp is neutral, its neutral
-    | PrimAppCC !PrimOpId !(V.Vector LocalVariableCC) -- if any arg of a primop is neutral, its neutral
+
+data AppCC  =
+    EnterThunkCC !VariableCC -- if a is neutral term OR a free variable, this becomes neutral
+    | FunAppCC !VariableCC !(V.Vector VariableCC) --- if function position of FunApp is neutral, its neutral
+    | PrimAppCC !PrimOpId !(V.Vector VariableCC) -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
+     {- | CaseCc
+        --- desugared case, not perfect, but good enough for sum data types,
+        --- not sure about if it aligns with say... record projections and stuff
+            VariableCC -- variable to case on
+            TypeCC
+            --- the type of the variable, because we need that to determine what constructors are admissible
+            --- and do correct coverage checking
+            [(ConstrId
+              , V.Vector BinderInfoCC ---
+              , AnfCC)] -- tag based dispatch??? kinda lame for Numbers and strings and stuff, only constructors
+            Maybe AnfCc
+                --- wild card case if applicable???
+                ---  may correspond to either catch all cases or absurds??
+                --- or would Case x typ [] Nothing , --- be the absurd case
+
+        | RecordProjection   LocalVar   Type  Selector info
+          --- for projecting out from nonlinear dependent or ordinary products?
+          -- ghc and friends just use case for products, but that actually
+          -- has known blowups in complexity  on large records
+          -- TODO: look at how agda and idris and lean do this stuff
+
+
+               -}
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data RhsCC
@@ -194,22 +260,40 @@ data RhsCC
 
 data AllocCC
   = SharedLiteralCC !Literal
-  | ConstrAppCC !ConstrId
-                !(V.Vector LocalVariableCC)
+  | ConstrAppCC {-# UNPACK #-}  !ConstrId
+                !(V.Vector VariableCC)
   | AllocateThunkCC
-        !(V.Vector LocalVariableCC) -- the set of local variables captured in the thunk environment, in this order
+        !(V.Vector VariableCC) -- the set of local variables captured in the thunk environment, in this order
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
   | AllocateClosureCC
-        !(V.Vector LocalVariableCC) -- set of local variables captured in the thunk environment, in this order
+        !(V.Vector VariableCC) -- set of local variables captured in the thunk environment, in this order
         !Word64 --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-data CodeRegistryCC = CodeRegistryCC !(Map.Map ThunkCodeId ThunkCodeRecordCC)
-                                 !(Map.Map ClosureCodeId ClosureCodeRecordCC)
+{- | SymbolRegistryCC is roughly a representatation of static read only data in _symRegValueMap
+that is part of the "linkers" name space, though currently unused ... but that will change
+and _symRegThunkMap and _symRegClosureMap are basically read only executable code pointers /
+the regions of "memory" embodied by those codes
+
+
+-}
+data SymbolRegistryCC =
+  SymbolRegistryCC { _symRegThunkMap :: !(Map.Map ThunkCodeId ThunkCodeRecordCC)
+                    , _symRegClosureMap :: !(Map.Map ClosureCodeId ClosureCodeRecordCC)
+                    , _symRegValueMap :: !(Map.Map GlobalSymbol (ValueRepCC GlobalSymbol))
+                    --- value map is currently unused, but that will change
+                                        }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
--- TODO: implement this after ccAnf evaluator
---
-closureConvert :: Closed Term {-  FIX -} -> (AnfCC, CodeRegistryCC)
-closureConvert = error "_FINISHMEEEEEBRIANNNNN" -- TODO
+
+lookupClosureCodeId :: SymbolRegistryCC -> ClosureCodeId-> Either String ClosureCodeRecordCC
+lookupClosureCodeId (SymbolRegistryCC _thk closMap _vals) codeid =
+      maybe  (Left $ "failed closure code lookup " ++ show codeid) (Right) $
+        Map.lookup codeid closMap
+lookupThunkCodeId :: SymbolRegistryCC -> ThunkCodeId-> Either String ThunkCodeRecordCC
+lookupThunkCodeId (SymbolRegistryCC thkmap _closMap _vals) thud =
+      maybe (Left $ "failed thunk code lookup " ++ show thud ) (Right) $
+           Map.lookup thud thkmap
+--lookupStaticValue :: this one is weird / we dont have it yet setup for this
+-- because static values should roughly correspond to
