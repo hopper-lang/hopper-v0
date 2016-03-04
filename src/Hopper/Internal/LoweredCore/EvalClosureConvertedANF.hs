@@ -57,6 +57,11 @@ suppressUnusedWarnings = undefined unsafeHeapUpdate
    we can assign metadata to our lambdas to hint at such optimizations
 -}
 
+{-
+TODO: switch to 2dim style debruijn
+
+-}
+
 -- | CCAnfEnvStack will eventually blur into whatever register allocation execution model we adopt
 data EnvStackCC =
     EnvConsCC !Ref !EnvStackCC
@@ -83,18 +88,18 @@ newtype InterpreterStepCC = InterpreterStepCC { unInterpreterStep :: Natural } d
 TODO: add code location and stack trace meta data
 TODO: refactor duplicated fields into an outer ADT?-}
 data EvalErrorCC val =
-    BadLocalVariableCC
-                      {eeCCOffendingOpenLocalVariable :: !LocalVariableCC
+    BadVariableCC
+                      {eeCCOffendingOpenLocalVariable :: !VariableCC
                       , eeCCcontrolStackAtError:: !ControlStackCC
                       , eeCCReductionStepAtError :: !InterpreterStepCC}
    |  UnexpectedNotAClosureInFunctionPosition
-                      {eeCCOffendingClosureLocalVariable :: !LocalVariableCC
+                      {eeCCOffendingClosureLocalVariable :: !VariableCC
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
                       ,eeCCReductionStepAtError:: !InterpreterStepCC }
    | UnexpectedNotThunkInForcePosition
-                      {eeCCOffendingClosureLocalVariable :: !LocalVariableCC
+                      {eeCCOffendingClosureLocalVariable :: !VariableCC
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
@@ -111,7 +116,7 @@ data EvalErrorCC val =
                       -- TODO: add filename and line of haskell source
                       }
    | UnexpectedNotLiteral
-                      {eeCCOffendingClosureLocalVariable :: !LocalVariableCC
+                      {eeCCOffendingClosureLocalVariable :: !VariableCC
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
@@ -139,18 +144,18 @@ throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InR . InL . handler
 localEnvLookup
   :: EnvStackCC
   -> ControlStackCC
-  -> LocalVariableCC
+  -> VariableCC
   -> forall c. EvalCC c s Ref
-localEnvLookup env controlStack var@(LocalVarCC theVar) = go env theVar
+localEnvLookup env controlStack var@(LocalVarCC (LocalNamelessVar _binderDepth _argPosition  theVar)) = go env theVar
   where
     go :: EnvStackCC -> Word64 -> EvalCC c s Ref
     go EnvEmptyCC _ = throwEvalError (\n ->
-                        BadLocalVariableCC var controlStack (InterpreterStepCC n))
+                        BadVariableCC var controlStack (InterpreterStepCC n))
     go (EnvConsCC theRef _) 0 = return theRef
     go (EnvConsCC _ rest) w = go rest (w - 1)
 
 evalCCAnf
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
   -> AnfCC
@@ -168,16 +173,17 @@ evalCCAnf codeReg envStack contStack (TailCallCC appcc) =
 
 -- | dispatchRHSCC is a wrapper for calling either allocateCC OR applyCC
 dispatchRHSCC
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
   -> RhsCC
   -> forall c. EvalCC c s (V.Vector Ref)
-dispatchRHSCC = undefined
+dispatchRHSCC symbolReg envStk ctrlStack rhs = case rhs of
+                AllocRhsCC allocExp ->  allocateRHSCC symbolReg envStk ctrlStack allocExp
 
 --- allocateRHSCC always constructs a SINGLE heap ref to whatever it just allocated,
 allocateRHSCC
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
   -> AllocCC
@@ -185,7 +191,7 @@ allocateRHSCC
 allocateRHSCC = undefined
 
 applyCC
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
   -> AppCC
@@ -199,17 +205,17 @@ applyCC = undefined
 -- because our type system will distinguish thunks from ordinary values
 -- this is the only location that expects a black hole in our code base ??? (not sure, but maybe)
 enterOrResolveThunkCC
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> LocalVariableCC
+  -> VariableCC
   -> forall c. EvalCC c s (V.Vector Ref)
 enterOrResolveThunkCC = undefined
 
 {-
 benchmarking Question: would passing the tuply args as unboxed tuples,
-a la (# LocalVariableCC, V.Vector LocalVariableCC #) have decent performance impact?
-AND/OR, should we use unboxed/storable vector for fixed size element types like LocalVariableCC
+a la (# VariableCC, V.Vector VariableCC #) have decent performance impact?
+AND/OR, should we use unboxed/storable vector for fixed size element types like VariableCC
 
 this will require analyzing core, and designing some sort of performance measurement!
 -}
@@ -230,12 +236,12 @@ compatibleEnv envRefs rec = refCount == V.length (envBindersInfo rec)
     refCount = V.length envRefs
 
 lookupHeapClosure
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> ControlStackCC
-  -> LocalVariableCC
+  -> VariableCC
   -> Ref
   -> forall c. EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
-lookupHeapClosure (CodeRegistryCC _thunk closureMap) stack var initialRef = do
+lookupHeapClosure (SymbolRegistryCC _thunk closureMap _valueTable) stack var initialRef = do
   (closureEnvRefs, codeId) <- deref initialRef
   mCodeRecord <- return $ Map.lookup codeId closureMap
   case mCodeRecord of
@@ -262,12 +268,12 @@ lookupHeapClosure (CodeRegistryCC _thunk closureMap) stack var initialRef = do
 -- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
 --       e.g. logic for whether env is "compatible"
 lookupHeapThunk
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> ControlStackCC
-  -> LocalVariableCC
+  -> VariableCC
   -> Ref
   -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId, ThunkCodeRecordCC)
-lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
+lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef = do
   (envRefs, codeId) <- deref initialRef
   let mCodeRecord = Map.lookup codeId thunks
   case mCodeRecord of
@@ -294,7 +300,7 @@ lookupHeapThunk (CodeRegistryCC thunks _closures) stack var initialRef = do
 lookupHeapLiteral
   :: EnvStackCC
   -> ControlStackCC
-  -> LocalVariableCC
+  -> VariableCC
   -> forall c. EvalCC c s Literal
 lookupHeapLiteral envStack controlStack var = do
   initRef <- localEnvLookup envStack controlStack var
@@ -319,12 +325,12 @@ and then it pushes
 -- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
 --       e.g. logic for whether env is "compatible"
 enterClosureCC
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> (LocalVariableCC, V.Vector LocalVariableCC)
+  -> (VariableCC, V.Vector VariableCC)
   -> forall c. EvalCC c s (V.Vector Ref)
-enterClosureCC _codReg@(CodeRegistryCC _thunk _closureMap)
+enterClosureCC _codReg@(SymbolRegistryCC _thunk _closureMap _values)
                envStack
                controlstack
                (localClosureVar, localArgs)
@@ -342,15 +348,15 @@ but cosmic radiation, a bug in GHC, or a bug in the hopper infrastructure (the m
 result in a mismatch between reality and our expectations, so never hurts to check.
 -}
 enterPrimAppCC
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> (PrimOpId, V.Vector LocalVariableCC)
+  -> (PrimOpId, V.Vector VariableCC)
   -> forall c. EvalCC c s (V.Vector Ref)
 enterPrimAppCC = undefined
 
 enterControlStackCC
-  :: CodeRegistryCC
+  :: SymbolRegistryCC
   -> ControlStackCC
   -> V.Vector Ref
   -> forall c. EvalCC c s (V.Vector Ref)
