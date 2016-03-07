@@ -12,11 +12,13 @@
 module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   AnfCC(..)
   ,LocalNamelessVar(..) --- this should move out
-  ,VariableCC(..) -- this should move out????
+  ,Variable(..) -- this should move out????
+  ,BinderSlot(..)
+  ,GlobalSymbol(..)
+  ,LocalNamelessVar(..)
   ,AllocCC(..)
   ,AppCC(..)
   ,RhsCC(..)
-  ,GlobalSymbol(..) --- this should move out
   ,ClosureCodeId(..)
   ,ThunkCodeId(..)
   ,EnvSize(..) --- not sure if this is needed
@@ -39,13 +41,13 @@ import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 
 import qualified Data.Text as T (Text)
 import Hopper.Internal.Core.Literal
-import Hopper.Utils.Closed
 import Hopper.Internal.Core.Term
 import GHC.Generics
 import qualified  Data.Vector as V
 import Hopper.Internal.Type.Relevance(Relevance)
 import Hopper.Internal.Runtime.Heap(TransitiveLookup(..),heapLookup)
 import Hopper.Internal.Runtime.HeapRef(Ref)
+import Hopper.Utils.LocallyNameless
 --import Data.Hop.Or
 --import Control.Monad.STE
 {-
@@ -68,30 +70,6 @@ should be supported along with jumping through the local environment scope
 may also want to think about some values only being listed in the local environment vs also being in the heap,
 maybe
 -}
-
---- | GlobalSymbol should correspond to the fully qualified name
---- of a reachable value that is induced UNIQUELY by a module's name and
---- set of dependencies and how it was built.
---- NB: this might be more subtle in the presence of linearity, but lets table that for now
----
---- this may or may not  actually need to just be a functory parametery in the AST
---- but lets keep it simple fo rnow
-newtype GlobalSymbol = GlobalSymbol T.Text
-  deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
-
-data LocalNamelessVar =
-   LocalNamelessVar {localBinderDepth :: {-# UNPACK #-}  !Word32
-           ,localBinderArg :: {-# UNPACK #-}   !Word32
-           ,  localDebruijnDepth :: {-# UNPACK #-}  !Word64}
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic )
-
--- | VariableCC is either a local env variable or a globally fixed symbol (think like linkers and object code)
--- TODO: later lowering passes will induce register / stack placements and
--- veer into forcing specification of caller/callee saving conventions on code control tranfers
-data VariableCC  =
-    LocalVarCC {-# UNPACK #-} !LocalNamelessVar
-    | GlobalVarSym {-# UNPACK #-}  !GlobalSymbol
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic )
 
 newtype ThunkCodeId =
     ThunkCodeId { unThunkCodeId :: Word64 }
@@ -118,7 +96,7 @@ all the fields of the
 
 --- kill these stubs later
 --type Relevance = ()
-type TypeCC = () -- TODO FIXME, wire in the real type info?
+type TypeCC = () -- TODO FIXME, wire in the real type info? This will be Term???!
 data BinderInfoCC =
       BinderInfoDataCC
         { relevanceBICC :: Relevance -- if zero, during evaluation we need not pass around
@@ -209,7 +187,7 @@ instance CodeRecord ClosureCodeRecordCC where
   {-# INLINE envBindersInfo #-}
 
 data AnfCC  =
-    ReturnCC !(V.Vector VariableCC)
+    ReturnCC !(V.Vector Variable)
     | LetNFCC
           {- TODO: src loc info -}
           !(V.Vector BinderInfoCC)  -- TODO FIXME, replace with CCAnfBinderInfo
@@ -224,9 +202,9 @@ data AnfCC  =
 
 
 data AppCC  =
-    EnterThunkCC !VariableCC -- if a is neutral term OR a free variable, this becomes neutral
-    | FunAppCC !VariableCC !(V.Vector VariableCC) --- if function position of FunApp is neutral, its neutral
-    | PrimAppCC !PrimOpId !(V.Vector VariableCC) -- if any arg of a primop is neutral, its neutral
+    EnterThunkCC !Variable -- if a is neutral term OR a free variable, this becomes neutral
+    | FunAppCC !Variable !(V.Vector Variable) --- if function position of FunApp is neutral, its neutral
+    | PrimAppCC !PrimOpId !(V.Vector Variable) -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
      {- | CaseCc
         --- desugared case, not perfect, but good enough for sum data types,
@@ -261,12 +239,12 @@ data RhsCC
 data AllocCC
   = SharedLiteralCC !Literal
   | ConstrAppCC {-# UNPACK #-}  !ConstrId
-                !(V.Vector VariableCC)
+                !(V.Vector Variable)
   | AllocateThunkCC
-        !(V.Vector VariableCC) -- the set of local variables captured in the thunk environment, in this order
+        !(V.Vector Variable) -- the set of local variables captured in the thunk environment, in this order
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
   | AllocateClosureCC
-        !(V.Vector VariableCC) -- set of local variables captured in the thunk environment, in this order
+        !(V.Vector Variable) -- set of local variables captured in the thunk environment, in this order
         !Word64 --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
