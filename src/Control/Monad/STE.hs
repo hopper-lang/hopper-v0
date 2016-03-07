@@ -28,7 +28,7 @@ extendErrorTrans
       tm (STE (b :+ h) s) a)
   -> forall c err.
      tm (STE (c :+ err :+ h ) s)  a
-extendErrorTrans = unsafeCoerce
+extendErrorTrans x = unsafeCoerce x
 
 
 {-# INLINE extendError  #-}
@@ -36,7 +36,7 @@ extendError
   :: forall s (h :: *) (a :: *).
      (forall b.  (STE (b :+ h) s) a)
   -> forall c err.  (STE (c :+ err :+ h ) s)  a
-extendError = unsafeCoerce
+extendError x = unsafeCoerce x
 
 -- maybe this constructor shouldn't be private?
 newtype STE e s a = STE  (STRep s a)

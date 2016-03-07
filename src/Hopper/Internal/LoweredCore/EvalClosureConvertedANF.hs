@@ -10,6 +10,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
@@ -34,7 +35,14 @@ import Data.Word(Word64,Word32)
 import GHC.Generics
 import Numeric.Natural
 import qualified Data.Vector as V
-import Hopper.Internal.Core.Literal (Literal, PrimOpId)
+import Hopper.Internal.Core.Literal (
+  Literal
+  ,GmpMathOpId
+  ,PrimOpId(..)
+  ,evalTotalMathPrimopCode
+  ,gmpMathCost
+  ,hoistTotalMathLiteralOp
+  )
 
 type EvalCC c s a
   = HeapStepCounterM (ValueRepCC Ref)
@@ -123,12 +131,8 @@ data EvalErrorCC val =
                       ,eeCCReductionStepAtError:: !InterpreterStepCC }
    deriving (Eq,Ord,Show,Typeable,Read)
 
-#define PanicMessageConstructor(constack,stepAdjust,reductionStep,msg) \
-  (HardFaultImpossiblePanicError (constack) (stepAdjust) \
-      (reductionStep) (msg) \
-      __FILE__ \
-      __LINE__ \
-      )
+-- Make sure this only takes one line so it doesn't throw off line numbers
+#define PanicMessageConstructor(constack,stepAdjust,reductionStep,msg) (HardFaultImpossiblePanicError (constack) (stepAdjust) (reductionStep) (msg) __FILE__ __LINE__)
 
 
 {-
@@ -359,11 +363,61 @@ enterPrimAppCC
   -> forall c. EvalCC c s (V.Vector Ref)
 enterPrimAppCC = undefined
 
+-- | Enter a primop.
+--
+-- Currently limited to math primops and local variables (no globals!).
+enterPrimSimple
+  :: SymbolRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> (PrimOpId, V.Vector Variable)
+  -> forall c. EvalCC c s (V.Vector Ref)
+enterPrimSimple symreg envstack controlstack (op@(TotalMathOpGmp opId), vect)
+  | all (\case { LocalVar _ -> True; GlobalVarSym _ -> False }) (V.toList vect)
+  = do nextVect <- mapM (\(LocalVar lv) -> localEnvLookup envstack controlstack lv) vect
+       enterTotalMathPrimopSimple controlstack (opId, nextVect)
+  | otherwise
+  = let errMsg = unwords
+          [ "A global symbol reference appeared in a primop."
+          , "This is not yet supported."
+          , "The opcode invoked was"
+          , "`" ++ show op ++ "`."
+          ]
+        err step = PanicMessageConstructor(controlstack, 0, InterpreterStepCC step, errMsg)
+    in throwEvalError err
+enterPrimSimple _ _ controlstack (opcode, _)
+  = let errMsg = "Unsupported opcode referenced: `" ++ show opcode ++ "`."
+        err step = PanicMessageConstructor(controlstack, 0, InterpreterStepCC step, errMsg)
+    in throwEvalError err
+
+enterTotalMathPrimopSimple
+  :: ControlStackCC
+  -> (GmpMathOpId, V.Vector Ref)
+  -> forall c. EvalCC c s (V.Vector Ref)
+enterTotalMathPrimopSimple controlstack (opId, refs) = do
+  args <- extendErrorTrans $ mapM heapLookup refs
+  checkedOp <- return $ do
+    areLiterals <- mapM argAsLiteral (V.toList args)
+    hoistTotalMathLiteralOp opId areLiterals
+  case checkedOp of
+    Left str ->
+      let errMsg = "Received a non-literal to a total math primop :\n" ++ str
+          err step = PanicMessageConstructor(controlstack, 0, InterpreterStepCC step, errMsg)
+      in throwEvalError err
+    Right litOp -> do
+      _ <- extendErrorTrans $ checkedCounterCost (fromIntegral $ gmpMathCost litOp)
+      lits <- return $ evalTotalMathPrimopCode litOp
+      let allocLit x = extendErrorTrans (heapAllocate (ValueLitCC x))
+      allocated <- mapM allocLit $ V.fromList lits
+      return allocated
+
+  where argAsLiteral :: ValueRepCC Ref -> Either String Literal
+        argAsLiteral (ValueLitCC lit) = Right lit
+        argAsLiteral notLit = Left $ "Not a literal: `" ++ show notLit ++ "`"
+
 enterControlStackCC
   :: SymbolRegistryCC
   -> ControlStackCC
   -> V.Vector Ref
   -> forall c. EvalCC c s (V.Vector Ref)
 enterControlStackCC = undefined
-
--- evalANF ::  Anf Ref -> ControlStackAnf -> EvalCC c s Ref
