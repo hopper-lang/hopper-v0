@@ -61,12 +61,12 @@ library
                     Hopper.Utils.Swap
                     Hopper.Utils.Closed
                     Hopper.Utils.BigMath
+                    Hopper.Utils.LocallyNameless
                     Hopper.Internal.Runtime.Heap
                     Hopper.Internal.Runtime.HeapRef
                     Hopper.Internal.Runtime.TaggedValueSelector
                     Hopper.Internal.Type.Relevance
                     Hopper.Internal.Core.Term
-                    Hopper.Internal.Core.TermLocallyNameless
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Anf
                     Hopper.Internal.Core.Literal
