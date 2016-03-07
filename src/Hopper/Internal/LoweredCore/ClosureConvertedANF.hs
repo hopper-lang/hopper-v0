@@ -15,7 +15,6 @@ module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   ,Variable(..) -- this should move out????
   ,BinderSlot(..)
   ,GlobalSymbol(..)
-  ,LocalNamelessVar(..)
   ,AllocCC(..)
   ,AppCC(..)
   ,RhsCC(..)

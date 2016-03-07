@@ -65,7 +65,7 @@ newtype ConstrId
 -- Primops for a language have names
 data PrimOpId =
     PrimopIdGeneral  !Text
-    | TotalMapthOpGmp !GmpMathOpId
+    | TotalMathOpGmp !GmpMathOpId
 
   deriving (Eq,Show,Typeable,Ord,Read,Data,Generic)
 
