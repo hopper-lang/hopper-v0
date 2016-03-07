@@ -7,13 +7,17 @@
 
 
 
-module Hopper.Utils.LocallyNameless where
+module Hopper.Utils.LocallyNameless(
+  BinderSlot(..)
+  ,GlobalSymbol(..)
+  ,LocalNamelessVar(..)
+  ,Variable(..)
+  ) where
 
 
 import Data.Word
 import Data.Data
 import GHC.Generics
-import Hopper.Internal.Type.Relevance
 import qualified Data.Text as T (Text )
 
 --- | GlobalSymbol should correspond to the fully qualified name

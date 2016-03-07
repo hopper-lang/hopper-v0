@@ -30,7 +30,7 @@ import Data.Hop.Or
 import Control.Monad.STE
 import Data.Data
 import qualified Data.Map as Map
-import Data.Word(Word64)
+import Data.Word(Word64,Word32)
 import GHC.Generics
 import Numeric.Natural
 import qualified Data.Vector as V
@@ -64,7 +64,7 @@ TODO: switch to 2dim style debruijn
 
 -- | CCAnfEnvStack will eventually blur into whatever register allocation execution model we adopt
 data EnvStackCC =
-    EnvConsCC !Ref !EnvStackCC
+    EnvConsCC !(V.Vector Ref) !EnvStackCC
     | EnvEmptyCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 data ControlStackCC  =
@@ -89,17 +89,17 @@ TODO: add code location and stack trace meta data
 TODO: refactor duplicated fields into an outer ADT?-}
 data EvalErrorCC val =
     BadVariableCC
-                      {eeCCOffendingOpenLocalVariable :: !VariableCC
+                      {eeCCOffendingOpenLocalVariable :: !Variable
                       , eeCCcontrolStackAtError:: !ControlStackCC
                       , eeCCReductionStepAtError :: !InterpreterStepCC}
    |  UnexpectedNotAClosureInFunctionPosition
-                      {eeCCOffendingClosureLocalVariable :: !VariableCC
+                      {eeCCOffendingClosureLocalVariable :: !Variable
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
                       ,eeCCReductionStepAtError:: !InterpreterStepCC }
    | UnexpectedNotThunkInForcePosition
-                      {eeCCOffendingClosureLocalVariable :: !VariableCC
+                      {eeCCOffendingClosureLocalVariable :: !Variable
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
@@ -116,7 +116,7 @@ data EvalErrorCC val =
                       -- TODO: add filename and line of haskell source
                       }
    | UnexpectedNotLiteral
-                      {eeCCOffendingClosureLocalVariable :: !VariableCC
+                      {eeCCOffendingClosureLocalVariable :: !Variable
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
@@ -144,14 +144,18 @@ throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InR . InL . handler
 localEnvLookup
   :: EnvStackCC
   -> ControlStackCC
-  -> VariableCC
+  -> LocalNamelessVar
   -> forall c. EvalCC c s Ref
-localEnvLookup env controlStack var@(LocalVarCC (LocalNamelessVar _binderDepth _argPosition  theVar)) = go env theVar
+localEnvLookup env controlStack var@(LocalNamelessVar depth  (BinderSlot slot )  ) = go env depth
   where
-    go :: EnvStackCC -> Word64 -> EvalCC c s Ref
+    go :: EnvStackCC -> Word32  -> EvalCC c s Ref
     go EnvEmptyCC _ = throwEvalError (\n ->
-                        BadVariableCC var controlStack (InterpreterStepCC n))
-    go (EnvConsCC theRef _) 0 = return theRef
+                        BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n))
+    go (EnvConsCC theRefVect _) 0 = maybe
+              (throwEvalError (\n ->
+                              BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n)))
+              return
+              (theRefVect V.!?  ( fromIntegral slot))
     go (EnvConsCC _ rest) w = go rest (w - 1)
 
 evalCCAnf
@@ -160,8 +164,8 @@ evalCCAnf
   -> ControlStackCC
   -> AnfCC
   -> forall c. EvalCC c s (V.Vector Ref)
-evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
-  resRefs <- traverse (localEnvLookup envStack contStack) localVarLS
+evalCCAnf codeReg envStack contStack (ReturnCC (localVarLS)) = do
+  resRefs <- traverse (localEnvLookup envStack contStack)  $ (error "FIX THIS") localVarLS
   enterControlStackCC codeReg contStack resRefs
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
   dispatchRHSCC codeReg
@@ -208,7 +212,7 @@ enterOrResolveThunkCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> VariableCC
+  -> Variable
   -> forall c. EvalCC c s (V.Vector Ref)
 enterOrResolveThunkCC = undefined
 
@@ -238,7 +242,7 @@ compatibleEnv envRefs rec = refCount == V.length (envBindersInfo rec)
 lookupHeapClosure
   :: SymbolRegistryCC
   -> ControlStackCC
-  -> VariableCC
+  -> Variable
   -> Ref
   -> forall c. EvalCC c s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
 lookupHeapClosure (SymbolRegistryCC _thunk closureMap _valueTable) stack var initialRef = do
@@ -270,7 +274,7 @@ lookupHeapClosure (SymbolRegistryCC _thunk closureMap _valueTable) stack var ini
 lookupHeapThunk
   :: SymbolRegistryCC
   -> ControlStackCC
-  -> VariableCC
+  -> Variable
   -> Ref
   -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId, ThunkCodeRecordCC)
 lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef = do
@@ -300,10 +304,10 @@ lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef
 lookupHeapLiteral
   :: EnvStackCC
   -> ControlStackCC
-  -> VariableCC
+  -> Variable
   -> forall c. EvalCC c s Literal
 lookupHeapLiteral envStack controlStack var = do
-  initRef <- localEnvLookup envStack controlStack var
+  initRef <- localEnvLookup envStack controlStack  $ error "fix this toooo " var
   deref initRef
 
   where
@@ -328,7 +332,7 @@ enterClosureCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> (VariableCC, V.Vector VariableCC)
+  -> (Variable, V.Vector Variable)
   -> forall c. EvalCC c s (V.Vector Ref)
 enterClosureCC _codReg@(SymbolRegistryCC _thunk _closureMap _values)
                envStack
@@ -351,7 +355,7 @@ enterPrimAppCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> (PrimOpId, V.Vector VariableCC)
+  -> (PrimOpId, V.Vector Variable)
   -> forall c. EvalCC c s (V.Vector Ref)
 enterPrimAppCC = undefined
 
