@@ -145,6 +145,25 @@ throwEvalError
   -> HeapStepCounterM val (STE (a :+ ((EvalErrorCC val) :+ HeapError)) s) result
 throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InR . InL . handler
 
+-- | Are all the Variables in this structure local?
+allLocalVars :: Foldable t => t Variable -> Bool
+allLocalVars = all (\case { LocalVar _ -> True; GlobalVarSym _ -> False })
+
+-- | Allocate a literal.
+allocLit :: Literal -> EvalCC c s Ref
+allocLit x = extendErrorTrans (heapAllocate (ValueLitCC x))
+
+-- | Unsafely get a Ref from a Variable
+--
+-- Unsafe because you need to guarantee that it's a LocalVar rather than a
+-- GlobalVarSym.
+unsafeLocalEnvLookup
+  :: EnvStackCC
+  -> ControlStackCC
+  -> Variable
+  -> forall c. EvalCC c s Ref
+unsafeLocalEnvLookup env control (LocalVar lv) = localEnvLookup env control lv
+
 localEnvLookup
   :: EnvStackCC
   -> ControlStackCC
@@ -190,14 +209,34 @@ dispatchRHSCC symbolReg envStk ctrlStack rhs = case rhs of
   AllocRhsCC allocExp -> allocateRHSCC symbolReg envStk ctrlStack allocExp
   NonTailCallAppCC appCC -> applyCC symbolReg envStk ctrlStack appCC
 
---- allocateRHSCC always constructs a SINGLE heap ref to whatever it just allocated,
+-- | Construct a single heap ref for an allocation.
 allocateRHSCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
   -> AllocCC
   -> forall c. EvalCC c s (V.Vector Ref)
-allocateRHSCC = undefined
+allocateRHSCC symbolReg envStk stack@(LetBinderCC _ _ _ _ newStack) alloc =
+  let errMsg = "`allocateRHSCC` expected all local refs, received a global"
+      err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
+      localGuard vars continue = if allLocalVars vars
+        then continue
+        else throwEvalError err
+  in case alloc of
+    SharedLiteralCC lit -> V.singleton <$> allocLit lit
+    -- TODO(joel) - there's a silly amount of duplication here
+    ConstrAppCC constrId vars -> localGuard vars $ do
+      refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
+      ref <- extendErrorTrans $ heapAllocate (ConstructorCC constrId refVect)
+      enterControlStackCC symbolReg newStack (V.singleton ref)
+    AllocateThunkCC vars thunkId -> localGuard vars $ do
+      refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
+      ref <- extendErrorTrans $ heapAllocate (ThunkCC refVect thunkId)
+      enterControlStackCC symbolReg newStack (V.singleton ref)
+    AllocateClosureCC vars _ closureId -> localGuard vars $ do
+      refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
+      ref <- extendErrorTrans $ heapAllocate (ClosureCC refVect closureId)
+      enterControlStackCC symbolReg newStack (V.singleton ref)
 
 applyCC
   :: SymbolRegistryCC
@@ -374,8 +413,8 @@ enterPrimSimple
   -> (PrimOpId, V.Vector Variable)
   -> forall c. EvalCC c s (V.Vector Ref)
 enterPrimSimple symreg envstack controlstack (op@(TotalMathOpGmp opId), vect)
-  | all (\case { LocalVar _ -> True; GlobalVarSym _ -> False }) (V.toList vect)
-  = do nextVect <- mapM (\(LocalVar lv) -> localEnvLookup envstack controlstack lv) vect
+  | allLocalVars vect
+  = do nextVect <- mapM (unsafeLocalEnvLookup envstack controlstack) vect
        enterTotalMathPrimopSimple controlstack (opId, nextVect)
   | otherwise
   = let errMsg = unwords
@@ -408,8 +447,6 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
     Right litOp -> do
       _ <- extendErrorTrans $ checkedCounterCost (fromIntegral $ gmpMathCost litOp)
       lits <- return $ evalTotalMathPrimopCode litOp
-      let allocLit :: Literal -> EvalCC c s Ref
-          allocLit x = extendErrorTrans (heapAllocate (ValueLitCC x))
       allocated <- mapM allocLit $ V.fromList lits
       return allocated
 
