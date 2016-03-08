@@ -122,8 +122,10 @@ instance TransitiveLookup (ValueRepCC Ref) where
       go !step !ref =
         do newval <- heapLookup ref
            case newval of
-             (IndirectionCC newref) -> go (step + 1 ) newref
-             _ -> return (step ,newval)
+             (IndirectionCC newref) -> case length newref of
+               1 -> go (step + 1) (V.head newref)
+               _ -> return (step, newval)
+             _ -> return (step, newval)
 
 
 {-
@@ -139,7 +141,7 @@ data ValueRepCC ref =
               -- closure to have the right sharing ?
               | ClosureCC !(V.Vector ref)  {-# UNPACK #-}  !(ClosureCodeId)  -- heap ref?
               | BlackHoleCC
-              | IndirectionCC !ref
+              | IndirectionCC !(V.Vector ref)
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 class CodeRecord a where
