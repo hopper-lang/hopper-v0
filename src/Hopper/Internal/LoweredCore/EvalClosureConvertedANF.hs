@@ -187,7 +187,7 @@ dispatchRHSCC
   -> RhsCC
   -> forall c. EvalCC c s (V.Vector Ref)
 dispatchRHSCC symbolReg envStk ctrlStack rhs = case rhs of
-                AllocRhsCC allocExp ->  allocateRHSCC symbolReg envStk ctrlStack allocExp
+  AllocRhsCC allocExp ->  allocateRHSCC symbolReg envStk ctrlStack allocExp
 
 --- allocateRHSCC always constructs a SINGLE heap ref to whatever it just allocated,
 allocateRHSCC
@@ -407,7 +407,8 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
     Right litOp -> do
       _ <- extendErrorTrans $ checkedCounterCost (fromIntegral $ gmpMathCost litOp)
       lits <- return $ evalTotalMathPrimopCode litOp
-      let allocLit x = extendErrorTrans (heapAllocate (ValueLitCC x))
+      let allocLit :: Literal -> EvalCC c s Ref
+          allocLit x = extendErrorTrans (heapAllocate (ValueLitCC x))
       allocated <- mapM allocLit $ V.fromList lits
       return allocated
 
@@ -420,4 +421,20 @@ enterControlStackCC
   -> ControlStackCC
   -> V.Vector Ref
   -> forall c. EvalCC c s (V.Vector Ref)
-enterControlStackCC = undefined
+enterControlStackCC _ ControlStackEmptyCC refs = return refs
+enterControlStackCC registry stack@(UpdateHeapRefCC ref newStack) refs = do
+  val <- extendErrorTrans $ heapLookup ref
+  if val == BlackHoleCC
+    then do
+      extendErrorTrans $ unsafeHeapUpdate ref (IndirectionCC refs)
+      enterControlStackCC registry newStack refs
+    else
+      let errMsg = unwords
+            [ "UpdateHeapRefCC expected a black hole instead of"
+            , "`" ++ show val ++ "`"
+            ]
+          err step = PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg)
+      in throwEvalError err
+enterControlStackCC registry (LetBinderCC binders () newEnv body newStack) refs = do
+  envStack <- return (EnvConsCC refs newEnv)
+  evalCCAnf registry envStack newStack body
