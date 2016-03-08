@@ -179,7 +179,7 @@ evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
 evalCCAnf codeReg envStack contStack (TailCallCC appcc) =
   applyCC codeReg envStack contStack appcc
 
--- | dispatchRHSCC is a wrapper for calling either allocateCC OR applyCC
+-- | dispatchRHSCC is a wrapper for calling either allocateRHSCC OR applyCC
 dispatchRHSCC
   :: SymbolRegistryCC
   -> EnvStackCC
@@ -187,7 +187,8 @@ dispatchRHSCC
   -> RhsCC
   -> forall c. EvalCC c s (V.Vector Ref)
 dispatchRHSCC symbolReg envStk ctrlStack rhs = case rhs of
-  AllocRhsCC allocExp ->  allocateRHSCC symbolReg envStk ctrlStack allocExp
+  AllocRhsCC allocExp -> allocateRHSCC symbolReg envStk ctrlStack allocExp
+  NonTailCallAppCC appCC -> applyCC symbolReg envStk ctrlStack appCC
 
 --- allocateRHSCC always constructs a SINGLE heap ref to whatever it just allocated,
 allocateRHSCC
