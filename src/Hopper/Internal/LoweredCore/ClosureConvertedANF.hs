@@ -149,11 +149,14 @@ class CodeRecord a where
   envBindersInfo :: a -> V.Vector BinderInfoCC
 
 data ThunkCodeRecordCC =
-  ThunkCodeRecordCC {-# UNPACK #-}  !EnvSize      -- number of slots in the environment struct
-                                  --
-                    !(V.Vector BinderInfoCC) -- source names, if applicable, for the captured free vars in the orig source
-                                  -- TODO, replace the sourcenames list field with V.Vector CCAnfBinderInfo
-                    !AnfCC        -- the code
+  ThunkCodeRecordCC
+    -- | number of slots in the environment struct
+    {-# UNPACK #-} !EnvSize
+    -- | source names, if applicable, for the captured free vars in the orig source
+    -- TODO(carter): replace the sourcenames list field with V.Vector CCAnfBinderInfo
+    !(V.Vector BinderInfoCC)
+    -- | the code
+    !AnfCC
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 instance CodeRecord ThunkCodeRecordCC where

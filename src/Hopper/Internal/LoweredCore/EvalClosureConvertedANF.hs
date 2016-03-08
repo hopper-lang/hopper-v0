@@ -253,8 +253,8 @@ applyCC = symbolReg envStk stack alloc = case alloc of
   FunAppCC var vec -> enterClosureCC symbolReg envStk stack (var vec)
   PrimAppCC opId vec -> enterPrimAppCC symbolReg envStk stack (opId, vec)
 
--- enterOrResolveThunkCC will push a update Frame onto the control stack if its evaluating a thunk closure that hasn't been computed
--- yet
+-- enterOrResolveThunkCC will push a update Frame onto the control stack if its
+-- evaluating a thunk closure that hasn't been computed yet
 -- Will put a blackhole on that heap location in the mean time
 -- if the initial lookup IS a blackhole, we have an infinite loop, abort!
 -- because our type system will distinguish thunks from ordinary values
@@ -265,7 +265,34 @@ enterOrResolveThunkCC
   -> ControlStackCC
   -> Variable
   -> forall c. EvalCC c s (V.Vector Ref)
-enterOrResolveThunkCC = undefined
+enterOrResolveThunkCC symbolReg env stack var = 
+  case var of
+    GlobalVarSym -> 
+      let errMsg = "`enterOrResolveThunkCC` expected a local ref, received a global"
+          err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
+      in throwEvalError err
+    LocalVar nameless -> do
+      ref <- localEnvLookup env stack nameless
+      (lookups, val) <- hoistedTransitiveLookup ref
+      case val of
+        BlackHoleCC ->
+          let errMsg = "`enterOrResolveThunkCC` attempting to update a black hole"
+              err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
+          in throwEvalError err
+        ThunkCC _ _ -> do
+          -- TODO(joel):
+          -- * what values do we continue with?
+          -- * we probably need codeRec / codeId?
+          (envRefs, codeId, codeRec) <- lookupHeapThunk symbolReg stack var ref
+
+          enterControlStackCC
+            symbolReg
+            (UpdateHeapRefCC ref stack)
+            envRefs
+        _ -> 
+          let errMsg = "`enterOrResolveThunkCC` got an unexpected value: `" ++ show val ++ "`"
+              err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
+          in throwEvalError err
 
 {-
 benchmarking Question: would passing the tuply args as unboxed tuples,
