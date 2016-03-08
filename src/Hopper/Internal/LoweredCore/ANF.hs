@@ -5,12 +5,13 @@ import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 
+
 import Data.Word
 import qualified Data.Vector as V
-import qualified Data.Map.Strict as Map
+
 
 -- TODO: switch back away from this
-newtype Arity    = Arity Word64    deriving (Eq,Ord,Read,Show)
+newtype Arity    = Arity Word32    deriving (Eq,Ord,Read,Show)
 
 data Anf
   = AnfReturn !(V.Vector Variable) -- indices into the current env stack
