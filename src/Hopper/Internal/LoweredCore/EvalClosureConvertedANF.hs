@@ -238,13 +238,20 @@ allocateRHSCC symbolReg envStk stack@(LetBinderCC _ _ _ _ newStack) alloc =
       ref <- extendErrorTrans $ heapAllocate (ClosureCC refVect closureId)
       enterControlStackCC symbolReg newStack (V.singleton ref)
 
+-- | Evaluate an application.
+--
+-- We just dispatch to either `enterOrResolveThunkCC`, `enterClosureCC`, or
+-- `enterPrimAppCC`.
 applyCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
   -> AppCC
   -> forall c. EvalCC c s (V.Vector Ref)
-applyCC = undefined
+applyCC = symbolReg envStk stack alloc = case alloc of
+  EnterThunkCC var -> enterOrResolveThunkCC symbolReg envStk stack var
+  FunAppCC var vec -> enterClosureCC symbolReg envStk stack (var vec)
+  PrimAppCC opId vec -> enterPrimAppCC symbolReg envStk stack (opId, vec)
 
 -- enterOrResolveThunkCC will push a update Frame onto the control stack if its evaluating a thunk closure that hasn't been computed
 -- yet
