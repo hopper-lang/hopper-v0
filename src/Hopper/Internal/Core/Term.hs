@@ -65,10 +65,11 @@ data Term =
              !(V.Vector Term  ) -- not sure if this is needed, but lets go with it for now
 
   | Lam !(V.Vector BinderInfo)
-         !Term
+        -- TODO: to properly translate to ANF, we need return arity info
+        !Term
   | Let !(V.Vector BinderInfo)
-           Term --- RHS
-           Term --- BODY
+        !Term --- RHS
+        !Term --- BODY
   deriving ({-Show1,Read1,Ord1,Eq1,-}Ord,Eq,Show,Read{-,Functor,Foldable-},Typeable{-,Traversable-})
 
 
