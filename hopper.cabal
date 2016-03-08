@@ -68,6 +68,7 @@ library
                     Hopper.Internal.Runtime.TaggedValueSelector
                     Hopper.Internal.Type.Relevance
                     Hopper.Internal.Core.Term
+                    Hopper.Internal.Core.TermZipper
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Literal
                     Hopper.Internal.LoweredCore.ANF

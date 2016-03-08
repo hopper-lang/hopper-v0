@@ -1,7 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 
@@ -13,7 +12,6 @@ module Hopper.Utils.LocallyNameless(
   ,LocalNamelessVar(..)
   ,Variable(..)
   ) where
-
 
 import Data.Word
 import Data.Data
@@ -34,20 +32,23 @@ newtype GlobalSymbol = GlobalSymbol T.Text
 
 newtype BinderSlot =
     BinderSlot { unBinderSlot :: Word32 }
-  deriving (Eq, Show,Data,Ord,Read,Typeable,Generic)
+  deriving (Eq,Show,Data,Ord,Read,Typeable,Generic)
+
+-- instance Enum BinderSlot where
+--   toEnum = BinderSlot . toEnum
+--   fromEnum = fromEnum . unBinderSlot
 
 data LocalNamelessVar =
-   LocalNamelessVar
+    LocalNamelessVar
           {localBinderDepth :: {-# UNPACK #-}  !Word32
            ,localBinderArg :: {-# UNPACK #-}   !BinderSlot
          }
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic )
+  deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 -- | VariableCC is either a local env variable or a globally fixed symbol (think like linkers and object code)
 -- TODO: later lowering passes will induce register / stack placements and
 -- veer into forcing specification of caller/callee saving conventions on code control tranfers
 data Variable  =
     LocalVar {-# UNPACK #-} !LocalNamelessVar
-    | GlobalVarSym {-# UNPACK #-}  !GlobalSymbol
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic )
-
+  | GlobalVarSym {-# UNPACK #-}  !GlobalSymbol
+  deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
