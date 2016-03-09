@@ -157,7 +157,7 @@ data ThunkCodeRecordCC =
     !(V.Vector BinderInfoCC)
     -- | the code
     !AnfCC
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+  deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 instance CodeRecord ThunkCodeRecordCC where
   envSize (ThunkCodeRecordCC size _ _) = getEnvSize size

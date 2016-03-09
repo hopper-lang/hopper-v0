@@ -1,12 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE CPP #-}
@@ -142,7 +140,7 @@ because this is sort of in between! :)
 
 throwEvalError
   :: (Natural -> EvalErrorCC val)
-  -> HeapStepCounterM val (STE (a :+ ((EvalErrorCC val) :+ HeapError)) s) result
+  -> HeapStepCounterM val (STE (a :+ (EvalErrorCC val :+ HeapError)) s) result
 throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InR . InL . handler
 
 -- | Are all the Variables in this structure local?
@@ -178,7 +176,7 @@ localEnvLookup env controlStack var@(LocalNamelessVar depth  (BinderSlot slot ) 
               (throwEvalError (\n ->
                               BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n)))
               return
-              (theRefVect V.!?  ( fromIntegral slot))
+              (theRefVect V.!?  fromIntegral slot)
     go (EnvConsCC _ rest) w = go rest (w - 1)
 
 evalCCAnf
@@ -187,8 +185,8 @@ evalCCAnf
   -> ControlStackCC
   -> AnfCC
   -> forall c. EvalCC c s (V.Vector Ref)
-evalCCAnf codeReg envStack contStack (ReturnCC (localVarLS)) = do
-  resRefs <- traverse (localEnvLookup envStack contStack)  $ (error "FIX THIS") localVarLS
+evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
+  resRefs <- traverse (localEnvLookup envStack contStack) $ (error "FIX THIS") localVarLS
   enterControlStackCC codeReg contStack resRefs
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
   dispatchRHSCC codeReg
@@ -248,7 +246,7 @@ applyCC
   -> ControlStackCC
   -> AppCC
   -> forall c. EvalCC c s (V.Vector Ref)
-applyCC = symbolReg envStk stack alloc = case alloc of
+applyCC symbolReg envStk stack alloc = case alloc of
   EnterThunkCC var -> enterOrResolveThunkCC symbolReg envStk stack var
   FunAppCC var vec -> enterClosureCC symbolReg envStk stack (var vec)
   PrimAppCC opId vec -> enterPrimAppCC symbolReg envStk stack (opId, vec)
@@ -281,6 +279,7 @@ enterOrResolveThunkCC symbolReg env stack var =
           in throwEvalError err
         ThunkCC _ _ -> do
           -- TODO(joel):
+          -- * overwrite with blackhole
           -- * what values do we continue with?
           -- * we probably need codeRec / codeId?
           (envRefs, codeId, codeRec) <- lookupHeapThunk symbolReg stack var ref
@@ -481,8 +480,7 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
     Right litOp -> do
       _ <- extendErrorTrans $ checkedCounterCost (fromIntegral $ gmpMathCost litOp)
       lits <- return $ evalTotalMathPrimopCode litOp
-      allocated <- mapM allocLit $ V.fromList lits
-      return allocated
+      mapM allocLit $ V.fromList lits
 
   where argAsLiteral :: ValueRepCC Ref -> Either String Literal
         argAsLiteral (ValueLitCC lit) = Right lit
