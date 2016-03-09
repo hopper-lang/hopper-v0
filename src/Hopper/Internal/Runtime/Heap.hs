@@ -8,10 +8,13 @@
 {-# LANGUAGE TypeFamilies, TypeOperators #-}
 
 module Hopper.Internal.Runtime.Heap(
-  HeapError(..)
+   CounterAndHeap(..)
+  ,HeapError(..)
+  ,Heap(..)
   ,HeapStepCounterM  -- keeping HeapStepCounterM abstract for now, as long as theres NO TH hijinks
   ,unsafeHeapUpdate
   ,unsafeRunHSCM
+  ,runHeap
   ,runEmptyHeap
   ,heapAllocate
   ,heapLookup
@@ -19,6 +22,8 @@ module Hopper.Internal.Runtime.Heap(
   ,checkedCounterCost
   ,throwHeapErrorWithStepInfoSTE
   ,TransitiveLookup(..)
+
+  , getHSCM
   )
 
     where
@@ -32,26 +37,28 @@ import Control.Monad.Trans.State.Strict as State
 import Control.Monad.Trans.Class as MT
 import Control.Monad.Primitive as  Prim
 import Control.Monad.IO.Class as MIO
-import  Control.Monad.STE
+import Control.Monad.STE
 import Data.Data
 import Data.Hop.Or
 import Hopper.Internal.Runtime.HeapRef
 
 
+import Debug.Trace
 
 class TransitiveLookup valRep  where
-   --{-# INLINABLE transitiveHeapLookup #-}
-   transitiveHeapLookup :: Ref -> forall c . HeapStepCounterM valRep (STE (c  :+ HeapError ) s) (Natural,valRep)
+  transitiveHeapLookup :: Ref -> forall c . HeapStepCounterM valRep (STE (c  :+ HeapError ) s) (Natural,valRep)
 
 
 throwHeapErrorWithStepInfoSTE :: (Natural -> err) -> HeapStepCounterM val (STE err  s) result
-throwHeapErrorWithStepInfoSTE f =
-                            do  cah <- getHSCM
-                                ct <- return $  _extractReductionStepCounterCAH cah
-                                lift $ throwSTE $! (f ct)
+throwHeapErrorWithStepInfoSTE f = do
+  cah <- getHSCM
+  ct <- return $ _extractReductionStepCounterCAH cah
+  lift $ throwSTE $! f ct
 
-data Heap val  =  Heap { _minMaxFreshRef :: !Ref,  _theHeap :: ! (Map.Map Ref val)   }
-   deriving (  Typeable  , Eq, Ord, Show, Functor,Foldable,Traversable ,Generic,Data)
+data Heap val = Heap
+  { _minMaxFreshRef :: !Ref
+  , _theHeap :: ! (Map.Map Ref val)
+  } deriving (Typeable, Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data)
 
 -- | HeapError is currently flawed because we dont provide a stack trace
 data HeapError
@@ -69,28 +76,26 @@ heapRefUpdate ref val (Heap ct mp)
         | ref >= ct = throwHeapError HeapLookupOutOfBounds -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
         | otherwise {- invalid heap ref -} = throwHeapError InvalidHeapLookup
 
-heapAllocateValue :: Heap val   -> val   -> (Ref,Heap val  )
+heapAllocateValue :: Heap val   -> val   -> (Ref,Heap val)
 heapAllocateValue hp val = (_minMaxFreshRef hp
-                            , Heap (Ref $ (refPointer minmax) + 1) newMap)
+                            , Heap (Ref $ refPointer minmax + 1) newMap)
   where
       minmax = _minMaxFreshRef hp
       newMap = Map.insert minmax  val (_theHeap hp)
 
-data CounterAndHeap val  =  CounterAndHeap {
-                                        _extractReductionStepCounterCAH :: !Natural
-                                        ,_extractCostCounterCAH :: !Natural
-                                        -- this should be a Natural, represents  number of
-                                        -- steps l
-                                        ,_extractMaxCostCounter :: !Natural
-                                        ,_extractHeapCAH :: !(Heap val ) }
-                            deriving (
-
-                                      Typeable
-                                      ,Eq,Ord,Show
-                                      ,Foldable
-                                      ,Traversable
-                                      ,Functor
-                                      )
+data CounterAndHeap val = CounterAndHeap
+  { _extractReductionStepCounterCAH :: !Natural
+  , _extractCostCounterCAH :: !Natural
+  -- this should be a Natural, represents  number of steps l
+  , _extractMaxCostCounter :: !Natural
+  , _extractHeapCAH :: !(Heap val )
+  } deriving (
+    Typeable
+    ,Eq,Ord,Show
+    ,Foldable
+    ,Traversable
+    ,Functor
+  )
 
 
 newtype HeapStepCounterM val  m a = HSCM {_xtractHSCM :: State.StateT  (CounterAndHeap val ) m a}
@@ -156,8 +161,11 @@ heapAllocate val = do   cah <-  getHSCM
 heapLookup :: Ref -> forall b. HeapStepCounterM val (STE (b :+ HeapError) s) val
 heapLookup ref = do
   checkedCounterIncrement
+  traceM $ "heapLookup attempting " ++ show ref
   heapHandle <- _extractHeapCAH <$> getHSCM
-  heapRefLookup ref heapHandle
+  x <- heapRefLookup ref heapHandle
+  traceM "heapLookup succeeded"
+  return x
    where
      heapRefLookup :: Ref -> Heap val -> HeapStepCounterM val (STE (b :+ HeapError) s) val
      heapRefLookup rf (Heap ct mp)
@@ -171,5 +179,21 @@ unsafeRunHSCM :: Monad m =>  Natural -> Heap val  -> HeapStepCounterM val m b ->
 unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap 0 0 cnt hp)
 
 -- run a program in an empty heap
-runEmptyHeap :: Monad m =>  Natural -> HeapStepCounterM val m  b-> m (b,CounterAndHeap val )
-runEmptyHeap ct (HSCM m) = State.runStateT m (CounterAndHeap 0 0 ct $ Heap (Ref 1) Map.empty)
+runEmptyHeap
+  :: Monad m
+  => Natural
+  -> HeapStepCounterM val m b
+  -> m (b, CounterAndHeap val)
+runEmptyHeap = runHeap (Heap (Ref 1) Map.empty)
+  
+runHeap
+  :: Monad m
+  => Heap val
+  -> Natural
+  -> HeapStepCounterM val m b
+  -> m (b, CounterAndHeap val)
+runHeap heap ct (HSCM m) =
+  let counterAndHeap = CounterAndHeap 0 0 ct heap
+  in State.runStateT m counterAndHeap
+
+

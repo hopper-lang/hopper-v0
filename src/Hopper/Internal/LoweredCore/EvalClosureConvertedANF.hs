@@ -23,6 +23,9 @@ import Hopper.Internal.Runtime.Heap (
   ,checkedCounterCost
   ,throwHeapErrorWithStepInfoSTE
   ,transitiveHeapLookup
+
+  , getHSCM
+  , _extractHeapCAH 
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Data.Hop.Or
@@ -41,6 +44,8 @@ import Hopper.Internal.Core.Literal (
   ,gmpMathCost
   ,hoistTotalMathLiteralOp
   )
+
+import Debug.Trace
 
 type EvalCC c s a
   = HeapStepCounterM (ValueRepCC Ref)
@@ -168,17 +173,18 @@ localEnvLookup
   -> ControlStackCC
   -> LocalNamelessVar
   -> forall c. EvalCC c s Ref
-localEnvLookup env controlStack var@(LocalNamelessVar depth  (BinderSlot slot )  ) = go env depth
+localEnvLookup env controlStack var@(LocalNamelessVar depth (BinderSlot slot))
+  = go env depth
   where
     go :: EnvStackCC -> Word32  -> EvalCC c s Ref
-    go EnvEmptyCC _ = throwEvalError (\n ->
-                        BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n))
-    go (EnvConsCC theRefVect _) 0 = maybe
-              (throwEvalError (\n ->
-                              BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n)))
-              return
-              (theRefVect V.!?  fromIntegral slot)
-    go (EnvConsCC _ rest) w = go rest (w - 1)
+    go EnvEmptyCC _ = trace "here0" $ throwEvalError (\n ->
+      BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n))
+    go (EnvConsCC theRefVect _) 0 = trace "here1" $ maybe
+      (throwEvalError (\n ->
+        BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n)))
+      (return . traceShowId)
+      (theRefVect V.!?  fromIntegral slot)
+    go (EnvConsCC _ rest) w = trace "here2" $ go rest (w - 1)
 
 evalCCAnf
   :: SymbolRegistryCC
@@ -465,9 +471,17 @@ enterTotalMathPrimopSimple
   -> (GmpMathOpId, V.Vector Ref)
   -> forall c. EvalCC c s (V.Vector Ref)
 enterTotalMathPrimopSimple controlstack (opId, refs) = do
+  traceShowM refs
+  heapHandle <- _extractHeapCAH <$> getHSCM
+  traceShowM heapHandle
+  traceM "inside enterTotalMathPrimopSimple 0"
+  traceShowM $ V.length refs
+  -- XXX why do we get stuck here?
   args <- extendErrorTrans $ mapM heapLookup refs
+  traceM "inside enterTotalMathPrimopSimple 1"
   checkedOp <- return $ do
     areLiterals <- mapM argAsLiteral (V.toList args)
+    traceM "inside enterTotalMathPrimopSimple 2"
     hoistTotalMathLiteralOp opId areLiterals
   case checkedOp of
     Left str ->
