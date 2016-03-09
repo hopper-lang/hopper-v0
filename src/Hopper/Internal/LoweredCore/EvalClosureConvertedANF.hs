@@ -73,6 +73,7 @@ data EnvStackCC =
     EnvConsCC !(V.Vector Ref) !EnvStackCC
     | EnvEmptyCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
+
 data ControlStackCC  =
       LetBinderCC !(V.Vector BinderInfoCC)
                 !()
@@ -415,11 +416,12 @@ enterClosureCC _codReg@(SymbolRegistryCC _thunk _closureMap _values)
                envStack
                controlstack
                (localClosureVar, localArgs)
-                = undefined    envStack
-                               controlstack
-                               (localClosureVar,localArgs)
+               = (error "enterClosureCC not yet defined")
+                 envStack
+                 controlstack
+                 (localClosureVar, localArgs)
 
-{- | enterPrimAppCC is special in a manner similar to enterOrResolveThunkCC
+{- enterPrimAppCC is special in a manner similar to enterOrResolveThunkCC
 this is because some primitive operations are ONLY defined on suitably typed Literals,
 such as natural number addition. So enterPrimAppCC will have to chase indirections for those operations,
 AND validate that it has the right arguments etc.
@@ -428,39 +430,34 @@ compiler / interpreter transformations DO guarantee that this shall never happen
 but cosmic radiation, a bug in GHC, or a bug in the hopper infrastructure (the most likely :) )  could
 result in a mismatch between reality and our expectations, so never hurts to check.
 -}
+
+-- | Enter a primop.
+--
+-- Currently limited to total math primops and local variables (no globals!).
 enterPrimAppCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
   -> (PrimOpId, V.Vector Variable)
   -> forall c. EvalCC c s (V.Vector Ref)
-enterPrimAppCC = undefined
-
--- | Enter a primop.
---
--- Currently limited to math primops and local variables (no globals!).
-enterPrimSimple
-  :: SymbolRegistryCC
-  -> EnvStackCC
-  -> ControlStackCC
-  -> (PrimOpId, V.Vector Variable)
-  -> forall c. EvalCC c s (V.Vector Ref)
-enterPrimSimple symreg envstack controlstack (op@(TotalMathOpGmp opId), vect)
-  | allLocalVars vect
-  = do nextVect <- mapM (unsafeLocalEnvLookup envstack controlstack) vect
-       enterTotalMathPrimopSimple controlstack (opId, nextVect)
+enterPrimAppCC symreg envstack stack (opId, args)
+  | allLocalVars args
+  = do nextVect <- mapM (unsafeLocalEnvLookup envstack stack) args
+       case opId of
+         (TotalMathOpGmp mathOpId) ->
+           enterTotalMathPrimopSimple stack (mathOpId, nextVect)
+         PrimopIdGeneral name ->
+           let errMsg = "Unsupported opcode referenced: `" ++ show name ++ "`."
+               err step = PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg)
+           in throwEvalError err
   | otherwise
   = let errMsg = unwords
-          [ "A global symbol reference appeared in a primop."
+          [ "A global symbol reference appeared when entering a prim app."
           , "This is not yet supported."
           , "The opcode invoked was"
-          , "`" ++ show op ++ "`."
+          , "`" ++ show opId ++ "`."
           ]
-        err step = PanicMessageConstructor(controlstack, 0, InterpreterStepCC step, errMsg)
-    in throwEvalError err
-enterPrimSimple _ _ controlstack (opcode, _)
-  = let errMsg = "Unsupported opcode referenced: `" ++ show opcode ++ "`."
-        err step = PanicMessageConstructor(controlstack, 0, InterpreterStepCC step, errMsg)
+        err step = PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg)
     in throwEvalError err
 
 enterTotalMathPrimopSimple
