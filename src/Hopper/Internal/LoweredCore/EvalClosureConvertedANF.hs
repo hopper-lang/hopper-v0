@@ -154,7 +154,7 @@ allocLit x = extendErrorTrans (heapAllocate (ValueLitCC x))
 -- | Unsafely get a Ref from a Variable
 --
 -- Unsafe because you need to guarantee that it's a LocalVar rather than a
--- GlobalVarSym.
+-- GlobalVarSym _.
 unsafeLocalEnvLookup
   :: EnvStackCC
   -> ControlStackCC
@@ -248,7 +248,7 @@ applyCC
   -> forall c. EvalCC c s (V.Vector Ref)
 applyCC symbolReg envStk stack alloc = case alloc of
   EnterThunkCC var -> enterOrResolveThunkCC symbolReg envStk stack var
-  FunAppCC var vec -> enterClosureCC symbolReg envStk stack (var vec)
+  FunAppCC var vec -> enterClosureCC symbolReg envStk stack (var, vec)
   PrimAppCC opId vec -> enterPrimAppCC symbolReg envStk stack (opId, vec)
 
 -- enterOrResolveThunkCC will push a update Frame onto the control stack if its
@@ -265,7 +265,7 @@ enterOrResolveThunkCC
   -> forall c. EvalCC c s (V.Vector Ref)
 enterOrResolveThunkCC symbolReg env stack var = 
   case var of
-    GlobalVarSym -> 
+    GlobalVarSym _ -> 
       let errMsg = "`enterOrResolveThunkCC` expected a local ref, received a global"
           err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
       in throwEvalError err

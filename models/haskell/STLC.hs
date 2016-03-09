@@ -453,9 +453,11 @@ extractCounterCAH  fun cnh = fmap (\i' -> cnh{_extractCounterCAH=i'}) $ fun $ _e
 
 newtype HeapStepCounterM ty  a = HSCM {_xtractHSCM :: State.State (CounterAndHeap ty) a}
    deriving (Typeable,Functor)
+
 instance Applicative (HeapStepCounterM ty ) where
     pure  = \v ->  HSCM $ pure v
     (<*>) = \ (HSCM f) (HSCM v) -> HSCM $ f <*> v
+
 instance Monad (HeapStepCounterM ty ) where
     return = pure
     (>>=)= \ (HSCM mv) f -> HSCM (mv  >>= (_xtractHSCM. f))

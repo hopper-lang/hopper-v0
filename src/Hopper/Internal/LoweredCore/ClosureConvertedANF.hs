@@ -38,9 +38,7 @@ import Data.Word
 import Data.Data
 import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 
-import qualified Data.Text as T (Text)
 import Hopper.Internal.Core.Literal
-import Hopper.Internal.Core.Term
 import GHC.Generics
 import qualified  Data.Vector as V
 import Hopper.Internal.Type.Relevance(Relevance)
