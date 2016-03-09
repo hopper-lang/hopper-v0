@@ -1,5 +1,6 @@
 dist
 .gitconfig
+.stack-work
 models/agda/core.agdai
 models/lean/.#core.lean
 models/lean/core.clean
