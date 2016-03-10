@@ -6,6 +6,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeFamilies, TypeOperators #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Hopper.Internal.Runtime.Heap(
    CounterAndHeap(..)
@@ -49,7 +50,7 @@ class TransitiveLookup valRep  where
   transitiveHeapLookup :: Ref -> forall c . HeapStepCounterM valRep (STE (c  :+ HeapError ) s) (Natural,valRep)
 
 
-throwHeapErrorWithStepInfoSTE :: (Natural -> err) -> HeapStepCounterM val (STE err  s) result
+throwHeapErrorWithStepInfoSTE :: forall s err val result  . (Natural -> err) -> HeapStepCounterM val (STE err  s) result
 throwHeapErrorWithStepInfoSTE f = do
   cah <- getHSCM
   ct <- return $ _extractReductionStepCounterCAH cah
@@ -67,14 +68,14 @@ data HeapError
   | HeapLookupOutOfBounds
   deriving (Eq,Ord,Show,Read,Typeable)
 
-throwHeapError :: MonadTrans t => HeapError -> forall  a s b . t (STE (b :+ HeapError) s) a
-throwHeapError e = lift $! throwSTE $ InR e
+--throwHeapError :: MonadTrans t => HeapError -> forall  a s b . t (STE (b :+ HeapError) s) a
+--throwHeapError e = lift $ throwSTE $ InR e
 
-heapRefUpdate :: Ref -> val  -> Heap val  ->forall s b.  HeapStepCounterM val (STE (b :+ HeapError ) s) (Heap val)
+heapRefUpdate ::  forall s  val . Ref -> val  -> Heap val  ->forall  b.  HeapStepCounterM val (STE (b :+ HeapError ) s) (Heap val)
 heapRefUpdate ref val (Heap ct mp)
         | ref < ct  && ref `Map.member` mp = return $ Heap ct $ Map.insert ref val mp
-        | ref >= ct = throwHeapError HeapLookupOutOfBounds -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
-        | otherwise {- invalid heap ref -} = throwHeapError InvalidHeapLookup
+        | ref >= ct = throwHeapErrorWithStepInfoSTE (\ _ -> InR HeapLookupOutOfBounds) -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
+        | otherwise {- invalid heap ref -} = throwHeapErrorWithStepInfoSTE (\ _ -> InR InvalidHeapLookup)
 
 heapAllocateValue :: Heap val   -> val   -> (Ref,Heap val)
 heapAllocateValue hp val = (_minMaxFreshRef hp
@@ -139,8 +140,13 @@ checkedCounterCost  jumpSize =
                           do  cah <- getHSCM
                               redct <- return $  _extractReductionStepCounterCAH cah
                               costct <- return $ _extractCostCounterCAH cah
-                              if costct > _extractMaxCostCounter cah
-                               then throwHeapError HeapStepCostCounterExceeded-- error "allowed step count exceeded, aborting"
+                              if costct >= _extractMaxCostCounter cah -- lets try this
+
+                               then
+                                {-# SCC "heapABORT" #-}
+                                do
+                                 traceM "about to abortttt"
+                                 throwHeapErrorWithStepInfoSTE (\_ -> InR HeapStepCostCounterExceeded)-- error "allowed step count exceeded, aborting"
                                else setHSCM cah{
                                         _extractReductionStepCounterCAH = redct + 1
                                         ,_extractCostCounterCAH = costct +  1 +jumpSize}
@@ -164,17 +170,17 @@ heapAllocate val = do   cah <-  getHSCM
 heapLookup :: Ref -> forall b. HeapStepCounterM val (STE (b :+ HeapError) s) val
 heapLookup ref = do
   checkedCounterIncrement
-  traceM $ "heapLookup attempting " ++ show ref
+   --  -- traceM $ "heapLookup attempting " ++ show ref
   heapHandle <- _extractHeapCAH <$> getHSCM
-  x <- heapRefLookup ref heapHandle
-  traceM "heapLookup succeeded"
+  !x <- heapRefLookup ref heapHandle
+   -- traceM $! "heapLookup succeeded "
   return x
    where
      heapRefLookup :: Ref -> Heap val -> HeapStepCounterM val (STE (b :+ HeapError) s) val
      heapRefLookup rf (Heap ct mp)
        | ref < ct && rf `Map.member` mp = return $ mp Map.! rf
-       | ref >= ct = throwHeapError HeapLookupOutOfBounds
-       | otherwise {- invalid heap ref -} = throwHeapError InvalidHeapLookup
+       | ref >= ct = throwHeapErrorWithStepInfoSTE (\ _ -> InR HeapLookupOutOfBounds)
+       | otherwise {- invalid heap ref -} = throwHeapErrorWithStepInfoSTE(\ _ -> InR InvalidHeapLookup)
 
 
 --- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)

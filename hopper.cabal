@@ -116,7 +116,7 @@ library
 
 source-repository head
   type:     git
-  location: https://domainname.tld/account/reponame
+  location: https://github.com/hopper-lang/hopper
   -- todo: once opened update this to the real URL
 
 test-suite hspec

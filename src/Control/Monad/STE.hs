@@ -1,4 +1,4 @@
-{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts, Trustworthy,TypeOperators, ScopedTypeVariables #-}
+{-# LANGUAGE MagicHash, UnboxedTuples, RankNTypes, TypeFamilies, DeriveDataTypeable, GADTs,FlexibleContexts, Trustworthy,TypeOperators, ScopedTypeVariables, BangPatterns #-}
 module Control.Monad.STE
 (
   STE
@@ -20,26 +20,29 @@ import Data.Typeable
 import Unsafe.Coerce (unsafeCoerce)
 import Control.Monad.Trans.Class
 import Data.Hop.Or
+import Debug.Trace
 
-{-# INLINE extendErrorTrans #-}
+-- {-# INLINE extendErrorTrans #-}
+{-# NOINLINE extendErrorTrans #-}
 extendErrorTrans
   :: forall s (h :: *) (tm :: (* -> *) -> * -> *) (a :: *). MonadTrans tm =>
      (forall b.
       tm (STE (b :+ h) s) a)
   -> forall c err.
      tm (STE (c :+ err :+ h ) s)  a
-extendErrorTrans x = unsafeCoerce x
+extendErrorTrans  x = (unsafeCoerce id ) $!  x
 
 
-{-# INLINE extendError  #-}
+--  {-# INLINE extendError  #-}
+{-# NOINLINE extendError  #-}
 extendError
   :: forall s (h :: *) (a :: *).
      (forall b.  (STE (b :+ h) s) a)
   -> forall c err.  (STE (c :+ err :+ h ) s)  a
-extendError x = unsafeCoerce x
+extendError  x = (unsafeCoerce id ) $! x
 
 -- maybe this constructor shouldn't be private?
-newtype STE e s a = STE {  unSTE  ::  (STRep s a)}
+newtype STE e s a = STE {  extractSTE  ::  (STRep s a)}
 type STRep s a = State# s -> (# State# s, a #)
 
 instance Functor (STE e s) where
@@ -70,22 +73,38 @@ instance PrimMonad (STE e s) where
   {-# INLINE primitive #-}
 instance PrimBase (STE e s) where
   internal (STE p) = p
-  {-# INLINE internal #-}
+ --  {-# INLINE internal #-}
 
-unsafePrimToSTE :: PrimBase m => m a -> STE e s a
-{-# INLINE unsafePrimToSTE #-}
+unsafePrimToSTE :: forall m . PrimBase m =>(forall s e a . m a ->  STE e s a)
+{-# NONLINE unsafePrimToSTE #-}
 unsafePrimToSTE = unsafePrimToPrim
 
 {-# NOINLINE runSTE #-} -- this may not be needed and may make code closer when its a small STE computation (though we're using it for small stuff )
 runSTE :: (forall s. STE e s a) -> (Either e a  -> b) -> b
-runSTE st  f = runSTRep (case  do  res <-  unsafePrimToSTE $ catch   (unsafePrimToPrim $ fmap Right  st)  (\(STException (Box err)) -> return (Left  $! unsafeCoerce err)) ; return (f res) of { STE st_rep -> st_rep })
+runSTE st  f = runSTRep (case
+       do    -- traceM "about to runSTE"
+            !res <-  unsafePrimToSTE $
+              catch   (unsafePrimToPrim $ fmap Right  st)
+                      (\(STException (Box err)) -> return (Left  $ unsafeCoerce err))
+             -- traceM "caught STE "
+            !resNew <-  return $! (f res)
+             -- traceM "forced STE result "
+            return $! resNew
 
+    of { STE st_rep -> st_rep })
+
+{-# NOINLINE  handleSTE #-}
 handleSTE :: (Either e a -> b) -> (forall s. STE e s a)  -> b
 handleSTE f st = runSTE st f
 
 {-#  NOINLINE throwSTE #-} -- again audit
-throwSTE :: forall e s a .   e -> STE e s a
-throwSTE err = STE $ \(s#  :: State#  st) ->  (  internal $ unsafePrimToSTE $ (throwIO (STException  $ Box  $ unsafeCoerce  $ err) ) s# )
+throwSTE :: forall (e:: * ) s (a ::  * ) .   e -> STE e s a
+throwSTE err = STE $
+       \s#  ->  (
+           (extractSTE $
+             unsafePrimToSTE $
+                       (throwIO (STException  $! Box  $ (unsafeCoerce  $ err) ) ))
+            s# )
 
 -- I'm only letting runSTRep be inlined right at the end, in particular *after* full laziness
 -- That's what the "INLINE [0]" says.

@@ -146,7 +146,7 @@ because this is sort of in between! :)
 
 throwEvalError
   :: (Natural -> EvalErrorCC val)
-  -> HeapStepCounterM val (STE (a :+ (EvalErrorCC val :+ HeapError)) s) result
+  -> forall a .  HeapStepCounterM val (STE (a :+ (EvalErrorCC val :+ HeapError)) s) result
 throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InR . InL . handler
 
 -- | Are all the Variables in this structure local?
@@ -194,8 +194,8 @@ evalCCAnf
   -> forall c. EvalCC c s (V.Vector Ref)
 evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
 
-  traceM "about to ABOERRTTTTT "
-  resRefs <- traverse (localEnvLookup envStack contStack) $ (error "FIX THIS") localVarLS
+   --  -- traceM "about to ABOERRTTTTT "
+  resRefs <- traverse (localEnvLookup envStack contStack) $! (error "FIX THIS") localVarLS
   enterControlStackCC codeReg contStack resRefs
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
   dispatchRHSCC codeReg
@@ -317,7 +317,7 @@ hoistedTransitiveLookup
   -> forall c. EvalCC c s (Natural, ValueRepCC Ref)
 hoistedTransitiveLookup ref = do
 
-      traceM "unsafe extendErrorTrans"
+       --  -- traceM "unsafe extendErrorTrans"
       extendErrorTrans (transitiveHeapLookup ref)
 
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ClosureCodeRecordCC -> Bool #-}
@@ -380,7 +380,7 @@ lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef
   where
     deref :: Ref -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId)
     deref ref = do
-      traceM "heap thunk lookup"
+       --  -- traceM "heap thunk lookup"
       (lookups, val) <- hoistedTransitiveLookup ref
       case val of
          ThunkCC envRefs codeId -> return (envRefs, codeId)
@@ -403,7 +403,7 @@ lookupHeapLiteral envStack controlStack var = do
   where
     deref :: Ref -> forall c. EvalCC c s Literal
     deref ref = do
-      traceM "heap literal lookup"
+       --  -- traceM "heap literal lookup"
       (lookups, val) <- hoistedTransitiveLookup ref
       case val of
         ValueLitCC l -> return l
@@ -481,14 +481,14 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
   traceShowM refs
   heapHandle <- _extractHeapCAH <$> getHSCM
   traceShowM heapHandle
-  traceM "inside enterTotalMathPrimopSimple 0"
+   --  -- traceM "inside enterTotalMathPrimopSimple 0"
   traceShowM $ V.length refs
   -- XXX why do we get stuck here?
   args <- extendErrorTrans $ mapM heapLookup refs
-  traceM "inside enterTotalMathPrimopSimple 1"
+   --  -- traceM "inside enterTotalMathPrimopSimple 1"
   checkedOp <- return $ do
     areLiterals <- mapM argAsLiteral (V.toList args)
-    traceM "inside enterTotalMathPrimopSimple 2"
+     --  -- traceM "inside enterTotalMathPrimopSimple 2"
     hoistTotalMathLiteralOp opId areLiterals
   case checkedOp of
     Left str ->
