@@ -108,8 +108,7 @@ library
   hs-source-dirs:      src
   ghc-options: -Wall
 
-  if flag(fullprofiling)
-    ghc-prof-options: -fprof-auto -fprof-auto-calls -fprof-cafs
+  ghc-prof-options: -fprof-auto -fprof-auto-calls -fprof-cafs
 
   -- Base language which the package is written in.
   default-language:    Haskell2010
@@ -123,9 +122,10 @@ source-repository head
 test-suite hspec
   type: exitcode-stdio-1.0
   main-is: hspec.hs
-  ghc-options: -w -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -w -threaded -rtsopts -with-rtsopts=-N
   hs-source-dirs: tests
   default-language: Haskell2010
+  ghc-prof-options: -fprof-auto -fprof-auto-calls -fprof-cafs
   build-depends:
       base,
       containers >= 0.5 && < 0.6,

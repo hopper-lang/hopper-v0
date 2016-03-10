@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, TypeOperators #-}
+{-# LANGUAGE LambdaCase, TypeOperators, RankNTypes, ScopedTypeVariables #-}
 module HopSpec.EvalSpec (spec) where
 
 import Test.Hspec
@@ -27,11 +27,11 @@ spec :: Spec
 spec = describe "Evaluation Spec" $
   it "evaluates `1 + 1`" $
     let
-      startHeap = Heap (Ref 1) $ Map.fromList
+      startHeap = Heap (Ref 2) $ Map.fromList
         [ (Ref 0, makeInt 1)
         , (Ref 1, makeInt 1)
         ]
-      stack = UpdateHeapRefCC (Ref 3) ControlStackEmptyCC
+      stack = UpdateHeapRefCC (Ref 2) ControlStackEmptyCC
       -- envStack = EnvConsCC (V.fromList [Ref 0, Ref 1]) EnvEmptyCC
       envStack = EnvConsCC (V.singleton (Ref 0))
                 (EnvConsCC (V.singleton (Ref 1))
@@ -43,14 +43,21 @@ spec = describe "Evaluation Spec" $
         ]
       tm = TailCallCC (PrimAppCC (TotalMathOpGmp IntAddOpId) addVars)
 
+      calculation :: forall s c . EvalCC c s (V.Vector Ref)
       calculation = evalCCAnf emptySymbolReg envStack stack tm
 
+
       results :: Either String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))
-      results = runSTE (runHeap startHeap 0 calculation) (left handleSTEErr)
+      results =  handleSTE (either (Left . show :: (() :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError)) -> Either  String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))) (Right))
+                            (runHeap startHeap 0 calculation)
+
+
+
+
 
       handleSTEErr :: () :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError) -> String
       handleSTEErr = \case
-        InL () -> "failed with a mysterious left"
+        InL _ -> "failed with a mysterious left"
         InR (InL evalErr) -> show evalErr
         InR (InR heapErr) -> show heapErr
     in case results of

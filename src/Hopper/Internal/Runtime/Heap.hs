@@ -67,10 +67,10 @@ data HeapError
   | HeapLookupOutOfBounds
   deriving (Eq,Ord,Show,Read,Typeable)
 
-throwHeapError :: MonadTrans t => HeapError -> t (STE (a1 :+ HeapError) s) a
-throwHeapError e = lift $ throwSTE $ InR e
+throwHeapError :: MonadTrans t => HeapError -> forall  a s b . t (STE (b :+ HeapError) s) a
+throwHeapError e = lift $! throwSTE $ InR e
 
-heapRefUpdate :: Ref -> val  -> Heap val  -> HeapStepCounterM val (STE (b :+ HeapError ) s) (Heap val)
+heapRefUpdate :: Ref -> val  -> Heap val  ->forall s b.  HeapStepCounterM val (STE (b :+ HeapError ) s) (Heap val)
 heapRefUpdate ref val (Heap ct mp)
         | ref < ct  && ref `Map.member` mp = return $ Heap ct $ Map.insert ref val mp
         | ref >= ct = throwHeapError HeapLookupOutOfBounds -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
@@ -108,7 +108,10 @@ instance PrimMonad m => PrimMonad (HeapStepCounterM val m) where
   type PrimState (HeapStepCounterM val m) = Prim.PrimState m
   primitive stfun = lift $ Prim.primitive stfun
 instance MT.MonadTrans (HeapStepCounterM val) where
-    lift m =  HSCM $ StateT (\ s -> fmap (\i -> (i,s)) m)
+    lift m =  HSCM $
+                StateT $ \ s -> do
+                                  a <- m
+                                  return (a, s)
 instance Monad  n=>Applicative (HeapStepCounterM val  n) where
     pure  = \v ->  HSCM $ pure v
     (<*>) = \ (HSCM f) (HSCM v) -> HSCM $ f <*> v
@@ -185,15 +188,16 @@ runEmptyHeap
   -> HeapStepCounterM val m b
   -> m (b, CounterAndHeap val)
 runEmptyHeap = runHeap (Heap (Ref 1) Map.empty)
-  
+
 runHeap
   :: Monad m
   => Heap val
   -> Natural
   -> HeapStepCounterM val m b
   -> m (b, CounterAndHeap val)
-runHeap heap ct (HSCM m) =
-  let counterAndHeap = CounterAndHeap 0 0 ct heap
-  in State.runStateT m counterAndHeap
+runHeap heap cost (HSCM m)  =
+      let counterAndHeap = CounterAndHeap 0 0 cost heap
+          in State.runStateT m counterAndHeap
+  -- | otherwise = error "runheap needs a nonzero total execution budget"
 
 

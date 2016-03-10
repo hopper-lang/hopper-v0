@@ -25,7 +25,7 @@ import Hopper.Internal.Runtime.Heap (
   ,transitiveHeapLookup
 
   , getHSCM
-  , _extractHeapCAH 
+  , _extractHeapCAH
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Data.Hop.Or
@@ -193,6 +193,8 @@ evalCCAnf
   -> AnfCC
   -> forall c. EvalCC c s (V.Vector Ref)
 evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
+
+  traceM "about to ABOERRTTTTT "
   resRefs <- traverse (localEnvLookup envStack contStack) $ (error "FIX THIS") localVarLS
   enterControlStackCC codeReg contStack resRefs
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
@@ -270,9 +272,9 @@ enterOrResolveThunkCC
   -> ControlStackCC
   -> Variable
   -> forall c. EvalCC c s (V.Vector Ref)
-enterOrResolveThunkCC symbolReg env stack var = 
+enterOrResolveThunkCC symbolReg env stack var =
   case var of
-    GlobalVarSym _ -> 
+    GlobalVarSym _ ->
       let errMsg = "`enterOrResolveThunkCC` expected a local ref, received a global"
           err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
       in throwEvalError err
@@ -295,7 +297,7 @@ enterOrResolveThunkCC symbolReg env stack var =
             symbolReg
             (UpdateHeapRefCC ref stack)
             envRefs
-        _ -> 
+        _ ->
           let errMsg = "`enterOrResolveThunkCC` got an unexpected value: `" ++ show val ++ "`"
               err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
           in throwEvalError err
@@ -313,7 +315,10 @@ this will require analyzing core, and designing some sort of performance measure
 hoistedTransitiveLookup
   :: Ref
   -> forall c. EvalCC c s (Natural, ValueRepCC Ref)
-hoistedTransitiveLookup ref = extendErrorTrans (transitiveHeapLookup ref)
+hoistedTransitiveLookup ref = do
+
+      traceM "unsafe extendErrorTrans"
+      extendErrorTrans (transitiveHeapLookup ref)
 
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ClosureCodeRecordCC -> Bool #-}
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ThunkCodeRecordCC -> Bool #-}
@@ -375,6 +380,7 @@ lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef
   where
     deref :: Ref -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId)
     deref ref = do
+      traceM "heap thunk lookup"
       (lookups, val) <- hoistedTransitiveLookup ref
       case val of
          ThunkCC envRefs codeId -> return (envRefs, codeId)
@@ -397,6 +403,7 @@ lookupHeapLiteral envStack controlStack var = do
   where
     deref :: Ref -> forall c. EvalCC c s Literal
     deref ref = do
+      traceM "heap literal lookup"
       (lookups, val) <- hoistedTransitiveLookup ref
       case val of
         ValueLitCC l -> return l
