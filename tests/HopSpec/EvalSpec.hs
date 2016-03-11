@@ -51,14 +51,15 @@ spec = describe "Evaluation Spec" $
 
 
       results :: Either String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))
-      results =  handleSTE (either (Left . show :: (() :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError)) -> Either  String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))) (Right))
-                            (runHeap startHeap 0 calculation)
+      results =  handleSTE (either (Left . show :: (() :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError) -> Either  String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))) (Right))
+                          $ case  (runHeap startHeap 0 calculation) of
+                              !x -> x
 
 
 
 
 
-      handleSTEErr :: () :+ (EvalErrorCC (ValueRepCC Ref) :+ HeapError) -> String
+      handleSTEErr :: () :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError -> String
       handleSTEErr = \x ->
         case x of
           _ -> "boom boom boom "

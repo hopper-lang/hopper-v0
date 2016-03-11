@@ -49,7 +49,7 @@ import Debug.Trace
 
 type EvalCC c s a
   = HeapStepCounterM (ValueRepCC Ref)
-                     (STE (c :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError) s)
+                     (STE ((c :+ EvalErrorCC (ValueRepCC Ref)) :+ HeapError) s)
                      a
 
 -- once i have explicit exports in this module, this will be dead code
@@ -146,8 +146,8 @@ because this is sort of in between! :)
 
 throwEvalError
   :: (Natural -> EvalErrorCC val)
-  -> forall a .  HeapStepCounterM val (STE (a :+ (EvalErrorCC val :+ HeapError)) s) result
-throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InR . InL . handler
+  -> forall a .  HeapStepCounterM val (STE (a :+ EvalErrorCC val :+ HeapError) s) result
+throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InL . InR  . handler
 
 -- | Are all the Variables in this structure local?
 allLocalVars :: Foldable t => t Variable -> Bool
