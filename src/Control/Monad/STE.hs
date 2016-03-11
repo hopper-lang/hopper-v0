@@ -12,7 +12,7 @@ module Control.Monad.STE
   where
 
 --import qualified  GHC.ST as GST
-import GHC.Prim (State#,realWorld#,Any)
+import GHC.Prim (State#,Any)
 import Control.Exception as Except
 import Control.Monad (ap)
 import Control.Monad.Primitive
@@ -20,6 +20,7 @@ import Data.Typeable
 import Unsafe.Coerce (unsafeCoerce)
 import Control.Monad.Trans.Class
 import Data.Hop.Or
+import GHC.IO(IO(..))
 import Control.Monad.ST
 import GHC.ST
 
@@ -180,29 +181,6 @@ throwSTE err = STE $ unsafeCoerceIOAction2StateS $ \s# ->
                         (# s, res #) -> (# s , res #)
 
 
--- I'm only letting runSTRep be inlined right at the end, in particular *after* full laziness
--- That's what the "INLINE [0]" says.
---              SLPJ Apr 99
--- {-# INLINE [0] runSTRep #-}
-
--- SDM: further to the above, inline phase 0 is run *before*
--- full-laziness at the moment, which means that the above comment is
--- invalid.  Inlining runSTRep doesn't make a huge amount of
--- difference, anyway.  Hence:
-
-{-# NOINLINE runSTERep #-}
-runSTERep :: forall a . (forall s. STRep s a) -> a
-runSTERep st_rep = case st_rep realWorld# of
-                        (# _, r #) -> r
-
-
---data Box (a :: *) = Box {unBox :: a }
-
---data Opaque  where
---    Opaque ::  (Typeable e , Show e)  => e -> Opaque
---  deriving (Typeable)
---instance Show (Opaque) where
---  show (Opaque v) = show v
 
 data STException where
    STException :: Any -> STException
@@ -210,12 +188,5 @@ data STException where
 --deriving instance Typeable e => Typeable (STException e)
 
 instance Show (STException ) where
-  show (STException e) = "STException  OPAQUE BLOB "
+  show (STException _) = "STException  OPAQUE BLOB "
 instance Exception (STException)
-
-
---  show (STException _) = "(STException  <OPAQUE HEAP REFERENCE HERE>)"
-
-
-
--- runSTFree :: Typeable e => (forall . STE (W e) s a) -> (Either e a -> b) -> b

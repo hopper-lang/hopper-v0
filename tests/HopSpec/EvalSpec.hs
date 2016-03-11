@@ -52,7 +52,7 @@ spec = describe "Evaluation Spec" $
 
       results :: Either String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))
       results =  handleSTE (either (Left . show :: (() :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError) -> Either  String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))) (Right))
-                          $ case  (runHeap startHeap 0 calculation) of
+                          $ case  (runHeap startHeap 100 calculation) of
                               !x -> x
 
 
@@ -67,13 +67,10 @@ spec = describe "Evaluation Spec" $
           --InR (InL evalErr) -> show evalErr
           --InR (InR heapErr) -> show heapErr
     in
-      do
-        traceM "here we arrrre"
-        ( length (show results)) `seq` (return () :: IO () )
-{-        case results of
-            Left e ->  error e-- assertFailure e
-            Right _ ->  do  --(results', CounterAndHeap _ _ _ (Heap _ heap)) -> do
-              putStrLn ";allalal "
-              return () --assertBool "returns right number of results" True True  -- $ V.length results' == 1
-              --assertBool "has right result" $
-                --(heap Map.! (results' V.! 0)) == makeInt 2-}
+      case results of
+            Left e ->  assertFailure e
+            Right  (results', CounterAndHeap _ _ _ (Heap _ heap)) -> do
+
+              assertBool "returns right number of results" $ V.length results' == 1
+              assertBool "has right result" $
+                (heap Map.! (results' V.! 0)) == makeInt 2
