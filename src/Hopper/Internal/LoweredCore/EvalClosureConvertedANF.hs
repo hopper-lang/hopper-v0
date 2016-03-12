@@ -277,7 +277,7 @@ enterOrResolveThunkCC _symbolReg _env stack  (GlobalVarSym gvsym) =
         "`enterOrResolveThunkCC` expected a local ref, received a global: "++   show gvsym
       throwEvalError (\ step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
 
-enterOrResolveThunkCC symbolReg env stack  var@(LocalVar localvar) =  do
+enterOrResolveThunkCC _symbolReg env stack  _var@(LocalVar localvar) =  do
   ref <- localEnvLookup env stack localvar
   (lookups, val) <- hoistedTransitiveLookup ref
   case val of
@@ -285,21 +285,34 @@ enterOrResolveThunkCC symbolReg env stack  var@(LocalVar localvar) =  do
       do
          errMsg <- return $  "`enterOrResolveThunkCC` attempting to update a black hole"
          throwEvalError (\ step  -> PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
-    ThunkCC _ _ -> do
+    (ThunkCC _thunkEnv _thunkid) -> do
       -- TODO(joel):
       -- * overwrite with blackhole
       -- * what values do we continue with?
       -- * we probably need codeRec / codeId?
-      (envRefs, _codeId, codeRec) <- lookupHeapThunk symbolReg stack var ref
 
-      enterControlStackCC
+      return (error "fix up this thunk entry code up")
+      {- (ThunkCodeRecordCC _esize _envBindersInfo bod ) <-
+        case    lookupThunkCodeId symbolReg thunkid of
+            (Left errMsg)  ->
+              (throwHeapErrorWithStepInfoSTE  (\ step  ->
+                 PanicMessageConstructor(stack, 1+ lookups, InterpreterStepCC step, errMsg))
+                 ) :: HeapStepCounterM (ValueRepCC Ref)
+                     (STE ((c :+ EvalErrorCC (ValueRepCC Ref)) :+ HeapError) s)
+                        ThunkCodeRecordCC
+            (Right thunkrecord) -> return thunkrecord
+
+      -- TOOD : check that
+      evalCCAnf
         symbolReg
+        thunkEnv  -- (EnvConsCC loca env)
         (UpdateHeapRefCC ref stack)
-        envRefs
-    _ ->
-      let errMsg = "`enterOrResolveThunkCC` got an unexpected value: `" ++ show val ++ "`"
-          err step = PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
-      in throwEvalError err
+        bod-}
+    --- TODO: MAKE THE FALL THROUGH TOTAL :)
+    (_) -> do
+      errMsg  <- return $ "`enterOrResolveThunkCC` got an unexpected value: `" ++ show val ++ "`"
+      throwEvalError (\step ->
+          PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
 
 {-
 benchmarking Question: would passing the tuply args as unboxed tuples,
@@ -448,7 +461,7 @@ enterPrimAppCC
   -> ControlStackCC
   -> (PrimOpId, V.Vector Variable)
   -> forall c. EvalCC c s (V.Vector Ref)
-enterPrimAppCC symreg envstack stack (opId, args)
+enterPrimAppCC _symreg envstack stack (opId, args)
   | allLocalVars args
   = do nextVect <- mapM (unsafeLocalEnvLookup envstack stack) args
        case opId of
@@ -507,13 +520,13 @@ enterControlStackCC registry stack@(UpdateHeapRefCC ref newStack) refs = do
     then do
       extendErrorTrans $ unsafeHeapUpdate ref (IndirectionCC refs)
       enterControlStackCC registry newStack refs
-    else
-      let errMsg = unwords
+    else do
+      errMsg <- return $  unwords
             [ "UpdateHeapRefCC expected a black hole instead of"
             , "`" ++ show val ++ "`"
             ]
-          err step = PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg)
-      in throwEvalError err
-enterControlStackCC registry (LetBinderCC binders () newEnv body newStack) refs = do
+      throwEvalError
+        (\step ->  PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
+enterControlStackCC registry (LetBinderCC _binders () newEnv body newStack) refs = do
   envStack <- return (EnvConsCC refs newEnv)
   evalCCAnf registry envStack newStack body
