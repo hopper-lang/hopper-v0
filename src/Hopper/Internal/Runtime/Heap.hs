@@ -44,7 +44,6 @@ import Data.Hop.Or
 import Hopper.Internal.Runtime.HeapRef
 
 
-import Debug.Trace
 
 class TransitiveLookup valRep  where
   transitiveHeapLookup :: Ref -> forall c . HeapStepCounterM valRep (STE (c  :+ HeapError ) s) (Natural,valRep)
@@ -145,7 +144,6 @@ checkedCounterCost  jumpSize =
                                then
                                 {-# SCC "heapABORT" #-}
                                 do
-                                 traceM "about to abortttt"
                                  throwHeapErrorWithStepInfoSTE (\_ -> InR HeapStepCostCounterExceeded)-- error "allowed step count exceeded, aborting"
                                else setHSCM cah{
                                         _extractReductionStepCounterCAH = redct + 1
@@ -170,10 +168,8 @@ heapAllocate val = do   cah <-  getHSCM
 heapLookup :: Ref -> forall b. HeapStepCounterM val (STE (b :+ HeapError) s) val
 heapLookup ref = do
   checkedCounterIncrement
-   --  -- traceM $ "heapLookup attempting " ++ show ref
   heapHandle <- _extractHeapCAH <$> getHSCM
   !x <- heapRefLookup ref heapHandle
-   -- traceM $! "heapLookup succeeded "
   return x
    where
      heapRefLookup :: Ref -> Heap val -> HeapStepCounterM val (STE (b :+ HeapError) s) val
