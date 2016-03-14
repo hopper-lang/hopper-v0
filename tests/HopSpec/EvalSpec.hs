@@ -17,8 +17,6 @@ import Hopper.Internal.Runtime.Heap
 import Hopper.Internal.Runtime.HeapRef
 import Hopper.Utils.LocallyNameless
 
-import Debug.Trace
-
 emptySymbolReg :: SymbolRegistryCC
 emptySymbolReg = SymbolRegistryCC Map.empty Map.empty Map.empty
 

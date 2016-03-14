@@ -43,8 +43,6 @@ import Hopper.Internal.Core.Literal (
   ,hoistTotalMathLiteralOp
   )
 
-import Debug.Trace
-
 type EvalCC c s a
   = HeapStepCounterM (ValueRepCC Ref)
                      (STE ((c :+ EvalErrorCC (ValueRepCC Ref)) :+ HeapError) s)
@@ -178,14 +176,14 @@ localEnvLookup env controlStack var@(LocalNamelessVar depth (BinderSlot slot))
   = go env depth
   where
     go :: EnvStackCC -> Word32  -> EvalCC c s Ref
-    go EnvEmptyCC _ = trace "here0" $ throwEvalError (\n ->
+    go EnvEmptyCC _ = throwEvalError (\n ->
       BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n))
-    go (EnvConsCC theRefVect _) 0 = trace "here1" $ maybe
+    go (EnvConsCC theRefVect _) 0 = maybe
       (throwEvalError (\n ->
         BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n)))
-      (return . traceShowId)
+      return
       (theRefVect V.!?  fromIntegral slot)
-    go (EnvConsCC _ rest) w = trace "here2" $ go rest (w - 1)
+    go (EnvConsCC _ rest) w = go rest (w - 1)
 
 evalCCAnf
   :: SymbolRegistryCC
@@ -492,10 +490,7 @@ enterTotalMathPrimopSimple
   -> (GmpMathOpId, V.Vector Ref)
   -> forall c. EvalCC c s (V.Vector Ref)
 enterTotalMathPrimopSimple controlstack (opId, refs) = do
-  traceShowM refs
   heapHandle <- _extractHeapCAH <$> getHSCM
-  traceShowM heapHandle
-  traceShowM $ V.length refs
   args <- extendErrorTrans $ mapM heapLookup refs
   checkedOp <- return $ do
     areLiterals <- mapM argAsLiteral (V.toList args)
