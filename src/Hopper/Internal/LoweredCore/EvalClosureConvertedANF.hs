@@ -165,6 +165,9 @@ unsafeLocalEnvLookup
   -> Variable
   -> forall c. EvalCC c s Ref
 unsafeLocalEnvLookup env control (LocalVar lv) = localEnvLookup env control lv
+unsafeLocalEnvLookup _env control global = throwEvalError $ \n ->
+  let errMsg = "`unsafeLocalEnvLookup` expected a local ref, received a global: " ++ show global
+  in PanicMessageConstructor(control, 1, InterpreterStepCC n, errMsg)
 
 localEnvLookup
   :: EnvStackCC
@@ -244,6 +247,9 @@ allocateRHSCC symbolReg envStk stack@(LetBinderCC _ _ _ _ newStack) alloc =
       refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
       ref <- extendErrorTrans $ heapAllocate (ClosureCC refVect closureId)
       enterControlStackCC symbolReg newStack (V.singleton ref)
+allocateRHSCC _symbolReg _envStk stack _alloc = throwEvalError $ \step ->
+  let errMsg = "`allocateRHSCC` can only handle let binding"
+  in PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
 
 -- | Evaluate an application.
 --
