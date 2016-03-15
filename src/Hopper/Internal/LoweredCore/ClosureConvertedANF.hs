@@ -42,7 +42,7 @@ import Hopper.Internal.Core.Literal
 import GHC.Generics
 import qualified  Data.Vector as V
 import Hopper.Internal.Type.Relevance(Relevance)
-import Hopper.Internal.Runtime.Heap(TransitiveLookup(..),heapLookup)
+import Hopper.Internal.Runtime.Heap
 import Hopper.Internal.Runtime.HeapRef(Ref)
 import Hopper.Utils.LocallyNameless
 {-
@@ -130,12 +130,12 @@ how should the heap rep for Constructors, Thunks and Closures be related
 -}
 
 data ValueRepCC ref =
-                ValueLitCC   !Literal
-              | ConstructorCC !ConstrId  !(V.Vector ref)
-              | ThunkCC !(V.Vector ref)  {-# UNPACK #-}  !(ThunkCodeId)
+                ValueLitCC !Literal
+              | ConstructorCC !ConstrId !(V.Vector ref)
+              | ThunkCC !(V.Vector ref) {-# UNPACK #-} !(ThunkCodeId)
               --  should this be a heap ref to
               -- closure to have the right sharing ?
-              | ClosureCC !(V.Vector ref)  {-# UNPACK #-}  !(ClosureCodeId)  -- heap ref?
+              | ClosureCC !(V.Vector ref) {-# UNPACK #-} !(ClosureCodeId)  -- heap ref?
               | BlackHoleCC
               | IndirectionCC !(V.Vector ref)
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
@@ -267,11 +267,10 @@ data SymbolRegistryCC =
 
 lookupClosureCodeId :: SymbolRegistryCC -> ClosureCodeId-> Either String ClosureCodeRecordCC
 lookupClosureCodeId (SymbolRegistryCC _thk closMap _vals) codeid =
-      maybe  (Left $ "failed closure code lookup " ++ show codeid) (Right) $
+      maybe (Left $ "failed closure code lookup `" ++ show codeid ++ "`") Right $
         Map.lookup codeid closMap
+
 lookupThunkCodeId :: SymbolRegistryCC -> ThunkCodeId-> Either String ThunkCodeRecordCC
 lookupThunkCodeId (SymbolRegistryCC thkmap _closMap _vals) thud =
-      maybe (Left $ "failed thunk code lookup " ++ show thud ) (Right) $
+      maybe (Left $ "failed thunk code lookup `" ++ show thud ++ "`") Right $
            Map.lookup thud thkmap
---lookupStaticValue :: this one is weird / we dont have it yet setup for this
--- because static values should roughly correspond to

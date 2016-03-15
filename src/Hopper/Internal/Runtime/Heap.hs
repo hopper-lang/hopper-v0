@@ -19,6 +19,7 @@ module Hopper.Internal.Runtime.Heap(
   ,runHeap
   ,runEmptyHeap
   ,heapAllocate
+  ,heapAllocateValue
   ,heapLookup
   ,checkedCounterIncrement
   ,checkedCounterCost
@@ -26,6 +27,7 @@ module Hopper.Internal.Runtime.Heap(
   ,TransitiveLookup(..)
 
   , getHSCM
+  , setHSCM
   )
 
     where
@@ -44,6 +46,7 @@ import Control.Monad.STE
 import Data.Data
 import Data.HopperException
 import Hopper.Internal.Runtime.HeapRef
+import Hopper.Utils.LocallyNameless (GlobalSymbol)
 
 
 
@@ -61,6 +64,7 @@ throwHeapErrorWithStepInfoSTE f = do
 
 data Heap val = Heap
   { _minMaxFreshRef :: !Ref
+  , _symbolLookup :: !(Map.Map GlobalSymbol Ref)
   , _theHeap :: ! (Map.Map Ref val)
   } deriving (Typeable, Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data)
 
@@ -77,24 +81,23 @@ _HeapError :: Prism' SomeHopperException HeapError
 _HeapError = prism' toHopperException fromHopperException
 
 heapRefUpdate ::  forall s val. Ref -> val -> Heap val -> HeapStepCounterM val (STE SomeHopperException s) (Heap val)
-heapRefUpdate ref val (Heap ct mp)
-        | ref < ct  && ref `Map.member` mp = return $ Heap ct $ Map.insert ref val mp
+heapRefUpdate ref val (Heap ct symTable mp)
+        | ref < ct  && ref `Map.member` mp = return $ Heap ct symTable $ Map.insert ref val mp
         | ref >= ct = throwHeapErrorWithStepInfoSTE (\_ -> HeapLookupOutOfBounds) -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
         | otherwise {- invalid heap ref -} = throwHeapErrorWithStepInfoSTE (\_ -> InvalidHeapLookup)
 
 heapAllocateValue :: Heap val   -> val   -> (Ref,Heap val)
-heapAllocateValue hp val = (_minMaxFreshRef hp
-                            , Heap (Ref $ refPointer minmax + 1) newMap)
+heapAllocateValue (Heap minmax symTable theHeap) val = (minmax
+                            , Heap (Ref $ refPointer minmax + 1) symTable newMap)
   where
-      minmax = _minMaxFreshRef hp
-      newMap = Map.insert minmax  val (_theHeap hp)
+      newMap = Map.insert minmax val theHeap
 
 data CounterAndHeap val = CounterAndHeap
   { _extractReductionStepCounterCAH :: !Natural
   , _extractCostCounterCAH :: !Natural
   -- this should be a Natural, represents  number of steps l
   , _extractMaxCostCounter :: !Natural
-  , _extractHeapCAH :: !(Heap val )
+  , _extractHeapCAH :: !(Heap val)
   } deriving (
     Typeable
     ,Eq,Ord,Show
@@ -179,7 +182,7 @@ heapLookup ref = do
   return x
    where
      heapRefLookup :: Ref -> Heap val -> HeapStepCounterM val (STE SomeHopperException s) val
-     heapRefLookup rf (Heap ct mp)
+     heapRefLookup rf (Heap ct _symTable mp)
        | ref < ct && rf `Map.member` mp = return $ mp Map.! rf
        | ref >= ct = throwHeapErrorWithStepInfoSTE (\ _ -> HeapLookupOutOfBounds)
        | otherwise {- invalid heap ref -} = throwHeapErrorWithStepInfoSTE(\ _ -> InvalidHeapLookup)
@@ -195,7 +198,7 @@ runEmptyHeap
   => Natural
   -> HeapStepCounterM val m b
   -> m (b, CounterAndHeap val)
-runEmptyHeap = runHeap (Heap (Ref 1) Map.empty)
+runEmptyHeap = runHeap (Heap (Ref 1) Map.empty Map.empty)
 
 runHeap
   :: Monad m

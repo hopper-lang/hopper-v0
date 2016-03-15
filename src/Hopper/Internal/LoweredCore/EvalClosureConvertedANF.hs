@@ -9,25 +9,33 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
 import Hopper.Internal.LoweredCore.ClosureConvertedANF
 import Hopper.Internal.Runtime.Heap (
    HeapStepCounterM
+  ,Heap(..)
   ,unsafeHeapUpdate
   ,heapAllocate
+  ,heapAllocateValue
   ,heapLookup
   ,checkedCounterIncrement
   ,checkedCounterCost
   ,throwHeapErrorWithStepInfoSTE
   , getHSCM
+  , setHSCM
   , _extractHeapCAH
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Data.HopperException
+import Control.Applicative
 import Control.Lens.Prism
+import Control.Monad.Reader
 import Control.Monad.STE
+import Control.Monad.State.Strict
+import Control.Monad.Trans.Maybe
 import Data.Data
 import qualified Data.Map as Map
 import Data.Word(Word32)
@@ -75,9 +83,9 @@ data EnvStackCC =
     | EnvEmptyCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
-fromList :: [V.Vector Ref] -> EnvStackCC
-fromList (x:xs) = EnvConsCC x (fromList xs)
-fromList [] = EnvEmptyCC
+envStackFromList :: [V.Vector Ref] -> EnvStackCC
+envStackFromList (x:xs) = EnvConsCC x (envStackFromList xs)
+envStackFromList [] = EnvEmptyCC
 
 data ControlStackCC  =
       LetBinderCC !(V.Vector BinderInfoCC)
@@ -189,16 +197,18 @@ localEnvLookup
 localEnvLookup env controlStack var@(LocalNamelessVar depth (BinderSlot slot))
   = go env depth
   where
-    go :: EnvStackCC -> Word32  -> EvalCC c s Ref
-    go EnvEmptyCC _ = throwEvalError (\n ->
+    go :: EnvStackCC -> Word32 -> EvalCC c s Ref
+    go EnvEmptyCC n = throwEvalError (\n ->
       BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n))
     go (EnvConsCC theRefVect _) 0 = maybe
       (throwEvalError (\n ->
         BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n)))
       return
-      (theRefVect V.!?  fromIntegral slot)
+      (theRefVect V.!? fromIntegral slot)
     go (EnvConsCC _ rest) w = go rest (w - 1)
 
+
+-- | Evaluate a some term with the given environment and stack
 evalCCAnf
   :: SymbolRegistryCC
   -> EnvStackCC
@@ -206,8 +216,11 @@ evalCCAnf
   -> AnfCC
   -> forall c. EvalCC c s (V.Vector Ref)
 
+-- Returning an unpacked tuple of values, we look them up in the local
+-- environment and enter the top of the stack.
 evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
-  resRefs <- traverse (localEnvLookup envStack contStack) $! (error "FIX THIS") localVarLS
+  -- resRefs <- traverse (localEnvLookup envStack contStack) $! localVarLS
+  resRefs <- traverse (unsafeLocalEnvLookup envStack contStack) $! localVarLS
   enterControlStackCC codeReg contStack resRefs
 
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
@@ -278,6 +291,42 @@ applyCC symbolReg envStk stack alloc = case alloc of
   FunAppCC var vec -> enterClosureCC symbolReg envStk stack (var, vec)
   PrimAppCC opId vec -> enterPrimAppCC symbolReg envStk stack (opId, vec)
 
+{- | enterClosureCC has to resolve its first heap ref argument to the closure code id
+and then it pushes
+-}
+-- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
+--       e.g. logic for whether env is "compatible"
+enterClosureCC
+  :: SymbolRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> (Variable, V.Vector Variable)
+  -> forall c. EvalCC c s (V.Vector Ref)
+enterClosureCC _symbolReg _env stack (GlobalVarSym gvsym, _) = do
+  errMsg <- return $
+    "`enterClosureCC` expected a local ref, received a global: "++ show gvsym
+  throwEvalError (\step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
+enterClosureCC symbolReg env stack (LocalVar localvar, args) = do
+  ref <- localEnvLookup env stack localvar
+  (lookups, val) <- transitiveHeapLookup ref
+  case val of
+    ClosureCC closureenv closureid -> do
+      ClosureCodeRecordCC _esize _envBindersInfo _asize _argsBindersInfo bod <-
+        case lookupClosureCodeId symbolReg closureid of
+          Left errMsg -> panic $ \step ->
+            PanicMessageConstructor(stack, 1 + lookups, InterpreterStepCC step, errMsg)
+          Right closureRecord -> return closureRecord
+
+      evalCCAnf
+        symbolReg
+        (EnvConsCC closureenv env)
+        (UpdateHeapRefCC ref stack)
+        bod
+    badVal ->
+      let errMsg = "`enterClosureCC` got an unexpected value: `" ++ show badVal ++ "`"
+      in panic $ \step ->
+        PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg)
+
 -- enterOrResolveThunkCC will push a update Frame onto the control stack if its
 -- evaluating a thunk closure that hasn't been computed yet
 -- Will put a blackhole on that heap location in the mean time
@@ -290,18 +339,18 @@ enterOrResolveThunkCC
   -> ControlStackCC
   -> Variable
   -> forall c s. EvalCC c s (V.Vector Ref)
-enterOrResolveThunkCC _symbolReg _env stack  (GlobalVarSym gvsym) =
-  do  errMsg <- return $
-        "`enterOrResolveThunkCC` expected a local ref, received a global: "++ show gvsym
-      throwEvalError (\step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
+enterOrResolveThunkCC _symbolReg _env stack (GlobalVarSym gvsym) = do
+  errMsg <- return $
+    "`enterOrResolveThunkCC` expected a local ref, received a global: "++ show gvsym
+  throwEvalError (\step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
 
-enterOrResolveThunkCC symbolReg env stack _var@(LocalVar localvar) =  do
+enterOrResolveThunkCC symbolReg env stack (LocalVar localvar) = do
   ref <- localEnvLookup env stack localvar
   (lookups, val) <- transitiveHeapLookup ref
   case val of
     BlackHoleCC -> do
       errMsg <- return "`enterOrResolveThunkCC` attempting to update a black hole"
-      throwEvalError (\step -> PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
+      panic (\step -> PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
     (ThunkCC thunkEnv thunkid) -> do
       (ThunkCodeRecordCC _esize _envBindersInfo bod) <-
         case lookupThunkCodeId symbolReg thunkid of
@@ -318,8 +367,8 @@ enterOrResolveThunkCC symbolReg env stack _var@(LocalVar localvar) =  do
         (UpdateHeapRefCC ref stack)
         bod
     badVal -> do
-      errMsg  <- return $ "`enterOrResolveThunkCC` got an unexpected value: `" ++ show badVal ++ "`"
-      throwEvalError (\step ->
+      errMsg <- return $ "`enterOrResolveThunkCC` got an unexpected value: `" ++ show badVal ++ "`"
+      panic (\step ->
           PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
 
 {-
@@ -422,26 +471,6 @@ lookupHeapLiteral envStack controlStack var = do
                                lookups
                                (InterpreterStepCC step)
 
-{- | enterClosureCC has to resolve its first heap ref argument to the closure code id
-and then it pushes
--}
--- TODO: reduce duplication between lookupHeap{Closure,Thunk}.
---       e.g. logic for whether env is "compatible"
-enterClosureCC
-  :: SymbolRegistryCC
-  -> EnvStackCC
-  -> ControlStackCC
-  -> (Variable, V.Vector Variable)
-  -> forall c. EvalCC c s (V.Vector Ref)
-enterClosureCC _codReg@(SymbolRegistryCC _thunk _closureMap _values)
-               envStack
-               controlstack
-               (localClosureVar, localArgs)
-               = (error "enterClosureCC not yet defined") -- TODO FIX THIS
-                 envStack
-                 controlstack
-                 (localClosureVar, localArgs)
-
 {- enterPrimAppCC is special in a manner similar to enterOrResolveThunkCC
 this is because some primitive operations are ONLY defined on suitably typed Literals,
 such as natural number addition. So enterPrimAppCC will have to chase indirections for those operations,
@@ -493,7 +522,7 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
     hoistTotalMathLiteralOp opId areLiterals
   case checkedOp of
     Left str ->
-      let errMsg = "Received a non-literal to a total math primop :\n" ++ str
+      let errMsg = "Received a non-literal to a total math primop:\n" ++ str
           err step = PanicMessageConstructor(controlstack, 0, InterpreterStepCC step, errMsg)
       in throwEvalError err
     Right litOp -> do
@@ -505,6 +534,7 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
         argAsLiteral (ValueLitCC lit) = Right lit
         argAsLiteral notLit = Left $ "Not a literal: `" ++ show notLit ++ "`"
 
+-- | Enter the top of the stack, adding some refs to scope.
 enterControlStackCC
   :: SymbolRegistryCC
   -> ControlStackCC
@@ -513,17 +543,74 @@ enterControlStackCC
 enterControlStackCC _ ControlStackEmptyCC refs = return refs
 enterControlStackCC registry stack@(UpdateHeapRefCC ref newStack) refs = do
   val <- heapLookup ref
-  if val == BlackHoleCC
-    then do
-      unsafeHeapUpdate ref (IndirectionCC refs)
-      enterControlStackCC registry newStack refs
-    else do
-      errMsg <- return $  unwords
-            [ "UpdateHeapRefCC expected a black hole instead of"
-            , "`" ++ show val ++ "`"
-            ]
-      throwEvalError
-        (\step ->  PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
+  unsafeHeapUpdate ref (IndirectionCC refs)
+  enterControlStackCC registry newStack refs
+  -- if val == BlackHoleCC then do
+  --   else do
+  --     errMsg <- return $  unwords
+  --           [ "UpdateHeapRefCC expected a black hole instead of"
+  --           , "`" ++ show val ++ "`"
+  --           ]
+  --     throwEvalError
+  --       (\step ->  PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
 enterControlStackCC registry (LetBinderCC _binders () newEnv body newStack) refs = do
   envStack <- return (EnvConsCC refs newEnv)
   evalCCAnf registry envStack newStack body
+
+
+-- Some quick typedefs to make the `lookupStaticValue` reader stuff easier.
+type SymbolTable = Map.Map GlobalSymbol (ValueRepCC GlobalSymbol)
+
+type EvalCCT s
+  = HeapStepCounterM (ValueRepCC Ref)
+                     (STE SomeHopperException s)
+
+type Inflate a = forall c s. ReaderT SymbolTable (EvalCCT s) a
+
+-- | Look up a global symbol.
+--
+-- This slightly belongs with `lookupClosureCodeId` and `lookupThunkCodeId`, but
+-- looking up global symbols is more involved. We convert each `ValueRepCC
+-- GlobalSymbol` to a `ValueRepCC Ref` as we encounter it and insert it in the
+-- heap.
+lookupStaticValue :: SymbolRegistryCC
+                  -> GlobalSymbol
+                  -> forall c. EvalCC c (Map.Map GlobalSymbol Ref) Ref
+lookupStaticValue (SymbolRegistryCC _thk _closmap vals) symbol =
+  runReaderT (inflateStaticValue symbol) vals
+
+inflateStaticValue :: GlobalSymbol -> Inflate Ref
+inflateStaticValue symbol = do
+  counterAndHeap <- lift getHSCM
+  let heap@(Heap _ symbolLookup _) = _extractHeapCAH counterAndHeap
+
+  -- first check whether we've already inflated this value and can return the
+  -- cached result
+  case Map.lookup symbol symbolLookup of
+    Just ref -> return ref
+    Nothing -> do
+      symbolTable <- ask
+
+      -- we haven't previously inflated this value -- look up its
+      -- representation, recursively inflate, put it in the heap cache
+      case Map.lookup symbol symbolTable of
+        Just symbolRep -> do
+          refRep <- inflateStaticValue' symbolRep
+          let (ref, heap') = heapAllocateValue heap refRep
+          lift $ setHSCM $ counterAndHeap{_extractHeapCAH=heap'}
+          return ref
+        Nothing -> lift $ panic $ \step ->
+          let errMsg = "Failed to find the specified global symbol in the symbol registry: " ++ show symbol
+          in PanicMessageConstructor(error "no stack", 1, InterpreterStepCC step, errMsg)
+
+inflateStaticValue' :: ValueRepCC GlobalSymbol -> Inflate (ValueRepCC Ref)
+inflateStaticValue' (ValueLitCC lit) = return (ValueLitCC lit)
+inflateStaticValue' (ConstructorCC constrId globalChildren) =
+  ConstructorCC constrId <$> mapM inflateStaticValue globalChildren
+inflateStaticValue' (ThunkCC globalChildren thunkId) =
+  ThunkCC <$> mapM inflateStaticValue globalChildren <*> pure thunkId
+inflateStaticValue' (ClosureCC globalChildren closureId) =
+  ClosureCC <$> mapM inflateStaticValue globalChildren <*> pure closureId
+inflateStaticValue' BlackHoleCC = return BlackHoleCC
+inflateStaticValue' (IndirectionCC symbols) =
+  IndirectionCC <$> mapM inflateStaticValue symbols
