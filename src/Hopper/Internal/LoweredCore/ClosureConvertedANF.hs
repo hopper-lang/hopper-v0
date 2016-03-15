@@ -45,8 +45,6 @@ import Hopper.Internal.Type.Relevance(Relevance)
 import Hopper.Internal.Runtime.Heap(TransitiveLookup(..),heapLookup)
 import Hopper.Internal.Runtime.HeapRef(Ref)
 import Hopper.Utils.LocallyNameless
---import Data.Hop.Or
---import Control.Monad.STE
 {-
 DESIGN
 - this is the closure-converted let normal form (ANF) sibling of the types-as-calling-conventions language/abstract machine

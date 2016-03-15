@@ -14,8 +14,7 @@ module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
 import Hopper.Internal.LoweredCore.ClosureConvertedANF
 import Hopper.Internal.Runtime.Heap (
-  HeapError(..)
-  ,HeapStepCounterM
+   HeapStepCounterM
   ,unsafeHeapUpdate
   ,heapAllocate
   ,heapLookup
@@ -26,7 +25,8 @@ import Hopper.Internal.Runtime.Heap (
   , _extractHeapCAH
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
-import Data.Hop.Or
+import Data.HopperException
+import Control.Lens.Prism
 import Control.Monad.STE
 import Data.Data
 import qualified Data.Map as Map
@@ -45,7 +45,7 @@ import Hopper.Internal.Core.Literal (
 
 type EvalCC c s a
   = HeapStepCounterM (ValueRepCC Ref)
-                     (STE ((c :+ EvalErrorCC (ValueRepCC Ref)) :+ HeapError) s)
+                     (STE SomeHopperException s)
                      a
 
 -- once i have explicit exports in this module, this will be dead code
@@ -131,6 +131,11 @@ data EvalErrorCC val =
                       ,eeCCReductionStepAtError:: !InterpreterStepCC }
    deriving (Eq,Ord,Show,Typeable,Read)
 
+instance (Show val, Typeable val) => HopperException (EvalErrorCC val) where
+
+_EvalErrorCC :: Prism' SomeHopperException (EvalErrorCC (ValueRepCC Ref))
+_EvalErrorCC = prism' toHopperException fromHopperException
+
 -- Make sure this only takes one line so it doesn't throw off line numbers
 #define PanicMessageConstructor(constack,stepAdjust,reductionStep,msg) (HardFaultImpossiblePanicError (constack) (stepAdjust) (reductionStep) (msg) __FILE__ __LINE__)
 
@@ -141,9 +146,14 @@ because this is sort of in between! :)
 -}
 
 throwEvalError
-  :: (Natural -> EvalErrorCC val)
-  -> forall a .  HeapStepCounterM val (STE (a :+ EvalErrorCC val :+ HeapError) s) result
-throwEvalError handler = throwHeapErrorWithStepInfoSTE $ InL . InR  . handler
+  :: (Typeable val, Show val)
+  => (Natural -> EvalErrorCC val)
+  -> HeapStepCounterM val (STE SomeHopperException s) result
+throwEvalError = throwHeapErrorWithStepInfoSTE
+
+panic :: forall s val result. (Natural -> EvalErrorCC (ValueRepCC Ref))
+      -> HeapStepCounterM val (STE SomeHopperException s) result
+panic = throwHeapErrorWithStepInfoSTE
 
 -- | Are all the Variables in this structure local?
 allLocalVars :: Foldable t => t Variable -> Bool
@@ -151,7 +161,7 @@ allLocalVars = all (\case { LocalVar _ -> True; GlobalVarSym _ -> False })
 
 -- | Allocate a literal.
 allocLit :: Literal -> EvalCC c s Ref
-allocLit x = extendErrorTrans (heapAllocate (ValueLitCC x))
+allocLit x = heapAllocate (ValueLitCC x)
 
 -- | Unsafely get a Ref from a Variable
 --
@@ -235,15 +245,15 @@ allocateRHSCC symbolReg envStk stack@(LetBinderCC _ _ _ _ newStack) alloc =
     -- TODO(joel) - there's a silly amount of duplication here
     ConstrAppCC constrId vars -> localGuard vars $ do
       refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
-      ref <- extendErrorTrans $ heapAllocate (ConstructorCC constrId refVect)
+      ref <- heapAllocate (ConstructorCC constrId refVect)
       enterControlStackCC symbolReg newStack (V.singleton ref)
     AllocateThunkCC vars thunkId -> localGuard vars $ do
       refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
-      ref <- extendErrorTrans $ heapAllocate (ThunkCC refVect thunkId)
+      ref <- heapAllocate (ThunkCC refVect thunkId)
       enterControlStackCC symbolReg newStack (V.singleton ref)
     AllocateClosureCC vars _ closureId -> localGuard vars $ do
       refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
-      ref <- extendErrorTrans $ heapAllocate (ClosureCC refVect closureId)
+      ref <- heapAllocate (ClosureCC refVect closureId)
       enterControlStackCC symbolReg newStack (V.singleton ref)
 allocateRHSCC _symbolReg _envStk stack _alloc = throwEvalError $ \step ->
   let errMsg = "`allocateRHSCC` can only handle let binding"
@@ -275,46 +285,36 @@ enterOrResolveThunkCC
   -> EnvStackCC
   -> ControlStackCC
   -> Variable
-  -> forall c. EvalCC c s (V.Vector Ref)
+  -> forall c s. EvalCC c s (V.Vector Ref)
 enterOrResolveThunkCC _symbolReg _env stack  (GlobalVarSym gvsym) =
   do  errMsg <- return $
-        "`enterOrResolveThunkCC` expected a local ref, received a global: "++   show gvsym
-      throwEvalError (\ step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
+        "`enterOrResolveThunkCC` expected a local ref, received a global: "++ show gvsym
+      throwEvalError (\step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
 
-enterOrResolveThunkCC _symbolReg env stack  _var@(LocalVar localvar) =  do
+enterOrResolveThunkCC symbolReg env stack _var@(LocalVar localvar) =  do
   ref <- localEnvLookup env stack localvar
-  (lookups, val) <- hoistedTransitiveLookup ref
+  (lookups, val) <- transitiveHeapLookup ref
   case val of
-    BlackHoleCC ->
-      do
-         errMsg <- return $  "`enterOrResolveThunkCC` attempting to update a black hole"
-         throwEvalError (\ step  -> PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
-    (ThunkCC _thunkEnv _thunkid) -> do
-      -- TODO(joel):
-      -- * overwrite with blackhole
-      -- * what values do we continue with?
-      -- * we probably need codeRec / codeId?
-
-      return (error "fix up this thunk entry code up")
-      {- (ThunkCodeRecordCC _esize _envBindersInfo bod ) <-
-        case    lookupThunkCodeId symbolReg thunkid of
+    BlackHoleCC -> do
+      errMsg <- return "`enterOrResolveThunkCC` attempting to update a black hole"
+      throwEvalError (\step -> PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
+    (ThunkCC thunkEnv thunkid) -> do
+      (ThunkCodeRecordCC _esize _envBindersInfo bod) <-
+        case lookupThunkCodeId symbolReg thunkid of
             (Left errMsg)  ->
-              (throwHeapErrorWithStepInfoSTE  (\ step  ->
-                 PanicMessageConstructor(stack, 1+ lookups, InterpreterStepCC step, errMsg))
-                 ) :: HeapStepCounterM (ValueRepCC Ref)
-                     (STE ((c :+ EvalErrorCC (ValueRepCC Ref)) :+ HeapError) s)
-                        ThunkCodeRecordCC
+              (panic (\step ->
+                 PanicMessageConstructor(stack, 1 + lookups, InterpreterStepCC step, errMsg))
+              )
             (Right thunkrecord) -> return thunkrecord
 
-      -- TOOD : check that
+      unsafeHeapUpdate ref BlackHoleCC
       evalCCAnf
         symbolReg
-        thunkEnv  -- (EnvConsCC loca env)
+        (EnvConsCC thunkEnv EnvEmptyCC)
         (UpdateHeapRefCC ref stack)
-        bod-}
-    --- TODO: MAKE THE FALL THROUGH TOTAL :)
-    (_) -> do
-      errMsg  <- return $ "`enterOrResolveThunkCC` got an unexpected value: `" ++ show val ++ "`"
+        bod
+    badVal -> do
+      errMsg  <- return $ "`enterOrResolveThunkCC` got an unexpected value: `" ++ show badVal ++ "`"
       throwEvalError (\step ->
           PanicMessageConstructor(stack, lookups, InterpreterStepCC step, errMsg))
 
@@ -325,14 +325,6 @@ AND/OR, should we use unboxed/storable vector for fixed size element types like 
 
 this will require analyzing core, and designing some sort of performance measurement!
 -}
-
--- FIXME : think about ways to make error extension easier
-
-hoistedTransitiveLookup
-  :: Ref
-  -> forall c. EvalCC c s (Natural, ValueRepCC Ref)
-hoistedTransitiveLookup ref = do
-      extendErrorTrans (transitiveHeapLookup ref)
 
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ClosureCodeRecordCC -> Bool #-}
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ThunkCodeRecordCC -> Bool #-}
@@ -362,7 +354,7 @@ lookupHeapClosure (SymbolRegistryCC _thunk closureMap _valueTable) stack var ini
   where
     deref :: Ref -> forall c. EvalCC c s (V.Vector Ref, ClosureCodeId)
     deref ref = do
-      (lookups, val) <- hoistedTransitiveLookup ref
+      (lookups, val) <- transitiveHeapLookup ref
       case val of
          ClosureCC envRefs codeId -> return (envRefs, codeId)
          _ -> throwEvalError $ \step ->
@@ -394,7 +386,7 @@ lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef
   where
     deref :: Ref -> forall c. EvalCC c s (V.Vector Ref, ThunkCodeId)
     deref ref = do
-      (lookups, val) <- hoistedTransitiveLookup ref
+      (lookups, val) <- transitiveHeapLookup ref
       case val of
          ThunkCC envRefs codeId -> return (envRefs, codeId)
          _ -> throwEvalError $ \step ->
@@ -416,7 +408,7 @@ lookupHeapLiteral envStack controlStack var = do
   where
     deref :: Ref -> forall c. EvalCC c s Literal
     deref ref = do
-      (lookups, val) <- hoistedTransitiveLookup ref
+      (lookups, val) <- transitiveHeapLookup ref
       case val of
         ValueLitCC l -> return l
         _ -> throwEvalError $ \step ->
@@ -491,7 +483,7 @@ enterTotalMathPrimopSimple
   -> forall c. EvalCC c s (V.Vector Ref)
 enterTotalMathPrimopSimple controlstack (opId, refs) = do
   heapHandle <- _extractHeapCAH <$> getHSCM
-  args <- extendErrorTrans $ mapM heapLookup refs
+  args <- mapM heapLookup refs
   checkedOp <- return $ do
     areLiterals <- mapM argAsLiteral (V.toList args)
     hoistTotalMathLiteralOp opId areLiterals
@@ -501,7 +493,7 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
           err step = PanicMessageConstructor(controlstack, 0, InterpreterStepCC step, errMsg)
       in throwEvalError err
     Right litOp -> do
-      _ <- extendErrorTrans $ checkedCounterCost (fromIntegral $ gmpMathCost litOp)
+      _ <- checkedCounterCost (fromIntegral $ gmpMathCost litOp)
       lits <- return $ evalTotalMathPrimopCode litOp
       mapM allocLit $ V.fromList lits
 
@@ -516,10 +508,10 @@ enterControlStackCC
   -> forall c. EvalCC c s (V.Vector Ref)
 enterControlStackCC _ ControlStackEmptyCC refs = return refs
 enterControlStackCC registry stack@(UpdateHeapRefCC ref newStack) refs = do
-  val <- extendErrorTrans $ heapLookup ref
+  val <- heapLookup ref
   if val == BlackHoleCC
     then do
-      extendErrorTrans $ unsafeHeapUpdate ref (IndirectionCC refs)
+      unsafeHeapUpdate ref (IndirectionCC refs)
       enterControlStackCC registry newStack refs
     else do
       errMsg <- return $  unwords

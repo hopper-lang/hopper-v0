@@ -5,9 +5,10 @@ import Test.Hspec
 import Test.HUnit.Base
 import Control.Arrow (left)
 import Control.Exception
+import Control.Lens
 import Control.Monad.STE
 import Control.Monad.State
-import Data.Hop.Or
+import Data.HopperException
 import qualified Data.Map as Map
 import qualified Data.Vector as V
 import Hopper.Internal.Core.Literal
@@ -47,23 +48,14 @@ spec = describe "Evaluation Spec" $
       calculation :: forall  s  . EvalCC () s (V.Vector Ref)
       calculation = evalCCAnf emptySymbolReg envStack stack tm
 
-
       results :: Either String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))
-      results =  handleSTE (either (Left . show :: (() :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError) -> Either  String (V.Vector Ref, CounterAndHeap (ValueRepCC Ref))) (Right))
-                          $ case  (runHeap startHeap 100 calculation) of
-                              !x -> x
+      results = handleSTE (left handleSTEErr) $ runHeap startHeap 100 calculation
 
-
-
-
-
-      handleSTEErr :: () :+ EvalErrorCC (ValueRepCC Ref) :+ HeapError -> String
-      handleSTEErr = \x ->
-        case x of
-          _ -> "boom boom boom "
-          --InL _ -> "failed with a mysterious left"
-          --InR (InL evalErr) -> show evalErr
-          --InR (InR heapErr) -> show heapErr
+      handleSTEErr :: SomeHopperException -> String
+      handleSTEErr she
+        | Just err <- she^?_EvalErrorCC = show err
+        | Just err <- she^?_HeapError = show err
+        | otherwise = "boom boom boom"
     in
       case results of
             Left e ->  assertFailure e
