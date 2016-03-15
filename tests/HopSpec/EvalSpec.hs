@@ -40,7 +40,6 @@ spec = describe "Evaluation Spec" $ do
         ]
       tm = TailCallCC (PrimAppCC (TotalMathOpGmp IntAddOpId) addVars)
 
-      {- NOINLINE calculation -}
       calculation :: forall s. EvalCC () s (V.Vector Ref)
       calculation = evalCCAnf emptySymbolReg envStack stack tm
 
@@ -66,7 +65,6 @@ spec = describe "Evaluation Spec" $ do
 
         tm = TailCallCC (PrimAppCC (TotalMathOpGmp IntAddOpId) addVars)
 
-        {- NOINLINE calculation -}
         calculation :: forall s. EvalCC () s (V.Vector Ref)
         calculation = evalCCAnf emptySymbolReg envStack stack tm
 
