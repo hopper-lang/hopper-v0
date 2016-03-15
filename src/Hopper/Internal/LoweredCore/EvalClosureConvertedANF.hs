@@ -75,6 +75,10 @@ data EnvStackCC =
     | EnvEmptyCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
+fromList :: [V.Vector Ref] -> EnvStackCC
+fromList (x:xs) = EnvConsCC x (fromList xs)
+fromList [] = EnvEmptyCC
+
 data ControlStackCC  =
       LetBinderCC !(V.Vector BinderInfoCC)
                 !()

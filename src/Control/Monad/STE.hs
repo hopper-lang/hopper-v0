@@ -122,8 +122,8 @@ privateCatch (STE steAction)  = ST $ unsafeCoerceIOAction2StateS $
 --                       Nothing -> raiseIO# e
 
 
-{-# INLINE  handleSTE #-}
-handleSTE ::  (Either e a -> b) -> (forall s. STE e s a)  -> b
+{-# INLINE handleSTE #-}
+handleSTE :: (Either e a -> b) -> (forall s. STE e s a)  -> b
 handleSTE f st = runSTE st f
 
 {-
