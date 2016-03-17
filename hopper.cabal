@@ -56,6 +56,7 @@ library
   -- Modules exported by the library.
   exposed-modules:
                     Data.Hop.Or
+                    Data.Initialism
                     Control.Monad.STE
                     Hopper.HBound
                     Hopper.Utils.Swap
