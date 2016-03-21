@@ -1,4 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables#-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Hopper.Internal.LoweredCore.ANF where
 
 import Hopper.Utils.LocallyNameless
@@ -7,6 +9,7 @@ import Hopper.Internal.Core.Term
 
 import Data.Word
 import Control.Monad.Trans.State.Strict as State
+import Control.Lens
 
 import qualified Data.Vector as V
 import qualified Data.Map.Strict as Map
@@ -184,16 +187,22 @@ instance Enum NewVar where
   toEnum = NewVar . toEnum
   fromEnum = fromEnum . newVarId
 
+data BindingFrame
+  = BindingFrame { _frameRefs :: Map.Map NewVar Variable
+                   -- ^ references to both existing (i.e. term) and new (i.e.
+                   --   intermediate) binders.
+                 , _frameIntros :: Word32
+                   -- ^ levels introduced since the last source binder. separate
+                   --   from map for now so we can remove items from the map
+                   --   once used.
+                 }
+  deriving (Eq, Show)
+makeLenses ''BindingFrame
+
 -- The bottom 'BindingFrame' of this stack does not necessarily correspond to a
 -- 'Term' binding level (i.e. 'Let' or 'Lam') -- consider a toplevel 'Let' with
--- RHS global var applied to a global var. Hence
-data BindingStack
-  = NoBinders
-  | BindingFrame BindingStack
-                 (Map.Map NewVar Variable) -- references to both existing (i.e. term) and new (i.e. intermediate) binders
-                 Word32 -- ^ levels introduced since the last source binder.
-                        --   separate from map for now so we can remove items
-                        --   from the map once used
+-- RHS global var applied to a global var. See 'toAnf'.
+type BindingStack = [BindingFrame]
 
 type LoweringM = {- TODO: wrap with: ReaderT BindingStack -} State NewVar
 
@@ -205,25 +214,31 @@ type LoweringM = {- TODO: wrap with: ReaderT BindingStack -} State NewVar
 -- see if we can covert it to just use laziness or monadic actions or something
 
 frameSizes :: BindingStack -> [Word32]
-frameSizes NoBinders = []
-frameSizes (BindingFrame stack _ size) = size : frameSizes stack
+frameSizes = fmap _frameIntros
 
 -- | Bumps the provided source variable by the number of intermediate lets that
---   have been introduced since the source binder this variable points to.
+-- have been introduced since the source binder this variable points to.
 translateTermVar :: BindingStack -> Variable -> Variable
-translateTermVar stack v@(GlobalVarSym _) = v
-translateTermVar stack (LocalVar (LocalNamelessVar up over)) =
-  LocalVar $ LocalNamelessVar (up + displacement) over
+translateTermVar _ v@(GlobalVarSym _) = v
+translateTermVar stack (LocalVar (LocalNamelessVar depth slot)) =
+  LocalVar $ LocalNamelessVar (depth + displacement) slot
   where
-    displacement = sum $ take (fromIntegral $ up + 1) (frameSizes stack)
+    displacement = sum $ take (fromIntegral $ depth + 1) (frameSizes stack)
 
+-- updateTopFrame :: (BindingFrame -> BindingFrame) -> BindingStack -> BindingStack
+-- updateTopFrame _ [] = error "unexpected binding stack underrun"
+-- updateTopFrame f (frame : stack) = f frame : stack
 
+-- | Initializes a NewVar pointing the correct number of binders up in the top
+-- frame's map. As more levels are introduced, these initialized vars in the map
+-- will be bumped.
+initNewVar :: NewVar -> Maybe Variable -> BindingStack -> BindingStack
+initNewVar newVar mTermVar stack = case mTermVar of
+  Nothing -> setNewVar $ slot0 0
+  Just termVar -> setNewVar $ translateTermVar stack termVar
 
--- marks a NewVar pointing the correct number of binders up in the top frame's map.
--- as more levels are introduced, these vars in the map will be bumped
-markNewVar :: NewVar -> Maybe Variable -> BindingStack -> BindingStack
-markNewVar newVar Nothing stack = _todoPointNewVarToImmediateBinder
-markNewVar newVar (Just termVar) stack = _updateBindingFrame $ translateTermVar stack termVar
+  where
+    setNewVar x = set (_head . frameRefs . at newVar) (Just x) stack
 
 anfTail :: BindingStack -> Term -> LoweringM Anf
 anfTail stack term = case term of
@@ -290,8 +305,7 @@ anfCont stack t var k = case t of
     --          if it's indeed stack', perhaps this is the time to put the stack in a ReaderT
     --          wrapping the state. Seems like yes
     --
-    -- TODO: what if markNewVar is called with NoBinders?
-    let stack' = markNewVar var (Just v) stack
+    let stack' = initNewVar var (Just v) stack
     k stack'
 --
 --   -- TODO: is this right?
@@ -325,7 +339,7 @@ toAnf t = evalState (anfTail emptyStack t) $ NewVar 0
     -- We provide a bottom frame that doesn't correspond to a toplevel term
     -- 'Let' or 'Lam' so that e.g. a toplevel 'Let' with a non-trivial RHS has
     -- a frame with which to introduce intermediary 'AnfLet's
-    emptyStack = BindingFrame NoBinders (Map.fromList []) 0
+    emptyStack = [BindingFrame (Map.fromList []) 0]
 
 
 
