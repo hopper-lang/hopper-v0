@@ -23,10 +23,11 @@ import qualified Data.Text as T (Text )
 --- | GlobalSymbol should correspond to the fully qualified name
 --- of a reachable value that is induced UNIQUELY by a module's name and
 --- set of dependencies and how it was built.
---- NB: this might be more subtle in the presence of linearity, but lets table that for now
+--- NB: this might be more subtle in the presence of linearity, but let's table
+--- that for now
 ---
---- this may or may not  actually need to just be a functory parametery in the AST
---- but lets keep it simple fo rnow
+--- this may or may not actually need to just be a functory parametery in the
+--- AST but let's keep it simple for now
 newtype GlobalSymbol = GlobalSymbol T.Text
   deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
 

@@ -175,19 +175,16 @@ allLocalVars = all (\case { LocalVar _ -> True; GlobalVarSym _ -> False })
 allocLit :: Literal -> EvalCC c s Ref
 allocLit x = heapAllocate (ValueLitCC x)
 
--- | Unsafely get a Ref from a Variable
---
--- Unsafe because you need to guarantee that it's a LocalVar rather than a
--- GlobalVarSym _.
-unsafeLocalEnvLookup
-  :: EnvStackCC
+-- | Get a Ref from a Variable
+envLookup
+  :: SymbolRegistryCC
+  -> EnvStackCC
   -> ControlStackCC
   -> Variable
   -> forall c. EvalCC c s Ref
-unsafeLocalEnvLookup env control (LocalVar lv) = localEnvLookup env control lv
-unsafeLocalEnvLookup _env control global = throwEvalError $ \n ->
-  let errMsg = "`unsafeLocalEnvLookup` expected a local ref, received a global: " ++ show global
-  in PanicMessageConstructor(control, 1, InterpreterStepCC n, errMsg)
+envLookup _registry env control (LocalVar lv) = localEnvLookup env control lv
+envLookup registry _env control (GlobalVarSym global) =
+  lookupStaticValue registry global
 
 localEnvLookup
   :: EnvStackCC
@@ -220,7 +217,7 @@ evalCCAnf
 -- environment and enter the top of the stack.
 evalCCAnf codeReg envStack contStack (ReturnCC localVarLS) = do
   -- resRefs <- traverse (localEnvLookup envStack contStack) $! localVarLS
-  resRefs <- traverse (unsafeLocalEnvLookup envStack contStack) $! localVarLS
+  resRefs <- traverse (envLookup codeReg envStack contStack) $! localVarLS
   enterControlStackCC codeReg contStack resRefs
 
 evalCCAnf codeReg envStack contStack (LetNFCC binders rhscc bodcc) =
@@ -261,15 +258,15 @@ allocateRHSCC symbolReg envStk stack@(LetBinderCC _ _ _ _ newStack) alloc =
     SharedLiteralCC lit -> V.singleton <$> allocLit lit
     -- TODO(joel) - there's a silly amount of duplication here
     ConstrAppCC constrId vars -> localGuard vars $ do
-      refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
+      refVect <- mapM (envLookup symbolReg envStk stack) vars
       ref <- heapAllocate (ConstructorCC constrId refVect)
       enterControlStackCC symbolReg newStack (V.singleton ref)
     AllocateThunkCC vars thunkId -> localGuard vars $ do
-      refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
+      refVect <- mapM (envLookup symbolReg envStk stack) vars
       ref <- heapAllocate (ThunkCC refVect thunkId)
       enterControlStackCC symbolReg newStack (V.singleton ref)
     AllocateClosureCC vars _ closureId -> localGuard vars $ do
-      refVect <- mapM (unsafeLocalEnvLookup envStk stack) vars
+      refVect <- mapM (envLookup symbolReg envStk stack) vars
       ref <- heapAllocate (ClosureCC refVect closureId)
       enterControlStackCC symbolReg newStack (V.singleton ref)
 allocateRHSCC _symbolReg _envStk stack _alloc = throwEvalError $ \step ->
@@ -450,12 +447,13 @@ lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef
                                              (InterpreterStepCC step)
 
 lookupHeapLiteral
-  :: EnvStackCC
+  :: SymbolRegistryCC
+  -> EnvStackCC
   -> ControlStackCC
   -> Variable
   -> forall c. EvalCC c s Literal
-lookupHeapLiteral envStack controlStack var = do
-  initRef <- localEnvLookup envStack controlStack  $ error "fix this toooo " var
+lookupHeapLiteral symreg envStack controlStack var = do
+  initRef <- envLookup symreg envStack controlStack var
   deref initRef
 
   where
@@ -490,9 +488,9 @@ enterPrimAppCC
   -> ControlStackCC
   -> (PrimOpId, V.Vector Variable)
   -> forall c. EvalCC c s (V.Vector Ref)
-enterPrimAppCC _symreg envstack stack (opId, args)
+enterPrimAppCC symreg envstack stack (opId, args)
   | allLocalVars args
-  = do nextVect <- mapM (unsafeLocalEnvLookup envstack stack) args
+  = do nextVect <- mapM (envLookup symreg envstack stack) args
        case opId of
          (TotalMathOpGmp mathOpId) ->
            enterTotalMathPrimopSimple stack (mathOpId, nextVect)
@@ -575,7 +573,7 @@ type Inflate a = forall c s. ReaderT SymbolTable (EvalCCT s) a
 -- heap.
 lookupStaticValue :: SymbolRegistryCC
                   -> GlobalSymbol
-                  -> forall c. EvalCC c (Map.Map GlobalSymbol Ref) Ref
+                  -> forall c. EvalCC c s Ref
 lookupStaticValue (SymbolRegistryCC _thk _closmap vals) symbol =
   runReaderT (inflateStaticValue symbol) vals
 
