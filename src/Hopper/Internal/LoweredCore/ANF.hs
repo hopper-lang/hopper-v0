@@ -252,9 +252,9 @@ allocAnfBinder = do
 -- will be bumped.
 --
 -- TODO: possibly split this into two separate functions.
--- TODO: this and retireRefs should possibly work on a BindingLevel? to do less work
-initAnfBinder :: AnfBinder -> Maybe Variable -> BindingStack -> BindingStack
-initAnfBinder binder mTermVar stack = case mTermVar of
+-- TODO: this and closeBinders should possibly work on a BindingLevel? to do less work
+openBinder :: AnfBinder -> Maybe Variable -> BindingStack -> BindingStack
+openBinder binder mTermVar stack = case mTermVar of
   Nothing -> -- TODO: do we ever *not* want to bump here (i.e. do we ever not intro a letA)?
     setAnfBinder (slot0 0) $ bumpVars stack
   Just termVar ->
@@ -268,9 +268,9 @@ initAnfBinder binder mTermVar stack = case mTermVar of
     bumpVars s = s & (_head.levelIntros)      %~ succ
                    & (_head.levelRefs.mapped) %~ succVar
 
--- TODO: this and initAnfBinder should possibly work on a BindingLevel? to do less work
-retireRefs :: [AnfBinder] -> BindingStack -> BindingStack
-retireRefs refs stack = stack & _head.levelRefs %~ deleteRefs
+-- TODO: this and openBinder should possibly work on a BindingLevel? to do less work
+closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
+closeBinders refs stack = stack & _head.levelRefs %~ deleteRefs
   where
     -- TODO: should this be a strict or lazy fold?
     deleteRefs :: Map.Map AnfBinder Variable -> Map.Map AnfBinder Variable
@@ -349,14 +349,14 @@ anfCont :: BindingStack
         -> LoweringM Anf
 anfCont stack term var k = case term of
   V v ->
-    k $ initAnfBinder var (Just v) stack
+    k $ openBinder var (Just v) stack
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
-    body <- k $ initAnfBinder var Nothing stack
+    body <- k $ openBinder var Nothing stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
@@ -372,7 +372,7 @@ anfCont stack term var k = case term of
           let at0 = V.head ats
           anfCont s1 at0 aBinder0 $ \s2 -> do
             let vars = resolveRefs binders s2
-            body <- k $ initAnfBinder var Nothing $ retireRefs binders stack
+            body <- k $ openBinder var Nothing $ closeBinders binders stack
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
                             body
@@ -381,7 +381,7 @@ anfCont stack term var k = case term of
 
   Lam binders t -> do
     lamBody <- anfTail (emptyLevel : stack) t
-    letBody <- k $ initAnfBinder var Nothing stack
+    letBody <- k $ openBinder var Nothing stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binders)
                                          lamBody)
