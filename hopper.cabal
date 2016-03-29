@@ -135,6 +135,7 @@ test-suite hspec
       hspec >= 2.1 && < 2.3 ,
       HUnit,
       mtl >= 2.2 && < 2.4,
+      hspec-expectations >= 0.7.2 && < 0.8,
       vector >= 0.11 && < 0.12,
       hopper,
       lens >= 4.12 && < 4.14
