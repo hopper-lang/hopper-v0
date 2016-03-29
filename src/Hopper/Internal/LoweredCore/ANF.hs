@@ -166,10 +166,10 @@ data Rhs
 --   = K () -- TODO: info about contained vars which are pointing to higher binders
 --       (Trivial -> Anf) -- (Rhs -> Anf)
 
-newtype Trivial
-  = TrivVar Variable
-  -- | TrivRhs Rhs
-  -- TODO: add more trivial cases in the future once we have unboxed values
+-- newtype Trivial
+--   = TrivVar Variable
+--   -- | TrivRhs Rhs
+--   -- TODO: add more trivial cases in the future once we have unboxed values
 
 -- slot0 :: Integral a => a -> Variable
 -- slot0 level = LocalVar $ LocalNamelessVar (fromIntegral level) $ BinderSlot 0
@@ -189,46 +189,48 @@ returnAllocated alloc = AnfLet (Arity 1)
 arity :: V.Vector BinderInfo -> Arity
 arity binders = Arity $ fromIntegral $ V.length binders
 
--- TODO: possibly rename?
-newtype NewVar = NewVar { _newVarId :: Word64 } deriving (Eq, Show, Ord)
-makeLenses ''NewVar
+newtype AnfBinder
+  = AnfBinder { _binderId :: Word64 }
+  deriving (Eq, Show, Ord)
+makeLenses ''AnfBinder
 
-instance Enum NewVar where
-  toEnum = NewVar . toEnum
-  fromEnum = fromEnum . _newVarId
+instance Enum AnfBinder where
+  toEnum = AnfBinder . toEnum
+  fromEnum = fromEnum . _binderId
 
-data BindingFrame
-  = BindingFrame { _frameRefs :: Map.Map NewVar Variable
+data BindingLevel
+  = BindingLevel { _levelRefs :: Map.Map AnfBinder Variable
                    -- ^ references to both existing (i.e. term) and new (i.e.
-                   --   intermediate) binders.
-                 , _frameIntros :: Word32
+                   --   intermediate/anf) binders.
+                 , _levelIntros :: Word32
                    -- ^ levels introduced since the last source binder. separate
                    --   from map for now so we can remove items from the map
                    --   once used.
                  }
   deriving (Eq, Show)
-makeLenses ''BindingFrame
+makeLenses ''BindingLevel
 
--- The bottom 'BindingFrame' of this stack does not necessarily correspond to a
+-- The bottom 'BindingLevel' of this stack does not necessarily correspond to a
 -- 'Term' binding level (i.e. 'Let' or 'Lam') -- consider a toplevel 'Let' with
 -- RHS global var applied to a global var. See 'toAnf'.
-type BindingStack = [BindingFrame]
+type BindingStack = [BindingLevel]
+
+newtype LoweringState
+  = LoweringState { _nextBinder :: AnfBinder }
+  deriving (Eq, Show)
+makeLenses ''LoweringState
 
 -- TODO: possibly wrap with (ReaderT BindingStack)
-type LoweringM = State NewVar
-
--- TODO: perhaps move from explicit stack passing to either tupling it update
---       into the state, or perhaps with a reader -- using e.g. mapReader
---       to apply a modified reader env for a certain sub-term
+type LoweringM = State LoweringState
 
 -- Let's probably just start with explicit thunks (K without taking vars), and then
 -- see if we can covert it to just use laziness or monadic actions or something
 
-emptyFrame :: BindingFrame
-emptyFrame = BindingFrame (Map.fromList []) 0
+emptyLevel :: BindingLevel
+emptyLevel = BindingLevel (Map.fromList []) 0
 
-frameSizes :: BindingStack -> [Word32]
-frameSizes = fmap _frameIntros
+levelSizes :: BindingStack -> [Word32]
+levelSizes = fmap _levelIntros
 
 -- | Bumps the provided source variable by the number of intermediate lets that
 -- have been introduced since the source binder this variable points to.
@@ -237,53 +239,49 @@ translateTermVar _ v@(GlobalVarSym _) = v
 translateTermVar stack (LocalVar (LocalNamelessVar depth slot)) =
   LocalVar $ LocalNamelessVar (depth + displacement) slot
   where
-    displacement = sum $ take (fromIntegral $ depth + 1) (frameSizes stack)
+    displacement = sum $ take (fromIntegral $ depth + 1) (levelSizes stack)
 
--- updateTopFrame :: (BindingFrame -> BindingFrame) -> BindingStack -> BindingStack
--- updateTopFrame _ [] = error "unexpected binding stack underrun"
--- updateTopFrame f (frame : stack) = f frame : stack
-
-allocNewVar :: LoweringM NewVar
-allocNewVar = do
-  curr <- get
-  newVarId %= succ
+allocAnfBinder :: LoweringM AnfBinder
+allocAnfBinder = do
+  curr <- use nextBinder
+  nextBinder.binderId %= succ
   return curr
 
--- | Initializes a NewVar pointing the correct number of binders up in the top
--- frame's map. As more levels are introduced, these initialized vars in the map
+-- | Initializes a AnfBinder pointing the correct number of binders up in the top
+-- level's map. As more levels are introduced, these initialized vars in the map
 -- will be bumped.
 --
 -- TODO: possibly split this into two separate functions.
--- TODO: this and retireRefs should possibly work on a BindingFrame? to do less work
-initNewVar :: NewVar -> Maybe Variable -> BindingStack -> BindingStack
-initNewVar newVar mTermVar stack = case mTermVar of
+-- TODO: this and retireRefs should possibly work on a BindingLevel? to do less work
+initAnfBinder :: AnfBinder -> Maybe Variable -> BindingStack -> BindingStack
+initAnfBinder binder mTermVar stack = case mTermVar of
   Nothing -> -- TODO: do we ever *not* want to bump here (i.e. do we ever not intro a letA)?
-    setNewVar (slot0 0) $ bumpVars stack
+    setAnfBinder (slot0 0) $ bumpVars stack
   Just termVar ->
-    setNewVar (translateTermVar stack termVar) stack
+    setAnfBinder (translateTermVar stack termVar) stack
 
   where
-    setNewVar :: Variable -> BindingStack -> BindingStack
-    setNewVar v s = s & (_head.frameRefs.at newVar) ?~ v
+    setAnfBinder :: Variable -> BindingStack -> BindingStack
+    setAnfBinder v s = s & (_head.levelRefs.at binder) ?~ v
 
     bumpVars :: BindingStack -> BindingStack
-    bumpVars s = s & (_head.frameIntros)      %~ succ
-                   & (_head.frameRefs.mapped) %~ succVar
+    bumpVars s = s & (_head.levelIntros)      %~ succ
+                   & (_head.levelRefs.mapped) %~ succVar
 
--- TODO: this and initNewVar should possibly work on a BindingFrame? to do less work
-retireRefs :: [NewVar] -> BindingStack -> BindingStack
-retireRefs refs stack = stack & _head.frameRefs %~ deleteRefs
+-- TODO: this and initAnfBinder should possibly work on a BindingLevel? to do less work
+retireRefs :: [AnfBinder] -> BindingStack -> BindingStack
+retireRefs refs stack = stack & _head.levelRefs %~ deleteRefs
   where
     -- TODO: should this be a strict or lazy fold?
-    deleteRefs :: Map.Map NewVar Variable -> Map.Map NewVar Variable
+    deleteRefs :: Map.Map AnfBinder Variable -> Map.Map AnfBinder Variable
     deleteRefs m = foldr Map.delete m refs
 
--- | Assumes all 'NewVar's are in the top frame's Map
--- TODO: work on a BindingFrame?
-resolveRefs :: [NewVar] -> BindingStack -> [Variable]
+-- | Assumes all 'AnfBinder's are in the top level's Map
+-- TODO: work on a BindingLevel?
+resolveRefs :: [AnfBinder] -> BindingStack -> [Variable]
 resolveRefs refs stack = (varMap Map.!) <$> refs
   where
-    varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.frameRefs) stack
+    varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.levelRefs) stack
 
 anfTail :: BindingStack
         -> Term
@@ -304,18 +302,18 @@ anfTail stack term = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
-        nvars <- replicateM (succ $ V.length ats) allocNewVar
-        let [fNVar, aNVar0] = nvars
-        anfCont stack ft fNVar $ \s1 -> do
+        binders <- replicateM (succ $ V.length ats) allocAnfBinder
+        let [fBinder, aBinder0] = binders
+        anfCont stack ft fBinder $ \s1 -> do
           let at0 = V.head ats
-          anfCont s1 at0 aNVar0 $ \s2 -> do
-            let vars = resolveRefs nvars s2
+          anfCont s1 at0 aBinder0 $ \s2 -> do
+            let vars = resolveRefs binders s2
             return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
     | otherwise ->
         error "TODO: add support for n-ary application in anfTail"
 
   Lam binders t -> do
-    body <- anfTail (emptyFrame : stack) t
+    body <- anfTail (emptyLevel : stack) t
     return $ returnAllocated $ AllocLam (arity binders) body
 
   -- TODO: Let
@@ -346,19 +344,19 @@ anfTail stack term = case term of
 
 anfCont :: BindingStack
         -> Term
-        -> NewVar
+        -> AnfBinder
         -> (BindingStack -> LoweringM Anf)
         -> LoweringM Anf
 anfCont stack term var k = case term of
   V v ->
-    k $ initNewVar var (Just v) stack
+    k $ initAnfBinder var (Just v) stack
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
-    body <- k $ initNewVar var Nothing stack
+    body <- k $ initAnfBinder var Nothing stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
@@ -368,13 +366,13 @@ anfCont stack term var k = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
-        nvars <- replicateM (succ $ V.length ats) allocNewVar
-        let [fNVar, aNVar0] = nvars
-        anfCont stack ft fNVar $ \s1 -> do
+        binders <- replicateM (succ $ V.length ats) allocAnfBinder
+        let [fBinder, aBinder0] = binders
+        anfCont stack ft fBinder $ \s1 -> do
           let at0 = V.head ats
-          anfCont s1 at0 aNVar0 $ \s2 -> do
-            let vars = resolveRefs nvars s2
-            body <- k $ initNewVar var Nothing $ retireRefs nvars stack
+          anfCont s1 at0 aBinder0 $ \s2 -> do
+            let vars = resolveRefs binders s2
+            body <- k $ initAnfBinder var Nothing $ retireRefs binders stack
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
                             body
@@ -382,8 +380,8 @@ anfCont stack term var k = case term of
         error "TODO: support for n-ary application in anfCont"
 
   Lam binders t -> do
-    lamBody <- anfTail (emptyFrame : stack) t
-    letBody <- k $ initNewVar var Nothing stack
+    lamBody <- anfTail (emptyLevel : stack) t
+    letBody <- k $ initAnfBinder var Nothing stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binders)
                                          lamBody)
@@ -395,13 +393,13 @@ anfCont stack term var k = case term of
 
 
 toAnf :: Term -> Anf
-toAnf t = evalState (anfTail emptyStack t) firstNewVar
+toAnf t = evalState (anfTail emptyStack t) initialState
   where
-    -- We provide a bottom frame that doesn't correspond to a toplevel term
+    -- We provide a bottom level that doesn't correspond to a toplevel term
     -- 'Let' or 'Lam' so that e.g. a toplevel 'Let' with a non-trivial RHS has
-    -- a frame with which to introduce intermediary 'AnfLet's
-    emptyStack = [emptyFrame]
-    firstNewVar = NewVar 0
+    -- a level with which to introduce intermediary 'AnfLet's
+    emptyStack = [emptyLevel]
+    initialState = LoweringState $ AnfBinder 0
 
 
 -- 3/16/16 - trying danvy one-pass to ANF rep with Shift
@@ -481,7 +479,7 @@ toAnf t = evalState (anfTail emptyStack t) firstNewVar
 
 -- TODO: alloc (vs init) vars
 -- TODO: track amount to bump outer level / and bump
--- TODO: make sure we are always removing things from the BindingFrame map (at usage sites)
+-- TODO: make sure we are always removing things from the BindingLevel map (at usage sites)
 --         or at least in the anfCont cases, where we pass the stack to k
 --
 --
