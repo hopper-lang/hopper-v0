@@ -190,12 +190,12 @@ arity :: V.Vector BinderInfo -> Arity
 arity binders = Arity $ fromIntegral $ V.length binders
 
 -- TODO: possibly rename?
--- TODO: convert to lens-y field
-newtype NewVar = NewVar { newVarId :: Word64 } deriving (Eq, Show, Ord)
+newtype NewVar = NewVar { _newVarId :: Word64 } deriving (Eq, Show, Ord)
+makeLenses ''NewVar
 
 instance Enum NewVar where
   toEnum = NewVar . toEnum
-  fromEnum = fromEnum . newVarId
+  fromEnum = fromEnum . _newVarId
 
 data BindingFrame
   = BindingFrame { _frameRefs :: Map.Map NewVar Variable
@@ -246,7 +246,7 @@ translateTermVar stack (LocalVar (LocalNamelessVar depth slot)) =
 allocNewVar :: LoweringM NewVar
 allocNewVar = do
   curr <- get
-  modify $ NewVar . succ . newVarId
+  newVarId %= succ
   return curr
 
 -- | Initializes a NewVar pointing the correct number of binders up in the top
