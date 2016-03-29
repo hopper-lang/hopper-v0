@@ -190,6 +190,7 @@ arity :: V.Vector BinderInfo -> Arity
 arity binders = Arity $ fromIntegral $ V.length binders
 
 -- TODO: possibly rename?
+-- TODO: convert to lens-y field
 newtype NewVar = NewVar { newVarId :: Word64 } deriving (Eq, Show, Ord)
 
 instance Enum NewVar where
@@ -253,6 +254,7 @@ allocNewVar = do
 -- will be bumped.
 --
 -- TODO: possibly split this into two separate functions.
+-- TODO: this and retireRefs should possibly work on a BindingFrame? to do less work
 initNewVar :: NewVar -> Maybe Variable -> BindingStack -> BindingStack
 initNewVar newVar mTermVar stack = case mTermVar of
   Nothing -> -- TODO: do we ever *not* want to bump here (i.e. do we ever not intro a letA)?
@@ -267,6 +269,13 @@ initNewVar newVar mTermVar stack = case mTermVar of
     bumpVars :: BindingStack -> BindingStack
     bumpVars s = s & (_head.frameIntros)      %~ succ
                    & (_head.frameRefs.mapped) %~ succVar
+
+-- TODO: this and initNewVar should possibly work on a BindingFrame? to do less work
+retireRefs :: [NewVar] -> BindingStack -> BindingStack
+retireRefs refs stack = stack & _head.frameRefs %~ deleteRefs
+  where
+    deleteRefs :: Map.Map NewVar Variable -> Map.Map NewVar Variable
+    deleteRefs m = foldr Map.delete m refs
 
 anfTail :: BindingStack
         -> Term
@@ -293,7 +302,7 @@ anfTail stack term = case term of
                  -- TODO: remember to retire vars from the map here in anfCont:
                  AnfTailCall $ AppFun (head vars) $ V.fromList $ tail vars
     | otherwise ->
-        error "TODO: add support for n-ary application"
+        error "TODO: add support for n-ary application in anfTail"
 
   Lam binders t -> do
     body <- anfTail (emptyFrame : stack) t
@@ -339,6 +348,23 @@ anfCont stack t var k = case t of
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
+
+  -- TODO: switch to support of n-ary application
+  App ft ats
+    | V.length ats == 1 -> do
+        nvars <- replicateM (succ $ V.length ats) allocNewVar
+        let [fNVar, aNVar0] = nvars
+        anfCont stack ft fNVar $ \s1 -> do
+          let at0 = V.head ats
+          anfCont s1 at0 aNVar0 $ \s2 -> do
+            let varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.frameRefs) s2
+                vars = (varMap Map.!) <$> nvars
+            body <- k $ initNewVar var Nothing $ retireRefs nvars stack
+            return $ AnfLet (Arity 1) -- TODO: support tupled return
+                            (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
+                            body
+    | otherwise ->
+        error "TODO: support for n-ary application in anfCont"
 
   -- TODO: handle "rollback" and bulk-succ'ing previous level for:
   -- [ ] Lam
