@@ -277,6 +277,12 @@ retireRefs refs stack = stack & _head.frameRefs %~ deleteRefs
     deleteRefs :: Map.Map NewVar Variable -> Map.Map NewVar Variable
     deleteRefs m = foldr Map.delete m refs
 
+-- | Assumes all 'NewVar's are in the top frame's Map
+resolveRefs :: [NewVar] -> BindingStack -> [Variable]
+resolveRefs refs stack = (varMap Map.!) <$> refs
+  where
+    varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.frameRefs) stack
+
 anfTail :: BindingStack
         -> Term
         -> LoweringM Anf
@@ -296,8 +302,7 @@ anfTail stack term = case term of
         anfCont stack ft fNVar $ \s1 -> do
           let at0 = V.head ats
           anfCont s1 at0 aNVar0 $ \s2 ->
-            let varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.frameRefs) s2
-                vars = (varMap Map.!) <$> nvars
+            let vars = resolveRefs nvars s2
             in return $
                  -- TODO: remember to retire vars from the map here in anfCont:
                  AnfTailCall $ AppFun (head vars) $ V.fromList $ tail vars
@@ -357,8 +362,7 @@ anfCont stack t var k = case t of
         anfCont stack ft fNVar $ \s1 -> do
           let at0 = V.head ats
           anfCont s1 at0 aNVar0 $ \s2 -> do
-            let varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.frameRefs) s2
-                vars = (varMap Map.!) <$> nvars
+            let vars = resolveRefs nvars s2
             body <- k $ initNewVar var Nothing $ retireRefs nvars stack
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
