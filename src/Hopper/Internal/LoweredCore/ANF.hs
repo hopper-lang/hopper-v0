@@ -241,8 +241,8 @@ translateTermVar stack (LocalVar (LocalNamelessVar depth slot)) =
   where
     displacement = sum $ take (fromIntegral $ depth + 1) (levelSizes stack)
 
-allocAnfBinder :: LoweringM AnfBinder
-allocAnfBinder = do
+allocBinder :: LoweringM AnfBinder
+allocBinder = do
   curr <- use nextBinder
   nextBinder.binderId %= succ
   return curr
@@ -256,13 +256,13 @@ allocAnfBinder = do
 openBinder :: AnfBinder -> Maybe Variable -> BindingStack -> BindingStack
 openBinder binder mTermVar stack = case mTermVar of
   Nothing -> -- TODO: do we ever *not* want to bump here (i.e. do we ever not intro a letA)?
-    setAnfBinder (slot0 0) $ bumpVars stack
+    addRef (slot0 0) $ bumpVars stack
   Just termVar ->
-    setAnfBinder (translateTermVar stack termVar) stack
+    addRef (translateTermVar stack termVar) stack
 
   where
-    setAnfBinder :: Variable -> BindingStack -> BindingStack
-    setAnfBinder v s = s & (_head.levelRefs.at binder) ?~ v
+    addRef :: Variable -> BindingStack -> BindingStack
+    addRef v s = s & (_head.levelRefs.at binder) ?~ v
 
     bumpVars :: BindingStack -> BindingStack
     bumpVars s = s & (_head.levelIntros)      %~ succ
@@ -302,7 +302,7 @@ anfTail stack term = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
-        binders <- replicateM (succ $ V.length ats) allocAnfBinder
+        binders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, aBinder0] = binders
         anfCont stack ft fBinder $ \s1 -> do
           let at0 = V.head ats
@@ -366,7 +366,7 @@ anfCont stack term var k = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
-        binders <- replicateM (succ $ V.length ats) allocAnfBinder
+        binders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, aBinder0] = binders
         anfCont stack ft fBinder $ \s1 -> do
           let at0 = V.head ats
