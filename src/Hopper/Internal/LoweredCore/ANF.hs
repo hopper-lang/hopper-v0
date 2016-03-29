@@ -274,10 +274,12 @@ initNewVar newVar mTermVar stack = case mTermVar of
 retireRefs :: [NewVar] -> BindingStack -> BindingStack
 retireRefs refs stack = stack & _head.frameRefs %~ deleteRefs
   where
+    -- TODO: should this be a strict or lazy fold?
     deleteRefs :: Map.Map NewVar Variable -> Map.Map NewVar Variable
     deleteRefs m = foldr Map.delete m refs
 
 -- | Assumes all 'NewVar's are in the top frame's Map
+-- TODO: work on a BindingFrame?
 resolveRefs :: [NewVar] -> BindingStack -> [Variable]
 resolveRefs refs stack = (varMap Map.!) <$> refs
   where
@@ -287,12 +289,17 @@ anfTail :: BindingStack
         -> Term
         -> LoweringM Anf
 anfTail stack term = case term of
-  V v -> return $ AnfReturn $ V.singleton $ translateTermVar stack v
+  V v ->
+    return $ AnfReturn $ V.singleton $ translateTermVar stack v
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
-  BinderLevelShiftUP _ _ -> error "unexpected binder shift during ANF conversion"
+  BinderLevelShiftUP _ _ ->
+    error "unexpected binder shift during ANF conversion"
 
-  ELit lit -> return $ returnAllocated $ AllocLit lit
+  ELit lit ->
+    return $ returnAllocated $ AllocLit lit
+
+  -- TODO: Return
 
   -- TODO: switch to support of n-ary application
   App ft ats
@@ -301,17 +308,17 @@ anfTail stack term = case term of
         let [fNVar, aNVar0] = nvars
         anfCont stack ft fNVar $ \s1 -> do
           let at0 = V.head ats
-          anfCont s1 at0 aNVar0 $ \s2 ->
+          anfCont s1 at0 aNVar0 $ \s2 -> do
             let vars = resolveRefs nvars s2
-            in return $
-                 -- TODO: remember to retire vars from the map here in anfCont:
-                 AnfTailCall $ AppFun (head vars) $ V.fromList $ tail vars
+            return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
     | otherwise ->
         error "TODO: add support for n-ary application in anfTail"
 
   Lam binders t -> do
     body <- anfTail (emptyFrame : stack) t
     return $ returnAllocated $ AllocLam (arity binders) body
+
+  -- TODO: Let
 
   -- OLD n-ary attempt:
   --
@@ -342,17 +349,21 @@ anfCont :: BindingStack
         -> NewVar
         -> (BindingStack -> LoweringM Anf)
         -> LoweringM Anf
-anfCont stack t var k = case t of
-  V v -> k $ initNewVar var (Just v) stack
+anfCont stack term var k = case term of
+  V v ->
+    k $ initNewVar var (Just v) stack
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
-  BinderLevelShiftUP _ _ -> error "unexpected binder shift during ANF conversion"
+  BinderLevelShiftUP _ _ ->
+    error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
     body <- k $ initNewVar var Nothing stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
+
+  -- TODO: Return
 
   -- TODO: switch to support of n-ary application
   App ft ats
@@ -370,28 +381,17 @@ anfCont stack t var k = case t of
     | otherwise ->
         error "TODO: support for n-ary application in anfCont"
 
-  -- TODO: handle "rollback" and bulk-succ'ing previous level for:
-  -- [ ] Lam
-  -- [ ] Let
+  Lam binders t -> do
+    lamBody <- anfTail (emptyFrame : stack) t
+    letBody <- k $ initNewVar var Nothing stack
+    return $ AnfLet (Arity 1)
+                    (RhsAlloc $ AllocLam (arity binders)
+                                         lamBody)
+                    letBody
 
---   Lam bs bod -> AnfLet (Arity 1)
---                        (RhsAlloc $ AllocLam (arity bs) $ anfTail bod)
---                        (shift (k $ TrivVar $ slot0 0))
-
---   -- TODO: switch to support of n-ary application
---   App ft ats
---     | V.length ats == 1 ->
---         let at0 = V.head ats
---         in anfCont ft $ \(TrivVar fv) ->
---              anfCont at0 $ \(TrivVar av) ->
---                -- FIXME: this return arity is wrong. it needs to come from the
---                --        app. we can't actually assume 1 here.
---                AnfLet (Arity 1)
---                       (RhsApp $ AppFun fv $ V.singleton av)
---                       (shift $ k $ TrivVar $ slot0 0)
---
---     | otherwise -> error "TODO: add support for n-ary application"
---
+  -- TODO: Let (handle rollback / bulk-succ'ing previous level)
+  --         if we need to return more from anf{Tail,Cont}, think about how to
+  --             work that into state, rather than returning a tuple
 
 
 toAnf :: Term -> Anf
