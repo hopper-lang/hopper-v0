@@ -247,7 +247,7 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
--- | Initializes a AnfBinder pointing the correct number of binders up in the top
+-- | Initializes a ref pointing the correct number of binders up in the top
 -- level's map. As more levels are introduced, these initialized vars in the map
 -- will be bumped.
 --
@@ -270,16 +270,16 @@ openBinder binder mTermVar stack = case mTermVar of
 
 -- TODO: this and openBinder should possibly work on a BindingLevel? to do less work
 closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
-closeBinders refs stack = stack & _head.levelRefs %~ deleteRefs
+closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
   where
     -- TODO: should this be a strict or lazy fold?
     deleteRefs :: Map.Map AnfBinder Variable -> Map.Map AnfBinder Variable
-    deleteRefs m = foldr Map.delete m refs
+    deleteRefs m = foldr Map.delete m binders
 
 -- | Assumes all 'AnfBinder's are in the top level's Map
 -- TODO: work on a BindingLevel?
 resolveRefs :: [AnfBinder] -> BindingStack -> [Variable]
-resolveRefs refs stack = (varMap Map.!) <$> refs
+resolveRefs binders stack = (varMap Map.!) <$> binders
   where
     varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.levelRefs) stack
 
@@ -491,3 +491,9 @@ toAnf t = evalState (anfTail emptyStack t) initialState
 --           in   letA sub (1) (0)
 --                in   letA 20
 --                     in   add (4) (1) (0)
+--
+--
+-- [ ] split openBinder?
+-- [ ] make functions work on level instead of stack?
+-- [ ] tail Let
+-- [ ] non-tail Let
