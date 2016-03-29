@@ -302,12 +302,12 @@ anfTail stack term = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
-        binders <- replicateM (succ $ V.length ats) allocBinder
-        let [fBinder, aBinder0] = binders
+        appBinders <- replicateM (succ $ V.length ats) allocBinder
+        let [fBinder, argBinder0] = appBinders
         anfCont stack ft fBinder $ \s1 -> do
           let at0 = V.head ats
-          anfCont s1 at0 aBinder0 $ \s2 -> do
-            let vars = resolveRefs binders s2
+          anfCont s1 at0 argBinder0 $ \s2 -> do
+            let vars = resolveRefs appBinders s2
             return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
     | otherwise ->
         error "TODO: add support for n-ary application in anfTail"
@@ -347,16 +347,16 @@ anfCont :: BindingStack
         -> AnfBinder
         -> (BindingStack -> LoweringM Anf)
         -> LoweringM Anf
-anfCont stack term var k = case term of
+anfCont stack term binder k = case term of
   V v ->
-    k $ openBinder var (Just v) stack
+    k $ openBinder binder (Just v) stack
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
-    body <- k $ openBinder var Nothing stack
+    body <- k $ openBinder binder Nothing stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
@@ -366,24 +366,24 @@ anfCont stack term var k = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
-        binders <- replicateM (succ $ V.length ats) allocBinder
-        let [fBinder, aBinder0] = binders
+        appBinders <- replicateM (succ $ V.length ats) allocBinder
+        let [fBinder, argBinder0] = appBinders
         anfCont stack ft fBinder $ \s1 -> do
           let at0 = V.head ats
-          anfCont s1 at0 aBinder0 $ \s2 -> do
-            let vars = resolveRefs binders s2
-            body <- k $ openBinder var Nothing $ closeBinders binders stack
+          anfCont s1 at0 argBinder0 $ \s2 -> do
+            let vars = resolveRefs appBinders s2
+            body <- k $ openBinder binder Nothing $ closeBinders appBinders stack
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
                             body
     | otherwise ->
         error "TODO: support for n-ary application in anfCont"
 
-  Lam binders t -> do
+  Lam binderInfos t -> do
     lamBody <- anfTail (emptyLevel : stack) t
-    letBody <- k $ openBinder var Nothing stack
+    letBody <- k $ openBinder binder Nothing stack
     return $ AnfLet (Arity 1)
-                    (RhsAlloc $ AllocLam (arity binders)
+                    (RhsAlloc $ AllocLam (arity binderInfos)
                                          lamBody)
                     letBody
 
