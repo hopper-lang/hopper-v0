@@ -51,7 +51,7 @@ spec =
               anf = AnfTailCall $ AppFun v0 $ V.singleton v0
           in toAnf term `shouldBe` anf
 
-        it "converts tail lambdas via allocation" $
+        it "converts lambdas by introducing an allocation" $
           let term = Lam (V.singleton dummyBI)
                          (V v1)
               anf = AnfLet (Arity 1)
@@ -69,6 +69,13 @@ spec =
                            (AnfTailCall $ AppFun v1 $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
+        -- TODO: need to add pass to remove shifts
+        --
+        -- it "converts shifted variable" $
+        --   let term = App (V v0) $ V.singleton $ BinderLevelShiftUP 1 $ V v1
+        --       anf = _todo
+        --   in toAnf term `shouldBe` anf
+
         it "converts single-arg non-tail calls" $
           let lit = LInteger (-10)
               -- abs (neg -10)
@@ -83,9 +90,19 @@ spec =
                                    (AnfTailCall $ AppFun abs $ V.singleton v0))
           in toAnf term `shouldBe` anf
 
-        -- TODO: need to add pass to remove shifts
-        --
-        -- it "converts shifted variable" $
-        --   let term = App (V v0) $ V.singleton $ BinderLevelShiftUP 1 $ V v1
-        --       anf = _todo
-        --   in toAnf term `shouldBe` anf
+        it "converts lambdas" $
+          -- (λ. neg (abs (0))) (0)
+          let term = App (Lam (V.singleton dummyBI)
+                              (App (V neg)
+                                   (V.singleton (App (V abs)
+                                                     (V.singleton $ V v0)))))
+                         (V.singleton $ V v0)
+              -- letA (λ. letA abs (0) in neg (0)) in (0) (1)
+              anf = AnfLet (Arity 1)
+                           (RhsAlloc $
+                             AllocLam (Arity 1)
+                                      (AnfLet (Arity 1)
+                                              (RhsApp $ AppFun abs $ V.singleton v0)
+                                              (AnfTailCall $ AppFun neg $ V.singleton v0)))
+                           (AnfTailCall $ AppFun v0 $ V.singleton v1)
+          in toAnf term `shouldBe` anf
