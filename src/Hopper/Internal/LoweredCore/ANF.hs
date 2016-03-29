@@ -7,7 +7,9 @@ import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 
+import Data.Maybe (fromMaybe)
 import Data.Word
+import Control.Monad (replicateM)
 import Control.Monad.Trans.State.Strict as State
 import Control.Lens
 
@@ -169,13 +171,20 @@ newtype Trivial
   -- | TrivRhs Rhs
   -- TODO: add more trivial cases in the future once we have unboxed values
 
-slot0 :: Integral a => a -> Variable
-slot0 level = LocalVar $ LocalNamelessVar (fromIntegral level) $ BinderSlot 0
+-- slot0 :: Integral a => a -> Variable
+-- slot0 level = LocalVar $ LocalNamelessVar (fromIntegral level) $ BinderSlot 0
+
+slot0 :: Word32 -> Variable
+slot0 level = LocalVar $ LocalNamelessVar level $ BinderSlot 0
+
+succVar :: Variable -> Variable
+succVar (LocalVar (LocalNamelessVar lvl slot)) = LocalVar $ LocalNamelessVar (succ lvl) slot
+succVar v@(GlobalVarSym _) = v
 
 returnAllocated :: Alloc -> Anf
 returnAllocated alloc = AnfLet (Arity 1)
                                (RhsAlloc alloc)
-                               (AnfReturn $ V.singleton $ slot0 (0 :: Word32))
+                               (AnfReturn $ V.singleton $ slot0 0)
 
 arity :: V.Vector BinderInfo -> Arity
 arity binders = Arity $ fromIntegral $ V.length binders
@@ -204,7 +213,8 @@ makeLenses ''BindingFrame
 -- RHS global var applied to a global var. See 'toAnf'.
 type BindingStack = [BindingFrame]
 
-type LoweringM = {- TODO: wrap with: ReaderT BindingStack -} State NewVar
+-- TODO: possibly wrap with (ReaderT BindingStack)
+type LoweringM = State NewVar
 
 -- TODO: perhaps move from explicit stack passing to either tupling it update
 --       into the state, or perhaps with a reader -- using e.g. mapReader
@@ -212,6 +222,9 @@ type LoweringM = {- TODO: wrap with: ReaderT BindingStack -} State NewVar
 
 -- Let's probably just start with explicit thunks (K without taking vars), and then
 -- see if we can covert it to just use laziness or monadic actions or something
+
+emptyFrame :: BindingFrame
+emptyFrame = BindingFrame (Map.fromList []) 0
 
 frameSizes :: BindingStack -> [Word32]
 frameSizes = fmap _frameIntros
@@ -229,18 +242,35 @@ translateTermVar stack (LocalVar (LocalNamelessVar depth slot)) =
 -- updateTopFrame _ [] = error "unexpected binding stack underrun"
 -- updateTopFrame f (frame : stack) = f frame : stack
 
+allocNewVar :: LoweringM NewVar
+allocNewVar = do
+  curr <- get
+  modify $ NewVar . succ . newVarId
+  return curr
+
 -- | Initializes a NewVar pointing the correct number of binders up in the top
 -- frame's map. As more levels are introduced, these initialized vars in the map
 -- will be bumped.
+--
+-- TODO: possibly split this into two separate functions.
 initNewVar :: NewVar -> Maybe Variable -> BindingStack -> BindingStack
 initNewVar newVar mTermVar stack = case mTermVar of
-  Nothing -> setNewVar $ slot0 0
-  Just termVar -> setNewVar $ translateTermVar stack termVar
+  Nothing -> -- TODO: do we ever *not* want to bump here (i.e. do we ever not intro a letA)?
+    setNewVar (slot0 0) $ bumpVars stack
+  Just termVar ->
+    setNewVar (translateTermVar stack termVar) stack
 
   where
-    setNewVar x = set (_head . frameRefs . at newVar) (Just x) stack
+    setNewVar :: Variable -> BindingStack -> BindingStack
+    setNewVar v s = s & (_head.frameRefs.at newVar) ?~ v
 
-anfTail :: BindingStack -> Term -> LoweringM Anf
+    bumpVars :: BindingStack -> BindingStack
+    bumpVars s = s & (_head.frameIntros)      %~ succ
+                   & (_head.frameRefs.mapped) %~ succVar
+
+anfTail :: BindingStack
+        -> Term
+        -> LoweringM Anf
 anfTail stack term = case term of
   V v -> return $ AnfReturn $ V.singleton $ translateTermVar stack v
 
@@ -249,25 +279,27 @@ anfTail stack term = case term of
 
   ELit lit -> return $ returnAllocated $ AllocLit lit
 
-  -- -- TODO: switch to support of n-ary application
-  -- App ft ats
-  --   | V.length ats == 1 -> anfCont ft $ \(TrivVar fv) ->         -- TODO: pass in stack
-  --                            let at0 = V.head ats
-  --                            in anfCont at0 $ \(TrivVar av) ->   -- TODO: pass in stack
-  --                                 AnfTailCall $ AppFun fv $ V.singleton av
-  --   | otherwise -> error "TODO: add support for n-ary application"
-
-  -- App ft ats
-  --   | V.length ats == 1 ->
-  --     anfCont ft $ \_ -> do
-  --       _todo
-  --   | otherwise -> error "TODO: add support for n-ary application"
+  -- TODO: switch to support of n-ary application
+  App ft ats
+    | V.length ats == 1 -> do
+        nvars <- replicateM (succ $ V.length ats) allocNewVar
+        let [fNVar, aNVar0] = nvars
+        anfCont stack ft fNVar $ \s1 -> do
+          let at0 = V.head ats
+          anfCont s1 at0 aNVar0 $ \s2 ->
+            let varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.frameRefs) s2
+                vars = (varMap Map.!) <$> nvars
+            in return $
+                 -- TODO: remember to retire vars from the map here in anfCont:
+                 AnfTailCall $ AppFun (head vars) $ V.fromList $ tail vars
+    | otherwise ->
+        error "TODO: add support for n-ary application"
 
   Lam binders t -> do
-    body <- anfTail stack t
+    body <- anfTail (emptyFrame : stack) t
     return $ returnAllocated $ AllocLam (arity binders) body
 
-  -- OLD:
+  -- OLD n-ary attempt:
   --
   -- App fun args ->
   --   anfCont fun $ V.foldr (\term (K () k) ->
@@ -291,30 +323,31 @@ anfTail stack term = case term of
   --                           in AnfLet (Arity 1) rhs body)
   --                         args
 
--- TODO: should K take the binding stack too?
--- anfCont :: BindingStack -> Term -> (Trivial -> LoweringM Anf) -> LoweringM Anf
-anfCont :: BindingStack -> Term -> NewVar -> (BindingStack -> LoweringM Anf) -> LoweringM Anf
+anfCont :: BindingStack
+        -> Term
+        -> NewVar
+        -> (BindingStack -> LoweringM Anf)
+        -> LoweringM Anf
 anfCont stack t var k = case t of
-  V v -> do
-    -- FIXME: this needs to update the stack frame... but that's not in the State.
-    --        perhaps info should be passed to k, which might help us get away with no stack in the state?
-    --        b/c if possible, no stack in the state is best: it'd be nice if that
-    --        was implicitly done (correctly) by the haskell control stack
-    --
-    --        "info" could be (Maybe Variable) for the term var.. OR stack'
-    --          if it's indeed stack', perhaps this is the time to put the stack in a ReaderT
-    --          wrapping the state. Seems like yes
-    --
-    let stack' = initNewVar var (Just v) stack
-    k stack'
---
---   -- TODO: is this right?
---   BinderLevelShiftUP n t -> AnfShift n $ anfCont t k
---
---   ELit l -> AnfLet (Arity 1)
---                    (RhsAlloc $ AllocLit l)
---                    (shift (k $ TrivVar $ slot0 0))
---
+  V v -> k $ initNewVar var (Just v) stack
+
+  -- TODO: impl a pass to push shifts down to the leaves and off of the AST
+  BinderLevelShiftUP _ _ -> error "unexpected binder shift during ANF conversion"
+
+  ELit l -> do
+    body <- k $ initNewVar var Nothing stack
+    return $ AnfLet (Arity 1)
+                    (RhsAlloc $ AllocLit l)
+                    body
+
+  -- TODO: handle "rollback" and bulk-succ'ing previous level for:
+  -- [ ] Lam
+  -- [ ] Let
+
+--   Lam bs bod -> AnfLet (Arity 1)
+--                        (RhsAlloc $ AllocLam (arity bs) $ anfTail bod)
+--                        (shift (k $ TrivVar $ slot0 0))
+
 --   -- TODO: switch to support of n-ary application
 --   App ft ats
 --     | V.length ats == 1 ->
@@ -329,19 +362,16 @@ anfCont stack t var k = case t of
 --
 --     | otherwise -> error "TODO: add support for n-ary application"
 --
---   Lam bs bod -> AnfLet (Arity 1)
---                        (RhsAlloc $ AllocLam (arity bs) $ anfTail bod)
---                        (shift (k $ TrivVar $ slot0 0))
+
 
 toAnf :: Term -> Anf
-toAnf t = evalState (anfTail emptyStack t) $ NewVar 0
+toAnf t = evalState (anfTail emptyStack t) firstNewVar
   where
     -- We provide a bottom frame that doesn't correspond to a toplevel term
     -- 'Let' or 'Lam' so that e.g. a toplevel 'Let' with a non-trivial RHS has
     -- a frame with which to introduce intermediary 'AnfLet's
-    emptyStack = [BindingFrame (Map.fromList []) 0]
-
-
+    emptyStack = [emptyFrame]
+    firstNewVar = NewVar 0
 
 
 -- 3/16/16 - trying danvy one-pass to ANF rep with Shift
@@ -380,10 +410,56 @@ toAnf t = evalState (anfTail emptyStack t) $ NewVar 0
 -- 3/19/16
 -- need to figure out how to unify representations for binding levels and and these nested/non-tail situations
 --     that can contain multiple binding levels that need to be rolled back simultaneously
---   example:       let x=50 in add 10 (let f = lam... in f x) 20
+--   example:       let x=50 in add 10 (let f = lam... in f x) x
 --   anf expansion: letT 50
 --                  in   letA 10
---                       in   letT lam...        \   these two lines are for the nested
---                            in   letA (0) (2)  /   let and affect our add's first arg
---                                 in   letA 20
---                                      in   add (3) (1) (0)
+--                       in   letT lam...                \ these two lines are for the nested
+--                            in   letA (0) (2)          / let and affect our add's first arg
+--                                 in   add (2) (0) (3)  - the x (3) here is translated from (0)
+--                                                         and must not be thrown-off by the
+--                                                         nested letT
+--
+-- 3/25/16
+-- for non-tail/nested expressions (which can go arbitrarily deep), we need to
+--     either bump the previous "level" when "rolling back", or be bumping these
+--     outer scopes at all times, with no special behavior on "rollback".
+--
+-- we should consider cases like:
+--     let
+--     let
+--          let
+--          let
+--               let
+--                    lam <- this, wrapping a tail call, is a bump "firewall"
+--                    let
+--                         let
+--                              let
+--               let
+--          let
+--          let
+--     let
+--
+-- in using ReaderT for our stack, we are using haskell's implicit control stack
+--   how do things change with an explicit stack?
+--     is it easier to calculate the extent to which the previous level should be bumped, on rollback?
+--     or maybe our K could return a tuple around Anf with this bump info?
+--         (or is *this* where it makes sense to wrap K with a newtype?)
+--       and then we could stick with the reader (or cont?)!
+--
+-- we should probably start with a very simple model, and, once we have things
+--     working, see how things like ContT can possibly fit into the mix.
+
+-- TODO: alloc (vs init) vars
+-- TODO: track amount to bump outer level / and bump
+-- TODO: make sure we are always removing things from the BindingFrame map (at usage sites)
+--         or at least in the anfCont cases, where we pass the stack to k
+--
+--
+-- add 10 (sub 30 5) 20
+--
+-- letA 10
+-- in   letA 30
+--      in   letA 5
+--           in   letA sub (1) (0)
+--                in   letA 20
+--                     in   add (4) (1) (0)
