@@ -247,23 +247,7 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
-
--- TODO: move/reintegrate this
-
--- | Initializes a ref pointing the correct number of binders up in the top
--- level's map. As more levels are introduced, these initialized vars in the map
--- will be bumped.
---
-
-
-
--- addRef :: AnfBinder -> Variable -> BindingLevel -> BindingLevel
--- addRef binder v = (levelRefs.at binder) ?~ v
---
--- add to trackIntro:
---   & addRef binder (slot0 0)
-
-
+-- TODO: rename to openIntro?
 -- | Opens a binder in the top 'BindingLevel' of the 'BindingStack' for a
 -- newly-introduced 'AnfLet'.
 trackIntro :: AnfBinder -> BindingStack -> BindingStack
@@ -273,6 +257,7 @@ trackIntro binder stack = stack & _head %~ updateLevel
                 . (levelRefs.mapped    %~ succVar)
                 . (levelIntros         %~ succ)
 
+-- TODO: rename to openVariable?
 -- | Opens a binder with the correct depth in 'BindingLevel' for the provided
 -- Term 'Variable'.
 trackVariable :: Variable -> AnfBinder -> BindingStack -> BindingStack
@@ -313,21 +298,23 @@ anfTail stack term = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
+        let at0 = V.head ats
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
-        anfCont stack ft fBinder $ \s1 -> do
-          let at0 = V.head ats
+
+        anfCont stack ft fBinder $ \s1 ->
           anfCont s1 at0 argBinder0 $ \s2 -> do
             let vars = resolveRefs appBinders s2
             return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
     | otherwise ->
         error "TODO: add support for n-ary application in anfTail"
 
-  Lam binders t -> do
+  Lam binderInfos t -> do
     body <- anfTail (emptyLevel : stack) t
-    return $ returnAllocated $ AllocLam (arity binders) body
+    return $ returnAllocated $ AllocLam (arity binderInfos) body
 
-  -- TODO: Let
+  -- Let binderInfos rhs body -> do
+  --   _todoTailLet
 
   -- OLD n-ary attempt:
   --
@@ -378,15 +365,19 @@ anfCont stack term binder k = case term of
   -- TODO: switch to support of n-ary application
   App ft ats
     | V.length ats == 1 -> do
+        let at0 = V.head ats
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
-        anfCont stack ft fBinder $ \s1 -> do
-          let at0 = V.head ats
+
+        anfCont stack ft fBinder $ \s1 ->
           anfCont s1 at0 argBinder0 $ \s2 -> do
             let vars = resolveRefs appBinders s2
-            body <- k $ trackIntro binder $ closeBinders appBinders stack
+                app  = AppFun (head vars)
+                              (V.fromList $ tail vars)
+                s3   = trackIntro binder $ closeBinders appBinders s2
+            body <- k s3
             return $ AnfLet (Arity 1) -- TODO: support tupled return
-                            (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
+                            (RhsApp app)
                             body
     | otherwise ->
         error "TODO: support for n-ary application in anfCont"
@@ -503,9 +494,3 @@ toAnf t = evalState (anfTail emptyStack t) initialState
 --           in   letA sub (1) (0)
 --                in   letA 20
 --                     in   add (4) (1) (0)
---
---
--- [x] split openBinder?
--- [ ] make functions work on level instead of stack?
--- [ ] tail Let
--- [ ] non-tail Let
