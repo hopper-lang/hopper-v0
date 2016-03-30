@@ -265,7 +265,7 @@ allocBinder = do
 
 
 -- TODO: possibly work on a BindingLevel? to do less work
--- | Opens a binder in 'BindingLevel' for a newly-introduced 'AnfLet'
+-- | Opens a binder in 'BindingLevel' for a newly-introduced 'AnfLet'.
 trackIntro :: AnfBinder -> BindingStack -> BindingStack
 trackIntro binder stack =
   stack & (_head.levelIntros)         %~ succ
@@ -273,12 +273,14 @@ trackIntro binder stack =
         & (_head.levelRefs.at binder) ?~ slot0 0
 
 -- TODO: possibly work on a BindingLevel? to do less work
--- | Registers the depth of the provided Term 'Variable'
+-- | Opens a binder with the correct depth in 'BindingLevel' for the provided
+-- Term 'Variable'.
 trackVariable :: Variable -> AnfBinder -> BindingStack -> BindingStack
 trackVariable termVar binder stack =
   stack & (_head.levelRefs.at binder) ?~ translateTermVar stack termVar
 
 -- TODO: possibly work on a BindingLevel? to do less work
+-- | Closes the provided 'AnfBinder's in 'BindingLevel'.
 closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
 closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
   where
@@ -287,7 +289,8 @@ closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
     deleteRefs m = foldr Map.delete m binders
 
 -- TODO: work on a BindingLevel?
--- | Assumes all provided 'AnfBinder's are in the top level's Map
+-- | Resolves 'Variables' in 'BindingLevel' for the provided 'AnfBinder's.
+-- Assumes the binders are all present in the 'Map' of the 'BindingLevel'.
 resolveRefs :: [AnfBinder] -> BindingStack -> [Variable]
 resolveRefs binders stack = (varMap Map.!) <$> binders
   where
