@@ -247,28 +247,34 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
+
+-- TODO: move/reintegrate this
+
 -- | Initializes a ref pointing the correct number of binders up in the top
 -- level's map. As more levels are introduced, these initialized vars in the map
 -- will be bumped.
 --
--- TODO: possibly split this into two separate functions.
--- TODO: this and closeBinders should possibly work on a BindingLevel? to do less work
-openBinder :: AnfBinder -> Maybe Variable -> BindingStack -> BindingStack
-openBinder binder mTermVar stack = case mTermVar of
-  Nothing -> -- TODO: do we ever *not* want to bump here (i.e. do we ever not intro a letA)?
-    addRef (slot0 0) $ bumpVars stack
-  Just termVar ->
-    addRef (translateTermVar stack termVar) stack
 
+
+
+-- TODO: possibly inline
+addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
+addRef binder v s = s & (_head.levelRefs.at binder) ?~ v
+
+-- TODO: possibly work on a BindingLevel? to do less work
+introduceBinder :: AnfBinder -> BindingStack -> BindingStack
+introduceBinder binder stack = addRef binder (slot0 0) $ bumpVars stack
   where
-    addRef :: Variable -> BindingStack -> BindingStack
-    addRef v s = s & (_head.levelRefs.at binder) ?~ v
-
     bumpVars :: BindingStack -> BindingStack
     bumpVars s = s & (_head.levelIntros)      %~ succ
                    & (_head.levelRefs.mapped) %~ succVar
 
--- TODO: this and openBinder should possibly work on a BindingLevel? to do less work
+-- | Registers the depth of the provided 'Variable'
+-- TODO: possibly work on a BindingLevel? to do less work
+registerTermVar :: Variable -> AnfBinder -> BindingStack -> BindingStack
+registerTermVar termVar binder stack = addRef binder (translateTermVar stack termVar) stack
+
+-- TODO: possibly work on a BindingLevel? to do less work
 closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
 closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
   where
@@ -349,14 +355,15 @@ anfCont :: BindingStack
         -> LoweringM Anf
 anfCont stack term binder k = case term of
   V v ->
-    k $ openBinder binder (Just v) stack
+    let stack' = registerTermVar v binder stack
+    in k stack'
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
-    body <- k $ openBinder binder Nothing stack
+    body <- k $ introduceBinder binder stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
@@ -372,7 +379,7 @@ anfCont stack term binder k = case term of
           let at0 = V.head ats
           anfCont s1 at0 argBinder0 $ \s2 -> do
             let vars = resolveRefs appBinders s2
-            body <- k $ openBinder binder Nothing $ closeBinders appBinders stack
+            body <- k $ introduceBinder binder $ closeBinders appBinders stack
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
                             body
@@ -381,7 +388,7 @@ anfCont stack term binder k = case term of
 
   Lam binderInfos t -> do
     lamBody <- anfTail (emptyLevel : stack) t
-    letBody <- k $ openBinder binder Nothing stack
+    letBody <- k $ introduceBinder binder stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binderInfos)
                                          lamBody)
@@ -493,7 +500,7 @@ toAnf t = evalState (anfTail emptyStack t) initialState
 --                     in   add (4) (1) (0)
 --
 --
--- [ ] split openBinder?
+-- [x] split openBinder?
 -- [ ] make functions work on level instead of stack?
 -- [ ] tail Let
 -- [ ] non-tail Let
