@@ -60,6 +60,14 @@ spec =
                            (AnfReturn $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
+        --
+        -- TODO: naive tail let
+        --
+
+        --
+        -- TODO: let with var on RHS
+        --
+
       describe "non-tail cases" $ do
         it "converts variables bumped by a literal allocation" $
           let lit = LInteger 5
@@ -106,3 +114,6 @@ spec =
                                               (AnfTailCall $ AppFun neg $ V.singleton v0)))
                            (AnfTailCall $ AppFun v0 $ V.singleton v1)
           in toAnf term `shouldBe` anf
+
+
+        -- TODO: non-tail let

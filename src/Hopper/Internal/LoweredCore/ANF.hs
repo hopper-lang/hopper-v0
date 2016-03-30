@@ -313,8 +313,25 @@ anfTail stack term = case term of
     body <- anfTail (emptyLevel : stack) t
     return $ returnAllocated $ AllocLam (arity binderInfos) body
 
-  -- Let binderInfos rhs body -> do
-  --   _todoTailLet
+  Let binderInfos rhs body -> do
+    rhsBinder <- allocBinder
+    -- TODO: 1. Why are we passing a binder for RHS? Think about it.
+    --          -> it's normally so we can refer to an introduced sub-expr later.
+    --             this is not needed for the Let case. we should use Maybe or a
+    --             more semantically meaningful sum (explicit binder vs implicit/let-rhs)
+    --                pass binderinfos in the LetRhs case?
+    -- TODO: 2. Do we need to/should we invert some control or something, so    (???)
+    --          that we explicitly insert (or omit) an AnfLet here?             (???)
+    -- TODO: 3. We need to handle: let f=add in f.  how do we deal with this? anfCont for V doesn't insert a Let
+    --              ! should we allow Var on RHS in ANF?  if not, then have to model removal of letTs?
+    -- to model omission of letTs, we could probably just add a
+    --    'Maybe (Indirection Variable)' kind of thing to 'BindingLevel', and
+    --    adjust 'translateTermVar' to keep tallying until it doesn't see any
+    --    more indirections.
+    -- TODO: detect V-on-RHS case and put an indirection level on the stack
+    anfCont stack rhs rhsBinder $ \stack' ->
+      anfTail stack' body
+
 
   -- OLD n-ary attempt:
   --
@@ -347,6 +364,8 @@ anfCont :: BindingStack
         -> LoweringM Anf
 anfCont stack term binder k = case term of
   V v ->
+    -- TODO: if we have a let-rhs instead of an explicit binder, put an
+    --       indirection level on the stack.
     let stack' = trackVariable v binder stack
     in k stack'
 
@@ -355,10 +374,15 @@ anfCont stack term binder k = case term of
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
+    -- EITHER: intro/bump using binder & pass stack otherwise-as-is
     body <- k $ trackIntro binder stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
+    --
+    -- OR: cons emptyLevel onto stack
+    -- TODO: ...
+    --
 
   -- TODO: Return
 
@@ -374,7 +398,7 @@ anfCont stack term binder k = case term of
             let vars = resolveRefs appBinders s2
                 app  = AppFun (head vars)
                               (V.fromList $ tail vars)
-                s3   = trackIntro binder $ closeBinders appBinders s2
+                s3   = trackIntro binder . closeBinders appBinders $ s2
             body <- k s3
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp app)
@@ -494,3 +518,6 @@ toAnf t = evalState (anfTail emptyStack t) initialState
 --           in   letA sub (1) (0)
 --                in   letA 20
 --                     in   add (4) (1) (0)
+--
+-- 3/30/16
+-- we should add support n-ary app before switching over to ReaderT
