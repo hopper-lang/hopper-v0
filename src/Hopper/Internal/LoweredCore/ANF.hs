@@ -257,22 +257,21 @@ allocBinder = do
 
 
 
--- TODO: possibly inline
-addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
-addRef binder v s = s & (_head.levelRefs.at binder) ?~ v
+-- addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
+-- addRef binder v s = s & (_head.levelRefs.at binder) ?~ v
 
 -- TODO: possibly work on a BindingLevel? to do less work
 introduceBinder :: AnfBinder -> BindingStack -> BindingStack
-introduceBinder binder stack = addRef binder (slot0 0) $ bumpVars stack
-  where
-    bumpVars :: BindingStack -> BindingStack
-    bumpVars s = s & (_head.levelIntros)      %~ succ
-                   & (_head.levelRefs.mapped) %~ succVar
+introduceBinder binder stack =
+  stack & (_head.levelIntros)         %~ succ
+        & (_head.levelRefs.mapped)    %~ succVar
+        & (_head.levelRefs.at binder) ?~ slot0 0
 
 -- | Registers the depth of the provided 'Variable'
 -- TODO: possibly work on a BindingLevel? to do less work
 registerTermVar :: Variable -> AnfBinder -> BindingStack -> BindingStack
-registerTermVar termVar binder stack = addRef binder (translateTermVar stack termVar) stack
+registerTermVar termVar binder stack =
+  stack & (_head.levelRefs.at binder) ?~ translateTermVar stack termVar
 
 -- TODO: possibly work on a BindingLevel? to do less work
 closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
