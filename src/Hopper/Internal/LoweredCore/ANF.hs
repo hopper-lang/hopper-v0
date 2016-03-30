@@ -257,20 +257,25 @@ allocBinder = do
 
 
 
--- addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
--- addRef binder v s = s & (_head.levelRefs.at binder) ?~ v
+-- addRef :: AnfBinder -> Variable -> BindingLevel -> BindingLevel
+-- addRef binder v = (levelRefs.at binder) ?~ v
+--
+-- add to trackIntro:
+--   & addRef binder (slot0 0)
+
 
 -- TODO: possibly work on a BindingLevel? to do less work
-introduceBinder :: AnfBinder -> BindingStack -> BindingStack
-introduceBinder binder stack =
+-- | Opens a binder in 'BindingLevel' for a newly-introduced 'AnfLet'
+trackIntro :: AnfBinder -> BindingStack -> BindingStack
+trackIntro binder stack =
   stack & (_head.levelIntros)         %~ succ
         & (_head.levelRefs.mapped)    %~ succVar
         & (_head.levelRefs.at binder) ?~ slot0 0
 
--- | Registers the depth of the provided 'Variable'
 -- TODO: possibly work on a BindingLevel? to do less work
-registerTermVar :: Variable -> AnfBinder -> BindingStack -> BindingStack
-registerTermVar termVar binder stack =
+-- | Registers the depth of the provided Term 'Variable'
+trackVariable :: Variable -> AnfBinder -> BindingStack -> BindingStack
+trackVariable termVar binder stack =
   stack & (_head.levelRefs.at binder) ?~ translateTermVar stack termVar
 
 -- TODO: possibly work on a BindingLevel? to do less work
@@ -281,8 +286,8 @@ closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
     deleteRefs :: Map.Map AnfBinder Variable -> Map.Map AnfBinder Variable
     deleteRefs m = foldr Map.delete m binders
 
--- | Assumes all 'AnfBinder's are in the top level's Map
 -- TODO: work on a BindingLevel?
+-- | Assumes all provided 'AnfBinder's are in the top level's Map
 resolveRefs :: [AnfBinder] -> BindingStack -> [Variable]
 resolveRefs binders stack = (varMap Map.!) <$> binders
   where
@@ -354,7 +359,7 @@ anfCont :: BindingStack
         -> LoweringM Anf
 anfCont stack term binder k = case term of
   V v ->
-    let stack' = registerTermVar v binder stack
+    let stack' = trackVariable v binder stack
     in k stack'
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
@@ -362,7 +367,7 @@ anfCont stack term binder k = case term of
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
-    body <- k $ introduceBinder binder stack
+    body <- k $ trackIntro binder stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
@@ -378,7 +383,7 @@ anfCont stack term binder k = case term of
           let at0 = V.head ats
           anfCont s1 at0 argBinder0 $ \s2 -> do
             let vars = resolveRefs appBinders s2
-            body <- k $ introduceBinder binder $ closeBinders appBinders stack
+            body <- k $ trackIntro binder $ closeBinders appBinders stack
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp $ AppFun (head vars) $ V.fromList $ tail vars)
                             body
@@ -387,7 +392,7 @@ anfCont stack term binder k = case term of
 
   Lam binderInfos t -> do
     lamBody <- anfTail (emptyLevel : stack) t
-    letBody <- k $ introduceBinder binder stack
+    letBody <- k $ trackIntro binder stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binderInfos)
                                          lamBody)
