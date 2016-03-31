@@ -57,125 +57,6 @@ data Rhs
 -- Eventually we might want to collapse lets elaborated from Core->ANF
 -- translation into the same level as its containing source-side binder
 
--- -- core
--- \x. sub 1 let y = 5
---           in mult y (add 10 x)
---
--- -- debruijn
---
--- lam
---    sub 1 letS 5
---          in mult (0) (add 10 (1))
---
---
--- anf (shifted):
---
--- lam
---    let alloc 1
---    in  SHIFT
---        letS alloc 5
---        in   let alloc 10
---             in  SHIFT
---                 let add (-1) (1)
---                 in  SHIFT
---                     let mult ...
---
--- anf (without shifts):
---
--- lam
---    let alloc 1              -- <-- naming
---    in let* alloc 5
---       in let alloc 10       -- <-- naming
---          in let add (0) (3) -- used to be add _ (1)
---             in let mult (2) (0)
---                in sub (4) (0)
---
---
---
--- -- core
--- let comp = lam ...
--- in let f = lam ...
---    in let abs = lam ...
---       in let g = lam ...
---          in  (comp f g) (abs 10) 5
---
--- -- anf
---
--- let lam ... -- comp
--- in  let lam ... -- f
---     in  let lam ... -- abs
---         in  let lam ... -- g
---             in  ---------------------------
---                 let (3) (2) (0) -- comp f g
---                 in  let alloc 10             -- <-- this sub-expr bumps compFG binding
---                     in  let abs (0)
---                         in  let alloc 5
---                             in  (3) (1) (0) -- (comp f g) (abs 10) 5
---
---
--- debruijn:
---
--- letX add 1 2
--- in   letY add (0) 20
---      in   letZ add 50 (add (2) (0))
---           in   (add (add (1) (2)) (0))
---
--- anf (debruijn):
---
--- let 1
--- in  let 2
---     in  letX add (1) (0)
---         in   let 20
---              in  letY add (1) (0)
---                  in   let 50
---                       in  let add (3) (1)
---                           in  letZ add (1) (0)
---                               in let add (3) (5)
---                                  in add (0) (1)
-
--- let 1
--- in  let 2
---     in  letX add (1) (0)
---         in   let 20
---              in  letY add (SHIFT 1 (0)) (0)
---                  in   let 50
---                       in  let SHIFT 1 $ add (2) (0)           OR: add (SHIFT 1 (2)) (SHIFT 1 (0))
---                           in  letZ add (1) (0)
---                               in   let SHIFT 2 $ add (1) (3)  OR: add (SHIFT 2 (1)) (SHIFT 3 (2))
---                                    in  add (0) (1)
-
--- OLD:
--- increase binders (or insert shifts) for between binder and use, for each scope introduced
--- without shifting variables using these new scopes
---   by using new binders immediately, and then inserting shifts?
--- shifts seem like they'd only really be useful in ANF if allowed around vars
-
--- Tagging continuations
---   maybe tuple them up with info about how far upward they reach, or with a stack with a level for each it reaches
---   as linearization of sub-exprs introduces extra lets, stretch pointers up a level
---   as we pass each binder, we can stop tracking binders that referred to this level
-
--- Maybe it's not a terrible idea to parameterize `Anf` with a functor for
--- contextualizing variables.
---   Before shipping off ANF ASTs downstream, we use f = Identity; but during
---   Core -> ANF translation, we use f = IORef or MVar, and mutate variables once
---   we let-name subexpressions between variables and their binders.
---
--- An alternative would be to give unique IDs to each variable and `tell` bumps
--- to uniquely-identified variables that we use to correct the AST afterwards.
-
--- data Accumulator
---   = K () -- TODO: info about contained vars which are pointing to higher binders
---       (Trivial -> Anf) -- (Rhs -> Anf)
-
--- newtype Trivial
---   = TrivVar Variable
---   -- | TrivRhs Rhs
---   -- TODO: add more trivial cases in the future once we have unboxed values
-
--- slot0 :: Integral a => a -> Variable
--- slot0 level = LocalVar $ LocalNamelessVar (fromIntegral level) $ BinderSlot 0
-
 slot0 :: Word32 -> Variable
 slot0 level = LocalVar $ LocalNamelessVar level $ BinderSlot 0
 
@@ -203,11 +84,11 @@ instance Enum AnfBinder where
 data BindingLevel
   = BindingLevel { _levelRefs :: Map.Map AnfBinder Variable
                    -- ^ References to both existing (i.e. term) and new (i.e.
-                   --   intermediate/anf) binders.
+                   -- intermediate/anf) binders.
                  , _levelIntros :: Word32
                    -- ^ Levels introduced since the last source binder. separate
-                   --   from map for now so we can remove items from the map
-                   --   once used.
+                   -- from map for now so we can remove items from the map once
+                   -- used.
                  , _levelIndirection :: Maybe Variable
                    -- ^ Set when the source binder corresponding to this
                    -- 'BindingLevel' points to an earlier variable. e.g. in
@@ -234,9 +115,6 @@ data Binding
   = TermBinding          -- or ImplicitLet / ExistingLet / ImplicitBinding
   | AnfBinding AnfBinder -- or IntroducedLet / ReifiedBinding / IntroducedBinding / ExplicitBinding
   deriving (Eq, Show)
-
--- Let's probably just start with explicit thunks (K without taking vars), and then
--- see if we can covert it to just use laziness or monadic actions or something
 
 emptyLevel :: BindingLevel
 emptyLevel = BindingLevel (Map.fromList []) 0 Nothing
@@ -439,18 +317,6 @@ toAnf t = evalState (anfTail emptyStack t) initialState
     emptyStack = [emptyLevel]
     initialState = LoweringState $ AnfBinder 0
 
-
--- 3/16/16 - trying danvy one-pass to ANF rep with Shift
---         - first just get things wired up with bad variables and 1-ary apps
---         - TODO: see whether we do need a (V -1) in the presence of shift
---         - then add shifts
---         - then get n-ary apps working
---         - switch from Arity rep back to (V.Vector BinderInfo)
---         - then make sure multiple retvals are working
---           - we need type information for this
---           - this might require our accumulator/K to take multiple trivial
---             values? not sure.
-
 -- 3/18/16
 -- no more shifts
 -- we should distinguish between term and anf variables
@@ -532,3 +398,7 @@ toAnf t = evalState (anfTail emptyStack t) initialState
 --
 -- 3/30/16
 -- we should add support n-ary app before switching over to ReaderT
+--
+-- 3/31/16
+-- Once we move to reader, our K becomes (() -> LoweringM Anf). At that point,
+-- it seems we can just move to (using 'local' and) sequencing monadic actions.
