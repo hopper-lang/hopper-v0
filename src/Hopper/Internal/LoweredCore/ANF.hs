@@ -278,6 +278,12 @@ allocBinder = do
 addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
 addRef binder termVar stack = stack & (_head.levelRefs.at binder) ?~ termVar
 
+trackVariable :: Binding -> Variable -> BindingStack -> BindingStack
+trackVariable (AnfBinding binder) v stack =
+  addRef binder (translateTermVar stack v) stack
+trackVariable TermBinding v stack =
+  emptyIndirectionLevel (translateTermVar stack v) : stack
+
 -- | Updates the top of the 'BindingStack' to open a new binder for an
 -- introduced 'AnfLet', or adds a new 'BindingLevel' for an existing 'Term'
 -- 'Let'.
@@ -303,6 +309,8 @@ resolveRefs :: [AnfBinder] -> BindingStack -> [Variable]
 resolveRefs binders stack = (varMap Map.!) <$> binders
   where
     varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.levelRefs) stack
+
+--
 
 anfTail :: BindingStack
         -> Term
@@ -375,13 +383,7 @@ anfCont :: BindingStack
         -> LoweringM Anf
 anfCont stack term binding k = case term of
   V v ->
-    case binding of
-      AnfBinding binder ->
-        -- TODO: should translation occur outside? would this make helpers defined in terms of Level better now?
-        k $ addRef binder (translateTermVar stack v) stack
-      TermBinding ->
-        -- TODO: double-check this:
-        k $ emptyIndirectionLevel (translateTermVar stack v) : stack
+    k $ trackVariable binding v stack
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
