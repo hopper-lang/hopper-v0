@@ -275,16 +275,6 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
--- TODO: inline
--- | Opens a binder in the top 'BindingLevel' of the 'BindingStack' for a
--- newly-introduced 'AnfLet'.
-trackIntro :: AnfBinder -> BindingStack -> BindingStack
-trackIntro binder stack = stack & _head %~ updateLevel
-  where
-    updateLevel = (levelRefs.at binder ?~ slot0 0)
-                . (levelRefs.mapped    %~ succVar)
-                . (levelIntros         %~ succ)
-
 --
 -- TODO: extract addRef, then inline this function. Then we'll have the option to
 --       define these functions in terms of 'BindingLevel' instead of stack
@@ -295,9 +285,16 @@ trackVariable :: Variable -> AnfBinder -> BindingStack -> BindingStack
 trackVariable termVar binder stack =
   stack & (_head.levelRefs.at binder) ?~ translateTermVar stack termVar
 
+-- | Updates the top of the 'BindingStack' to open a new binder for an
+-- introduced 'AnfLet', or adds a new 'BindingLevel' for an existing 'Term'
+-- 'Let'.
 trackBinding :: Binding -> BindingStack -> BindingStack
-trackBinding (AnfBinding binder) = trackIntro binder -- TODO: inline expression
-trackBinding TermBinding = (emptyLevel:)
+trackBinding (AnfBinding binder) stack = stack & _head %~ updateLevel
+  where
+    updateLevel = (levelRefs.at binder ?~ slot0 0)
+                . (levelRefs.mapped    %~ succVar)
+                . (levelIntros         %~ succ)
+trackBinding TermBinding stack = emptyLevel:stack
 
 -- | Closes the provided 'AnfBinder's in 'BindingLevel'.
 closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
