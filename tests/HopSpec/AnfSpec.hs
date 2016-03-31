@@ -20,8 +20,8 @@ spec =
       let v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
           v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
           add = GlobalVarSym $ GlobalSymbol $ T.pack "add"
-          abs = GlobalVarSym $ GlobalSymbol $ T.pack"abs"
-          neg = GlobalVarSym $ GlobalSymbol $ T.pack"neg"
+          abs = GlobalVarSym $ GlobalSymbol $ T.pack "abs"
+          neg = GlobalVarSym $ GlobalSymbol $ T.pack "neg"
           -- v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
           dummyBI = BinderInfoData Omega () Nothing
 
@@ -115,5 +115,6 @@ spec =
                            (AnfTailCall $ AppFun v0 $ V.singleton v1)
           in toAnf term `shouldBe` anf
 
-
+        --
         -- TODO: non-tail let
+        --
