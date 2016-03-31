@@ -79,9 +79,9 @@ substitute :: Word32 -> (BinderSlot  -> Maybe Term) -> Term -> Either (String,Wo
 substitute baseLevel initMapper initTerm = goSub 0 initMapper initTerm
   where
     goSub :: Word32 -> (BinderSlot  -> Maybe Term) -> Term -> Either (String,Word32) Term
-    goSub shift mapper  var@(V (LocalVar (LocalNamelessVar lnLvl bslt@(BinderSlot lnSlot))))
+    goSub shift mapper  var@(V (LocalVar (LocalNamelessVar lnLvl bslt@(BinderSlot slot))))
                 |  lnLvl == (shift + baseLevel) =
-                        maybe (Left ("bad slot", lnSlot))
+                        maybe (Left ("bad slot", slot))
                               (Right . BinderLevelShiftUP shift )
                              $ mapper bslt
                 | otherwise =  Right var

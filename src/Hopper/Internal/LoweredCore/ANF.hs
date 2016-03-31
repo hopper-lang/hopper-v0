@@ -8,10 +8,12 @@ import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 
 import Data.Maybe (fromMaybe)
+import Data.Monoid (Sum(..), Last(..))
 import Data.Word
-import Control.Monad (replicateM)
+import Control.Arrow ((&&&), (***))
+import Control.Monad (replicateM, join)
 import Control.Monad.Trans.State.Strict as State
-import Control.Lens
+import Control.Lens hiding (levels)
 
 import qualified Data.Vector as V
 import qualified Data.Map.Strict as Map
@@ -200,12 +202,17 @@ instance Enum AnfBinder where
 
 data BindingLevel
   = BindingLevel { _levelRefs :: Map.Map AnfBinder Variable
-                   -- ^ references to both existing (i.e. term) and new (i.e.
+                   -- ^ References to both existing (i.e. term) and new (i.e.
                    --   intermediate/anf) binders.
                  , _levelIntros :: Word32
-                   -- ^ levels introduced since the last source binder. separate
+                   -- ^ Levels introduced since the last source binder. separate
                    --   from map for now so we can remove items from the map
                    --   once used.
+                 , _levelIndirection :: Maybe Variable
+                   -- ^ Set when the source binder corresponding to this
+                   -- 'BindingLevel' points to an earlier variable. e.g. in
+                   -- translating 'Let's with 'V' on the right-hand side, which
+                   -- will not have corresponding 'AnfLet's.
                  }
   deriving (Eq, Show)
 makeLenses ''BindingLevel
@@ -220,26 +227,47 @@ newtype LoweringState
   deriving (Eq, Show)
 makeLenses ''LoweringState
 
--- TODO: possibly wrap with (ReaderT BindingStack)
+-- TODO: possibly wrap with (ReaderT BindingStack) after moving to n-ary apps
 type LoweringM = State LoweringState
+
+data Binding
+  = TermBinding          -- or ImplicitLet / ExistingLet / ImplicitBinding
+  | AnfBinding AnfBinder -- or IntroducedLet / ReifiedBinding / IntroducedBinding / ExplicitBinding
+  deriving (Eq, Show)
 
 -- Let's probably just start with explicit thunks (K without taking vars), and then
 -- see if we can covert it to just use laziness or monadic actions or something
 
 emptyLevel :: BindingLevel
-emptyLevel = BindingLevel (Map.fromList []) 0
+emptyLevel = BindingLevel (Map.fromList []) 0 Nothing
 
-levelSizes :: BindingStack -> [Word32]
-levelSizes = fmap _levelIntros
+emptyIndirectionLevel :: Variable -> BindingLevel
+emptyIndirectionLevel v = BindingLevel (Map.fromList []) 0 (Just v)
 
 -- | Bumps the provided source variable by the number of intermediate lets that
 -- have been introduced since the source binder this variable points to.
 translateTermVar :: BindingStack -> Variable -> Variable
-translateTermVar _ v@(GlobalVarSym _) = v
-translateTermVar stack (LocalVar (LocalNamelessVar depth slot)) =
-  LocalVar $ LocalNamelessVar (depth + displacement) slot
+translateTermVar _ var@(GlobalVarSym _) = var
+translateTermVar stack var@(LocalVar lnv) =
+  case mIndirection of
+    Nothing ->
+      adjust displacement var
+    Just indirection ->
+      adjust (displacement + depth) indirection
+
   where
-    displacement = sum $ take (fromIntegral $ depth + 1) (levelSizes stack)
+    depth = _lnDepth lnv
+
+    levels :: [BindingLevel]
+    levels  = take (fromIntegral $ depth + 1) stack
+
+    -- Calculate the displacement sum (from the number of let-introductions) and
+    -- grab the last (possible) indirection in a single pass:
+    (displacement, mIndirection) = (getSum *** join . getLast) . mconcat $
+      (Sum . _levelIntros &&& Last . Just . _levelIndirection) <$> levels
+
+    adjust :: Word32 -> Variable -> Variable
+    adjust offset = over (localNameless.lnDepth) (+ offset)
 
 allocBinder :: LoweringM AnfBinder
 allocBinder = do
@@ -247,7 +275,7 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
--- TODO: rename to openIntro?
+-- TODO: inline
 -- | Opens a binder in the top 'BindingLevel' of the 'BindingStack' for a
 -- newly-introduced 'AnfLet'.
 trackIntro :: AnfBinder -> BindingStack -> BindingStack
@@ -257,12 +285,19 @@ trackIntro binder stack = stack & _head %~ updateLevel
                 . (levelRefs.mapped    %~ succVar)
                 . (levelIntros         %~ succ)
 
--- TODO: rename to openVariable?
+--
+-- TODO: extract addRef, then inline this function. Then we'll have the option to
+--       define these functions in terms of 'BindingLevel' instead of stack
+--
 -- | Opens a binder with the correct depth in 'BindingLevel' for the provided
 -- Term 'Variable'.
 trackVariable :: Variable -> AnfBinder -> BindingStack -> BindingStack
 trackVariable termVar binder stack =
   stack & (_head.levelRefs.at binder) ?~ translateTermVar stack termVar
+
+trackBinding :: Binding -> BindingStack -> BindingStack
+trackBinding (AnfBinding binder) = trackIntro binder -- TODO: inline expression
+trackBinding TermBinding = (emptyLevel:)
 
 -- | Closes the provided 'AnfBinder's in 'BindingLevel'.
 closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
@@ -302,8 +337,8 @@ anfTail stack term = case term of
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
 
-        anfCont stack ft fBinder $ \s1 ->
-          anfCont s1 at0 argBinder0 $ \s2 -> do
+        anfCont stack ft (AnfBinding fBinder) $ \s1 ->
+          anfCont s1 at0 (AnfBinding argBinder0) $ \s2 -> do
             let vars = resolveRefs appBinders s2
             return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
     | otherwise ->
@@ -314,24 +349,10 @@ anfTail stack term = case term of
     return $ returnAllocated $ AllocLam (arity binderInfos) body
 
   Let binderInfos rhs body -> do
-    rhsBinder <- allocBinder
-    -- TODO: 1. Why are we passing a binder for RHS? Think about it.
-    --          -> it's normally so we can refer to an introduced sub-expr later.
-    --             this is not needed for the Let case. we should use Maybe or a
-    --             more semantically meaningful sum (explicit binder vs implicit/let-rhs)
-    --                pass binderinfos in the LetRhs case?
-    -- TODO: 2. Do we need to/should we invert some control or something, so    (???)
-    --          that we explicitly insert (or omit) an AnfLet here?             (???)
-    -- TODO: 3. We need to handle: let f=add in f.  how do we deal with this? anfCont for V doesn't insert a Let
-    --              ! should we allow Var on RHS in ANF?  if not, then have to model removal of letTs?
-    -- to model omission of letTs, we could probably just add a
-    --    'Maybe (Indirection Variable)' kind of thing to 'BindingLevel', and
-    --    adjust 'translateTermVar' to keep tallying until it doesn't see any
-    --    more indirections.
-    -- TODO: detect V-on-RHS case and put an indirection level on the stack
-    anfCont stack rhs rhsBinder $ \stack' ->
+    -- TODO: use binderInfos
+    -- TODO: double-check this
+    anfCont stack rhs TermBinding $ \stack' ->
       anfTail stack' body
-
 
   -- OLD n-ary attempt:
   --
@@ -359,30 +380,28 @@ anfTail stack term = case term of
 
 anfCont :: BindingStack
         -> Term
-        -> AnfBinder
+        -> Binding
         -> (BindingStack -> LoweringM Anf)
         -> LoweringM Anf
-anfCont stack term binder k = case term of
+anfCont stack term binding k = case term of
   V v ->
-    -- TODO: if we have a let-rhs instead of an explicit binder, put an
-    --       indirection level on the stack.
-    let stack' = trackVariable v binder stack
-    in k stack'
+    case binding of
+      AnfBinding binder ->
+        -- TODO: should translation occur outside? would this make helpers defined in terms of Level better now?
+        k $ trackVariable v binder stack
+      TermBinding ->
+        -- TODO: double-check this:
+        k $ emptyIndirectionLevel (translateTermVar stack v) : stack
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
-    -- EITHER: intro/bump using binder & pass stack otherwise-as-is
-    body <- k $ trackIntro binder stack
+    body <- k $ trackBinding binding stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
-    --
-    -- OR: cons emptyLevel onto stack
-    -- TODO: ...
-    --
 
   -- TODO: Return
 
@@ -393,12 +412,12 @@ anfCont stack term binder k = case term of
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
 
-        anfCont stack ft fBinder $ \s1 ->
-          anfCont s1 at0 argBinder0 $ \s2 -> do
+        anfCont stack ft (AnfBinding fBinder) $ \s1 ->
+          anfCont s1 at0 (AnfBinding argBinder0) $ \s2 -> do
             let vars = resolveRefs appBinders s2
                 app  = AppFun (head vars)
                               (V.fromList $ tail vars)
-                s3   = trackIntro binder . closeBinders appBinders $ s2
+                s3   = trackBinding binding . closeBinders appBinders $ s2
             body <- k s3
             return $ AnfLet (Arity 1) -- TODO: support tupled return
                             (RhsApp app)
@@ -408,7 +427,7 @@ anfCont stack term binder k = case term of
 
   Lam binderInfos t -> do
     lamBody <- anfTail (emptyLevel : stack) t
-    letBody <- k $ trackIntro binder stack
+    letBody <- k $ trackBinding binding stack
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binderInfos)
                                          lamBody)
