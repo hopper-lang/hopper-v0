@@ -275,15 +275,8 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
---
--- TODO: extract addRef, then inline this function. Then we'll have the option to
---       define these functions in terms of 'BindingLevel' instead of stack
---
--- | Opens a binder with the correct depth in 'BindingLevel' for the provided
--- Term 'Variable'.
-trackVariable :: Variable -> AnfBinder -> BindingStack -> BindingStack
-trackVariable termVar binder stack =
-  stack & (_head.levelRefs.at binder) ?~ translateTermVar stack termVar
+addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
+addRef binder termVar stack = stack & (_head.levelRefs.at binder) ?~ termVar
 
 -- | Updates the top of the 'BindingStack' to open a new binder for an
 -- introduced 'AnfLet', or adds a new 'BindingLevel' for an existing 'Term'
@@ -385,7 +378,7 @@ anfCont stack term binding k = case term of
     case binding of
       AnfBinding binder ->
         -- TODO: should translation occur outside? would this make helpers defined in terms of Level better now?
-        k $ trackVariable v binder stack
+        k $ addRef binder (translateTermVar stack v) stack
       TermBinding ->
         -- TODO: double-check this:
         k $ emptyIndirectionLevel (translateTermVar stack v) : stack
