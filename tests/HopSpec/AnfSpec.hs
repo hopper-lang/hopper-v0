@@ -60,13 +60,29 @@ spec =
                            (AnfReturn $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
-        --
-        -- TODO: naive tail let
-        --
+        it "converts lets with a debruijn var on the RHS" $
+          let term = Let (V.singleton dummyBI)
+                         (V v1)
+                         (V v0)
+              anf = AnfReturn $ V.singleton v1
+          -- TODO: check that the correct binder slot is used
+          in toAnf term `shouldBe` anf
 
-        --
-        -- TODO: let with var on RHS
-        --
+        it "converts lets with a global var on the RHS" $
+          let term = Let (V.singleton dummyBI)
+                         (V add)
+                         (V v0)
+              anf = AnfReturn $ V.singleton add
+          in toAnf term `shouldBe` anf
+
+        it "converts non-trivial lets" $
+          let term = Let (V.singleton dummyBI)
+                         (App (V abs) $ V.singleton $ V v0)
+                         (App (V neg) $ V.singleton $ V v0)
+              anf = AnfLet (Arity 1)
+                           (RhsApp $ AppFun abs $ V.singleton v0)
+                           (AnfTailCall $ AppFun neg $ V.singleton v0)
+          in toAnf term `shouldBe` anf
 
       describe "non-tail cases" $ do
         it "converts variables bumped by a literal allocation" $
