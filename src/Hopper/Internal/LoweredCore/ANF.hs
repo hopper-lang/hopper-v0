@@ -7,7 +7,7 @@ import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (Sum(..), Last(..))
 import Data.Word
 import Control.Arrow ((&&&), (***))
@@ -153,12 +153,13 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
-addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
-addRef binder termVar stack = stack & (_head.levelRefs.at binder) ?~ termVar
+-- addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
+-- addRef binder termVar stack = stack & (_head.levelRefs.at binder) ?~ termVar
 
 trackVariable :: Binding -> Variable -> BindingStack -> BindingStack
 trackVariable (AnfBinding binder) v stack =
-  addRef binder (translateTermVar stack v) stack
+  -- addRef binder (translateTermVar stack v) stack
+  stack & (_head.levelRefs.at binder) ?~ translateTermVar stack v
 trackVariable TermBinding v stack =
   emptyIndirectionLevel (translateTermVar stack v) : stack
 
@@ -254,11 +255,36 @@ anfTail stack term = case term of
   --                           in AnfLet (Arity 1) rhs body)
   --                         args
 
+-- | The total number of binders in the levels of the first stack not shared by
+-- the second stack.
+bindersAddedSince :: BindingStack -> BindingStack -> Word32
+bindersAddedSince extended base = sum $ height <$> extended `levelsSince` base
+  where
+    height :: BindingLevel -> Word32
+    height level | isJust (_levelIndirection level) = _levelIntros level
+                 | otherwise                        = 1 + _levelIntros level
+
+    levelsSince :: BindingStack -> BindingStack -> [BindingLevel]
+    levelsSince new old | new == old = []
+    levelsSince [] _old = error "first stack must be an extension of the second"
+    levelsSince (level : newRest) old = level : (newRest `levelsSince` old)
+
+-- | The former with an increase to _levelIntros for each extra binder present
+-- in the latter. Assumes that the latter is the former extended with extra top
+-- 'BindingLevel's.
+withIntrosFrom :: BindingStack -> BindingStack -> BindingStack
+withIntrosFrom base extended = base & _head.levelIntros +~ (extended `bindersAddedSince` base)
+
+-- resetStack :: BindingStack -> Binding -> BindingStack -> BindingStack
+-- resetStack base binding extended =
+--   base & _head.levelIntros +~ (extended `bindersAddedSince` base)
+--        & _head.levelRefs.at .... use binding not binder...
+
 anfCont :: BindingStack
-        -> Term
-        -> Binding
-        -> (BindingStack -> LoweringM Anf)
-        -> LoweringM Anf
+        -> Term                            -- ^ The term to be lowered
+        -> Binding                         -- ^ The binding to be used, with which future computation will refer to the result
+        -> (BindingStack -> LoweringM Anf) -- ^ The action lowering of the rest of the program, awaiting the next binding context
+        -> LoweringM Anf                   -- ^ The action which produces lowered ANF for this term
 anfCont stack term binding k = case term of
   V v ->
     k $ trackVariable binding v stack
@@ -303,10 +329,32 @@ anfCont stack term binding k = case term of
                                          lamBody)
                     letBody
 
-  -- TODO: Let (handle rollback / bulk-succ'ing previous level)
-  --         if we need to return more from anf{Tail,Cont}, think about how to
-  --             work that into state, rather than returning a tuple
-
+  Let binderInfos rhs body -> do
+    -- -- TODO: this is wrong. fix it. `withIntrosWith` should be used for K's work -- not for the let body yet.
+    -- anfCont stack rhs TermBinding $ \stack' -> do
+    --   anfCont (stack `withIntrosFrom` stack') body binding k
+    --
+    anfCont stack rhs TermBinding $ \s1 ->
+      anfCont s1 body binding $ \s2 ->  -- FIXME: this is using binding, but then we throw the stack away
+        k $ (stack `withIntrosFrom` s2) -- This util fn could replay use of
+                                        -- binding... which might be gross. or
+                                        -- we could introduce a new type of
+                                        -- (Deferred?)Binding, which bottles-up
+                                        -- a continuation and sticks it in a
+                                        -- special field in the stack?
+        -- TODO: how would replaying a binding (whether manually or with a cont)
+        --       interact with # of intros we take from the levels differential?
+        --
+        -- TODO: perhaps if we go the DeferredBinding approach, we might want
+        --       to calculate the number of intros at the same time that the deferred
+        --       is constructed.
+        --
+        -- TODO: play with the idea of making modifications to the stack explicit,
+        --       either as code (a cont) or data. and pass this modification to
+        --       K instead of the new stack. and leave it up to the caller of
+        --       anfCont to use this stack transformer as they please.
+        --         It seems this would rule out the use of moving Reader into
+        --         LoweringM.
 
 toAnf :: Term -> Anf
 toAnf t = evalState (anfTail emptyStack t) initialState

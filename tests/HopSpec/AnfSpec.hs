@@ -19,10 +19,10 @@ spec =
     describe "toAnf" $ do
       let v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
           v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
+          v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
           add = GlobalVarSym $ GlobalSymbol $ T.pack "add"
           abs = GlobalVarSym $ GlobalSymbol $ T.pack "abs"
           neg = GlobalVarSym $ GlobalSymbol $ T.pack "neg"
-          -- v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
           dummyBI = BinderInfoData Omega () Nothing
 
       describe "simple tail cases" $ do
@@ -131,6 +131,40 @@ spec =
                            (AnfTailCall $ AppFun v0 $ V.singleton v1)
           in toAnf term `shouldBe` anf
 
-        --
-        -- TODO: non-tail let
-        --
+        it "converts lets" $
+          let ten = LInteger 10
+              twenty = LInteger 20
+              -- let 10 in (let 20 in (λ. (1)) (0)
+              term = Let (V.singleton dummyBI)
+                         (ELit ten)
+                         (App (Let (V.singleton dummyBI)
+                                   (ELit twenty)
+                                   (Lam (V.singleton dummyBI)
+                                        (V v1)))
+                              (V.singleton $ V v0))
+              -- letT 10 in letT 20 in letA (λ. (1)) in (0) (2)
+              anf = AnfLet (Arity 1)
+                           (RhsAlloc $ AllocLit ten)
+                           (AnfLet (Arity 1)
+                                   (RhsAlloc $ AllocLit twenty)
+                                   (AnfLet (Arity 1)
+                                           (RhsAlloc $
+                                             AllocLam (Arity 1)
+                                                      (AnfReturn $ V.singleton v1))
+                                           (AnfTailCall $
+                                             AppFun v0 $ V.singleton v2)))
+          in toAnf term `shouldBe` anf
+
+        it "eliminates lets with both a trivial RHS and body" $
+          let ten = LInteger 10
+              -- (let f = add in f) 10
+              term = App (Let (V.singleton dummyBI)
+                              (V add)
+                              (V v0))
+                         (V.singleton $ ELit ten)
+              -- letA 10 in add (0)
+              anf = AnfLet (Arity 1)
+                           (RhsAlloc $ AllocLit ten)
+                           (AnfTailCall $
+                             AppFun add $ V.singleton v0)
+          in toAnf term `shouldBe` anf
