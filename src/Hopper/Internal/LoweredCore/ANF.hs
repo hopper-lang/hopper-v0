@@ -262,11 +262,15 @@ bindersAddedSince extended base = sum $ height <$> extended `levelsSince` base
     levelsSince [] _old = error "first stack must be an extension of the second"
     levelsSince (level : newRest) old = level : (newRest `levelsSince` old)
 
--- | The former with an increase to _levelIntros for each extra binder present
+-- | The former with open binders increased for each extra binder present
 -- in the latter. Assumes that the latter is the former extended with extra top
 -- 'BindingLevel's.
 withIntrosFrom :: BindingStack -> BindingStack -> BindingStack
-withIntrosFrom base extended = base & _head.levelIntros +~ (extended `bindersAddedSince` base)
+withIntrosFrom base extended =
+  base & _head.levelIntros                            +~ numBinders
+       & _head.levelRefs.mapped.localNameless.lnDepth +~ numBinders
+  where
+    numBinders = extended `bindersAddedSince` base
 
 -- resetStack :: BindingStack -> Binding -> BindingStack -> BindingStack
 -- resetStack base binding extended =
