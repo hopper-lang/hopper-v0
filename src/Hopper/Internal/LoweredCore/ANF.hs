@@ -269,7 +269,12 @@ withIntrosFrom :: BindingStack -> BindingStack -> BindingStack
 withIntrosFrom base extended =
   base & _head.levelIntros                            +~ numBinders
        & _head.levelRefs.mapped.localNameless.lnDepth +~ numBinders
+       --
+       -- TODO: if we set a binder here, it needs to be after the bumping above, i think
+       --
   where
+    -- TODO: if we are taking a binding here, probably pop one frame first if
+    --       TermBinding?
     numBinders = extended `bindersAddedSince` base
 
 -- resetStack :: BindingStack -> Binding -> BindingStack -> BindingStack
@@ -331,16 +336,40 @@ anfCont stack term binding k = case term of
     -- anfCont stack rhs TermBinding $ \stack' -> do
     --   anfCont (stack `withIntrosFrom` stack') body binding k
     --
+    --  TODO: add test case:
+    --  let f = (let g = id abs in id g) in f 10
+    --
+    --  letT id abs
+    --  in   letT id (0)
+    --       in   letA 10
+    --            in   (1) (0)
+    --
+    --  TODO: add test case:
+    --  let (let (id abs)
+    --       in  (1))
+    --  in  (0) 10
+    --
+    --  letT id abs
+    --  in   letA 10
+    --       in   (2) (0)
+    --
+    -- TODO: make sure we are testing all four tail let cases:
+    ---        track{Variable,Binding} X {Anf,Term}Binding
+    --
     anfCont stack rhs TermBinding $ \s1 ->
       anfCont s1 body binding $ \s2 ->  -- FIXME: this is using binding, but then we throw the stack away
-        k $ (stack `withIntrosFrom` s2) -- This util fn could replay use of
+        k $ (stack `withIntrosFrom` s2)
+        -- TODO: make sure we re-apply binding
+
+
+        -- This util fn could replay use of
                                         -- binding... which might be gross. or
                                         -- we could introduce a new type of
                                         -- (Deferred?)Binding, which bottles-up
                                         -- a continuation and sticks it in a
                                         -- special field in the stack?
         -- TODO: how would replaying a binding (whether manually or with a cont)
-        --       interact with # of intros we take from the levels differential?
+        --       interact with # of intros we calc from the levels differential?
         --
         -- TODO: perhaps if we go the DeferredBinding approach, we might want
         --       to calculate the number of intros at the same time that the deferred
@@ -352,6 +381,12 @@ anfCont stack term binding k = case term of
         --       anfCont to use this stack transformer as they please.
         --         It seems this would rule out the use of moving Reader into
         --         LoweringM.
+        --
+        -- current choices, it seems:
+        -- 1. investigate nested stack and adjust our stack's top level
+        -- 2. bottle up a "deferred binding", and put (Just that) on the stack
+        -- 3. always pass both newest (untransformed) stack + stack transform fn
+        --        before we tried just fn, but that lost stack updates
 
 toAnf :: Term -> Anf
 toAnf t = evalState (anfTail emptyStack t) initialState

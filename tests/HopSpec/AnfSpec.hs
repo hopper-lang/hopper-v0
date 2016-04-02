@@ -168,3 +168,6 @@ spec =
                            (AnfTailCall $
                              AppFun add $ V.singleton v0)
           in toAnf term `shouldBe` anf
+
+        -- it "handles let with a let on the rhs" $
+        --   _todoLetWithLetOnRhs
