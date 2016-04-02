@@ -60,10 +60,6 @@ data Rhs
 slot0 :: Word32 -> Variable
 slot0 level = LocalVar $ LocalNamelessVar level $ BinderSlot 0
 
-succVar :: Variable -> Variable
-succVar (LocalVar (LocalNamelessVar lvl slot)) = LocalVar $ LocalNamelessVar (succ lvl) slot
-succVar v@(GlobalVarSym _) = v
-
 returnAllocated :: Alloc -> Anf
 returnAllocated alloc = AnfLet (Arity 1)
                                (RhsAlloc alloc)
@@ -153,9 +149,6 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
--- addRef :: AnfBinder -> Variable -> BindingStack -> BindingStack
--- addRef binder termVar stack = stack & (_head.levelRefs.at binder) ?~ termVar
-
 trackVariable :: Binding -> Variable -> BindingStack -> BindingStack
 trackVariable (AnfBinding binder) v stack =
   -- addRef binder (translateTermVar stack v) stack
@@ -169,9 +162,9 @@ trackVariable TermBinding v stack =
 trackBinding :: Binding -> BindingStack -> BindingStack
 trackBinding (AnfBinding binder) stack = stack & _head %~ updateLevel
   where
-    updateLevel = (levelRefs.at binder ?~ slot0 0)
-                . (levelRefs.mapped    %~ succVar)
-                . (levelIntros         %~ succ)
+    updateLevel = (levelRefs.at binder                    ?~ slot0 0)
+                . (levelRefs.mapped.localNameless.lnDepth +~ 1)
+                . (levelIntros                            +~ 1)
 trackBinding TermBinding stack = emptyLevel:stack
 
 -- | Closes the provided 'AnfBinder's in 'BindingLevel'.
