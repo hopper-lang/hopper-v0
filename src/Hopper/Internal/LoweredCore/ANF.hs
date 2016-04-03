@@ -208,9 +208,9 @@ anfTail term = case term of
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
 
-        anfCont ft (AnfBinding fBinder) $ \f1 ->
-          local f1 $ anfCont at0 (AnfBinding argBinder0) $ \f2 ->
-            local f2 $ do
+        anfCont ft (AnfBinding fBinder) $ \trackFn ->
+          local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
+            local trackArg0 $ do
               -- let vars = resolveRefs appBinders $ f2 stack
               vars <- reader $ resolveRefs appBinders
               return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
@@ -223,8 +223,8 @@ anfTail term = case term of
 
   Let binderInfos rhs body ->
     -- TODO: use binderInfos
-    anfCont rhs TermBinding $ \f1 ->
-      local f1 $ anfTail body
+    anfCont rhs TermBinding $ \trackRhs ->
+      local trackRhs $ anfTail body
 
   -- OLD n-ary attempt:
   --
@@ -320,9 +320,9 @@ anfCont term binding k = case term of
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
 
-        anfCont ft (AnfBinding fBinder) $ \f1 ->
-          local f1 $ anfCont at0 (AnfBinding argBinder0) $ \f2 ->
-            local f2 $ do
+        anfCont ft (AnfBinding fBinder) $ \trackFn ->
+          local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
+            local trackArg0 $ do
               vars <- reader $ resolveRefs appBinders
               body <- k $ trackBinding binding . closeBinders appBinders
               return $ AnfLet (Arity 1) -- TODO: support tupled return
@@ -341,9 +341,9 @@ anfCont term binding k = case term of
 
   Let binderInfos rhs body -> do
     stackBefore <- ask
-    anfCont rhs TermBinding $ \bindRhsResult ->
-      local bindRhsResult $ anfCont body binding $ \bindLetResult ->
-        local (stackBefore `withBinderIncreasesPer`) $ k bindLetResult
+    anfCont rhs TermBinding $ \trackRhs ->
+      local trackRhs $ anfCont body binding $ \trackBody ->
+        local (stackBefore `withBinderIncreasesPer`) $ k trackBody
 
 toAnf :: Term -> Anf
 toAnf term = evalState (runReaderT (anfTail term) emptyStack) initialState
