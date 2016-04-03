@@ -23,6 +23,7 @@ spec =
           add = GlobalVarSym $ GlobalSymbol $ T.pack "add"
           abs = GlobalVarSym $ GlobalSymbol $ T.pack "abs"
           neg = GlobalVarSym $ GlobalSymbol $ T.pack "neg"
+          id_ = GlobalVarSym $ GlobalSymbol $ T.pack "id"
           dummyBI = BinderInfoData Omega () Nothing
 
       describe "simple tail cases" $ do
@@ -131,7 +132,7 @@ spec =
                            (AnfTailCall $ AppFun v0 $ V.singleton v1)
           in toAnf term `shouldBe` anf
 
-        it "converts lets" $
+        it "converts lets (AnfBinding/trackBinding)" $
           let ten = LInteger 10
               twenty = LInteger 20
               -- let 10 in (let 20 in (λ. (1)) (0)
@@ -155,7 +156,7 @@ spec =
                                              AppFun v0 $ V.singleton v2)))
           in toAnf term `shouldBe` anf
 
-        it "eliminates lets with both a trivial RHS and body" $
+        it "eliminates lets with both a trivial RHS and body (AnfBinding/trackVariable)" $
           let ten = LInteger 10
               -- (let f = add in f) 10
               term = App (Let (V.singleton dummyBI)
@@ -169,5 +170,38 @@ spec =
                              AppFun add $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
-        -- it "handles let with a let on the rhs" $
-        --   _todoLetWithLetOnRhs
+        it "converts lets with a non-trivial let on the rhs (TermBinding/trackBinding)" $
+          let ten = LInteger 10
+              -- let f = (let g = id abs in id g)
+              -- in  f 10
+              term = Let (V.singleton dummyBI)
+                         (Let (V.singleton dummyBI)
+                              (App (V id_) $ V.singleton $ V abs)
+                              (App (V id_) $ V.singleton $ V v0))
+                         (App (V v0) $ V.singleton $ ELit ten)
+              --  letT id abs in letT id (0) in letA 10 in (1) (0)
+              anf = AnfLet (Arity 1)
+                           (RhsApp $ AppFun id_ $ V.singleton abs)
+                           (AnfLet (Arity 1)
+                                   (RhsApp $ AppFun id_ $ V.singleton v0)
+                                   (AnfLet (Arity 1)
+                                           (RhsAlloc $ AllocLit ten)
+                                           (AnfTailCall $ AppFun v1 $ V.singleton v0)))
+          in toAnf term `shouldBe` anf
+
+        it "converts lets with a trivial-body let on the rhs (TermBinding/trackVariable)" $
+          let ten = LInteger 10
+              -- let (let (id abs) in (1))
+              -- in  (0) 10
+              term = Let (V.singleton dummyBI)
+                         (Let (V.singleton dummyBI)
+                              (App (V id_) $ V.singleton $ V abs)
+                              (V v1))
+                         (App (V v0) $ V.singleton $ ELit ten)
+              -- letT id abs in letA 10 in (2) (0)
+              anf = AnfLet (Arity 1)
+                           (RhsApp $ AppFun id_ $ V.singleton abs)
+                           (AnfLet (Arity 1)
+                                   (RhsAlloc $ AllocLit ten)
+                                   (AnfTailCall $ AppFun v2 $ V.singleton v0))
+          in toAnf term `shouldBe` anf
