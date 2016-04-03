@@ -12,7 +12,8 @@ import Data.Monoid (Sum(..), Last(..))
 import Data.Word
 import Control.Arrow ((&&&), (***))
 import Control.Monad (replicateM, join)
-import Control.Monad.Trans.State.Strict as State
+import Control.Monad.Trans.Reader (ReaderT, runReaderT, ask, local, reader)
+import Control.Monad.Trans.State.Strict (State, evalState)
 import Control.Lens hiding (levels)
 
 import qualified Data.Vector as V
@@ -104,8 +105,7 @@ newtype LoweringState
   deriving (Eq, Show)
 makeLenses ''LoweringState
 
--- TODO: possibly wrap with (ReaderT BindingStack) after moving to n-ary apps
-type LoweringM = State LoweringState
+type LoweringM = ReaderT BindingStack (State LoweringState)
 
 data Binding
   = TermBinding          -- or ImplicitLet / ExistingLet / ImplicitBinding
@@ -120,9 +120,9 @@ emptyIndirectionLevel v = BindingLevel (Map.fromList []) 0 (Just v)
 
 -- | Bumps the provided source variable by the number of intermediate lets that
 -- have been introduced since the source binder this variable points to.
-translateTermVar :: BindingStack -> Variable -> Variable
-translateTermVar _ var@(GlobalVarSym _) = var
-translateTermVar stack var@(LocalVar lnv) =
+translateTermVar :: Variable -> BindingStack -> Variable
+translateTermVar var@(GlobalVarSym _) _ = var
+translateTermVar var@(LocalVar lnv) stack =
   case mIndirection of
     Nothing ->
       adjust displacement var
@@ -186,12 +186,11 @@ resolveRefs binders stack = (varMap Map.!) <$> binders
 
 --
 
-anfTail :: BindingStack
-        -> Term
-        -> LoweringM Anf
-anfTail stack term = case term of
-  V v ->
-    return $ AnfReturn $ V.singleton $ translateTermVar stack v
+anfTail :: Term -> LoweringM Anf
+anfTail term = case term of
+  V v -> do
+    translatedVar <- reader $ translateTermVar v
+    return $ AnfReturn $ V.singleton translatedVar
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
@@ -209,22 +208,23 @@ anfTail stack term = case term of
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
 
-        anfCont stack ft (AnfBinding fBinder) $ \s1 f1 ->
-          anfCont (f1 s1) at0 (AnfBinding argBinder0) $ \s2 f2 -> do
-            let vars = resolveRefs appBinders (f2 s2)
-            return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
+        anfCont ft (AnfBinding fBinder) $ \f1 ->
+          local f1 $ anfCont at0 (AnfBinding argBinder0) $ \f2 ->
+            local f2 $ do
+              -- let vars = resolveRefs appBinders $ f2 stack
+              vars <- reader $ resolveRefs appBinders
+              return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
     | otherwise ->
         error "TODO: add support for n-ary application in anfTail"
 
   Lam binderInfos t -> do
-    body <- anfTail (emptyLevel : stack) t
+    body <- local (emptyLevel:) $ anfTail t
     return $ returnAllocated $ AllocLam (arity binderInfos) body
 
   Let binderInfos rhs body ->
     -- TODO: use binderInfos
-    -- TODO: double-check this
-    anfCont stack rhs TermBinding $ \s1 f1 ->
-      anfTail (f1 s1) body
+    anfCont rhs TermBinding $ \f1 ->
+      local f1 $ anfTail body
 
   -- OLD n-ary attempt:
   --
@@ -283,33 +283,30 @@ withBinderIncreasesPer base extended =
 -- before applying the transform.
 type StackTransform = BindingStack -> BindingStack
 
--- NOTE: After moving to Reader and applying 'Term' and 'Binding', this fits the
---       shape of '(a -> r) -> r', a suspended computation (that awaits K, of
---       type 'StackTransform -> m Anf', a continuation)
-anfCont :: BindingStack
-        -- ^ The context of 'Term' binders and introduced/open one-shot ANF
-        -- binders
-        -- XXX -> StackTransform -- it might help to pretend we have 'id' here
-        -> Term
+-- NOTE: This fits the shape of '(a -> r) -> r', a suspended computation (that
+--       awaits K, of type 'StackTransform -> m Anf', a continuation)
+anfCont -- XXX :: StackTransform -- it might help to pretend we have 'id' here
+        :: Term
         -- ^ The term to be lowered
         -> Binding
         -- ^ The binding to be used, with which future computation will refer to
         -- the result
-        -> (BindingStack -> StackTransform -> LoweringM Anf)
+        -> (StackTransform -> LoweringM Anf)
         -- ^ The continued lowering of the rest of the program, awaiting the
         -- next binding context
         -> LoweringM Anf
         -- ^ The action which produces lowered ANF for this term
-anfCont stack term binding k = case term of
-  V v ->
-    k stack $ trackVariable binding $ translateTermVar stack v
+anfCont term binding k = case term of
+  V v -> do
+    translatedVar <- reader $ translateTermVar v
+    k $ trackVariable binding translatedVar
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
     error "unexpected binder shift during ANF conversion"
 
   ELit l -> do
-    body <- k stack $ trackBinding binding
+    body <- k $ trackBinding binding
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
@@ -323,35 +320,33 @@ anfCont stack term binding k = case term of
         appBinders <- replicateM (succ $ V.length ats) allocBinder
         let [fBinder, argBinder0] = appBinders
 
-        anfCont stack ft (AnfBinding fBinder) $ \s1 f1 ->
-          anfCont (f1 s1) at0 (AnfBinding argBinder0) $ \s2 f2 -> do
-            let s3 = f2 s2
-                vars = resolveRefs appBinders s3
-                app  = AppFun (head vars)
-                              (V.fromList $ tail vars)
-                f   = trackBinding binding . closeBinders appBinders
-            body <- k s3 f
-            return $ AnfLet (Arity 1) -- TODO: support tupled return
-                            (RhsApp app)
-                            body
+        anfCont ft (AnfBinding fBinder) $ \f1 ->
+          local f1 $ anfCont at0 (AnfBinding argBinder0) $ \f2 ->
+            local f2 $ do
+              vars <- reader $ resolveRefs appBinders
+              body <- k $ trackBinding binding . closeBinders appBinders
+              return $ AnfLet (Arity 1) -- TODO: support tupled return
+                              (RhsApp $ AppFun (head vars) (V.fromList $ tail vars))
+                              body
     | otherwise ->
         error "TODO: support for n-ary application in anfCont"
 
   Lam binderInfos t -> do
-    lamBody <- anfTail (emptyLevel : stack) t
-    letBody <- k stack $ trackBinding binding
+    lamBody <- local (emptyLevel:) $ anfTail t
+    letBody <- k $ trackBinding binding
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binderInfos)
                                          lamBody)
                     letBody
 
-  Let binderInfos rhs body ->
-    anfCont stack rhs TermBinding $ \s1 f1 ->
-      anfCont (f1 s1) body binding $ \s2 f2 ->
-        k (stack `withBinderIncreasesPer` s2) f2
+  Let binderInfos rhs body -> do
+    stackBefore <- ask
+    anfCont rhs TermBinding $ \bindRhsResult ->
+      local bindRhsResult $ anfCont body binding $ \bindLetResult ->
+        local (stackBefore `withBinderIncreasesPer`) $ k bindLetResult
 
 toAnf :: Term -> Anf
-toAnf term = evalState (anfTail emptyStack term) initialState
+toAnf term = evalState (runReaderT (anfTail term) emptyStack) initialState
   where
     -- We provide a bottom level that doesn't correspond to a toplevel term
     -- 'Let' or 'Lam' so that e.g. a toplevel 'Let' with a non-trivial RHS has
@@ -450,3 +445,6 @@ toAnf term = evalState (anfTail emptyStack term) initialState
 -- Consider always passing e.g. 'f1 s1', but then stash a pre-transformed (i.e.
 --     with the use of 'f1') stack in a continuation (maybe using 'callCC') and
 --     keep that in the state or reader env for the special rollback case.
+--
+-- Could be interesting to play with delimited continuation operators for
+--     nontail let rollbacks.
