@@ -185,6 +185,24 @@ resolveRefs binders stack = (varMap Map.!) <$> binders
     varMap = fromMaybe (error "vars map must exist") $
       firstOf (_head.levelRefs) stack
 
+convertNested :: [Term]
+                 -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
+                 -- function application, or multi-return.
+              -> ([AnfBinder] -> LoweringM Anf)
+                 -- ^ Continuation for synthesizing the lowering for the rest of
+                 -- the program from binders for each of the terms.
+              -> LoweringM Anf
+convertNested terms synthesize = do
+  binders <- replicateM (length terms) allocBinder
+
+  id &
+    foldr (\(t, binder) nextK ->
+            \track ->
+              local track $ anfCont t (AnfBinding binder) $ nextK)
+          (\track ->
+            local track $ synthesize binders)
+          (zip terms binders)
+
 --
 
 anfTail :: Term -> LoweringM Anf
@@ -203,30 +221,11 @@ anfTail term = case term of
   -- TODO: Return
 
   App ft ats -> do
-    appBinders <- replicateM (succ $ V.length ats) allocBinder
-    let (fBinder:argBinders) = appBinders
-
-    anfCont ft (AnfBinding fBinder) $
-      foldr (\(t, binder) nextK ->
-              \track ->
-                local track $ anfCont t (AnfBinding binder) $ nextK)
-            (\track ->
-              local track $ do
-                vars <- reader $ resolveRefs appBinders
-                return $ AnfTailCall $ AppFun (head vars)
-                                              (V.fromList $ tail vars))
-            (zip (V.toList ats) argBinders)
-
-    -- | V.length ats == 1 -> do
-    --     let at0 = V.head ats
-    --     appBinders <- replicateM (succ $ V.length ats) allocBinder
-    --     let [fBinder, argBinder0] = appBinders
-    --
-    --     anfCont ft (AnfBinding fBinder) $ \trackFn ->
-    --       local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
-    --         local trackArg0 $ do
-    --           vars <- reader $ resolveRefs appBinders
-    --           return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
+    let terms = ft : V.toList ats
+    convertNested terms $ \binders -> do
+      vars <- reader $ resolveRefs binders
+      return $ AnfTailCall $ AppFun (head vars)
+                                    (V.fromList $ tail vars)
 
   Lam binderInfos t -> do
     body <- local (emptyLevel:) $ anfTail t
@@ -236,30 +235,6 @@ anfTail term = case term of
     -- TODO: use binderInfos
     anfCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ anfTail body
-
-  -- OLD n-ary attempt:
-  --
-  -- App fun args ->
-  --   anfCont fun $ V.foldr (\term (K () k) ->
-  --                           -- This Let we introduce in this K possibly retires
-  --                           -- lower variables. TODO: stop tracking them.
-  --                           K () $ \rhs ->
-  --                             AnfLet (Arity 1)
-  --                                    rhs
-  --                                    -- If the following anfCont call does more
-  --                                    -- than invoke k with a value, then we need
-  --                                    -- to bump any binders to the args (and, of
-  --                                    -- course, fn) before this one.
-  --                                    (anfCont term $ K () k))
-  --                         (K () $ \rhs -> -- maybe say this reaches upwards by N. or a stack with one level for each we reach
-  --                           let n = V.length args
-  --                               -- TODO: this falsely assumes that we
-  --                               --       necessarily introduce a new binder for
-  --                               --       each of our args
-  --                               (fv:avs) = fmap slot0 [n, n-1..0]
-  --                               body = AnfTailCall $ AppFun fv (V.fromList avs)
-  --                           in AnfLet (Arity 1) rhs body)
-  --                         args
 
 -- | The total number of binders in the levels of the first stack not shared by
 -- the second stack.
@@ -321,40 +296,15 @@ anfCont term binding k = case term of
                     (RhsAlloc $ AllocLit l)
                     body
 
-  -- TODO: Return
-
   App ft ats -> do
-    appBinders <- replicateM (succ $ V.length ats) allocBinder
-    let (fBinder:argBinders) = appBinders
-
-    anfCont ft (AnfBinding fBinder) $
-      foldr (\(t, binder) nextK ->
-              \track ->
-                local track $ anfCont t (AnfBinding binder) $ nextK)
-            (\track ->
-              local track $ do
-                vars <- reader $ resolveRefs appBinders
-                body <- k $ trackBinding binding . closeBinders appBinders
-                return $ AnfLet (Arity 1) -- TODO: support tupled return
-                                (RhsApp $ AppFun (head vars)
-                                                 (V.fromList $ tail vars))
-                                body)
-            (zip (V.toList ats) argBinders)
-
-     -- -- OLD 1-ary, but clearer
-     -- | V.length ats == 1 -> do
-     --     let at0 = V.head ats
-     --     appBinders <- replicateM (succ $ V.length ats) allocBinder
-     --     let [fBinder, argBinder0] = appBinders
-     --
-     --     anfCont ft (AnfBinding fBinder) $ \trackFn ->
-     --       local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
-     --         local trackArg0 $ do
-     --           vars <- reader $ resolveRefs appBinders
-     --           body <- k $ trackBinding binding . closeBinders appBinders
-     --           return $ AnfLet (Arity 1) -- TODO: support tupled return
-     --                           (RhsApp $ AppFun (head vars) (V.fromList $ tail vars))
-     --                           body
+    let terms = ft : V.toList ats
+    convertNested terms $ \binders -> do
+      vars <- reader $ resolveRefs binders
+      body <- k $ trackBinding binding . closeBinders binders
+      return $ AnfLet (Arity 1) -- TODO: support tupled return
+                      (RhsApp $ AppFun (head vars)
+                                       (V.fromList $ tail vars))
+                      body
 
   Lam binderInfos t -> do
     lamBody <- local (emptyLevel:) $ anfTail t
