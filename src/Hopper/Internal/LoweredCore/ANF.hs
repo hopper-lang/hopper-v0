@@ -292,8 +292,8 @@ anfCont -- XXX :: StackTransform -- it might help to pretend we have 'id' here
         -- ^ The binding to be used, with which future computation will refer to
         -- the result
         -> (StackTransform -> LoweringM Anf)
-        -- ^ The continued lowering of the rest of the program, awaiting the
-        -- next binding context
+        -- ^ The continued lowering of the rest of the program, awaiting a
+        -- a transformation to update the 'BindingStack'.
         -> LoweringM Anf
         -- ^ The action which produces lowered ANF for this term
 anfCont term binding k = case term of
