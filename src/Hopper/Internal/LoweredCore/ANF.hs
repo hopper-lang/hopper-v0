@@ -211,7 +211,6 @@ anfTail term = case term of
         anfCont ft (AnfBinding fBinder) $ \trackFn ->
           local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
             local trackArg0 $ do
-              -- let vars = resolveRefs appBinders $ f2 stack
               vars <- reader $ resolveRefs appBinders
               return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
     | otherwise ->
@@ -285,8 +284,7 @@ type StackTransform = BindingStack -> BindingStack
 
 -- NOTE: This fits the shape of '(a -> r) -> r', a suspended computation (that
 --       awaits K, of type 'StackTransform -> m Anf', a continuation)
-anfCont -- XXX :: StackTransform -- it might help to pretend we have 'id' here
-        :: Term
+anfCont :: Term
         -- ^ The term to be lowered
         -> Binding
         -- ^ The binding to be used, with which future computation will refer to
@@ -448,3 +446,7 @@ toAnf term = evalState (runReaderT (anfTail term) emptyStack) initialState
 --
 -- Could be interesting to play with delimited continuation operators for
 --     nontail let rollbacks.
+
+-- TODO: the types seem to line-up to convert anfCont to ContT. can we get anfTail
+--       to work in ContT as well, or would calls of anfCont from anfTail all
+--       have to use 'evalContT'?
