@@ -32,22 +32,20 @@ data Anf
            !Rhs
            !Anf
   | AnfTailCall !App
-  -- | AnfShift !Word32 !Anf
   deriving (Eq,Ord,Read,Show)
 
 data App
   = AppFun !Variable
            !(V.Vector Variable)
-  -- TODO: possibly use parametricity to enable guarantee that only fully-saturated apps exist
-  -- | AppPartial Int        -- slots left
-  --              -- TODO: add app type (fun vs prim)
-  --              [Variable] -- slots filled. new ones are cons'd
+  -- TODO: AppPrim PrimOpId !(V.Vector Variable)
+  -- TODO: AppThunk
   deriving (Eq,Ord,Read,Show)
 
 data Alloc
   = AllocLit !Literal
   | AllocLam !Arity -- TODO: switch back to !(V.Vector BinderInfo)
              !Anf
+  -- TODO: AllocThunk Anf
   deriving (Eq,Ord,Read,Show)
 
 data Rhs
@@ -186,11 +184,11 @@ resolveRefs binders stack = (varMap Map.!) <$> binders
       firstOf (_head.levelRefs) stack
 
 convertNested :: [Term]
-                 -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
-                 -- function application, or multi-return.
+              -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
+              -- function application, or multi-return.
               -> ([AnfBinder] -> LoweringM Anf)
-                 -- ^ Continuation for synthesizing the lowering for the rest of
-                 -- the program from binders for each of the terms.
+              -- ^ Continuation for synthesizing the lowering for the rest of
+              -- the program from binders for each of the terms.
               -> LoweringM Anf
 convertNested terms synthesize = do
   binders <- replicateM (length terms) allocBinder
@@ -223,12 +221,18 @@ anfTail term = case term of
       vars <- reader $ resolveRefs binders
       return $ AnfReturn $ V.fromList vars
 
+  -- TODO: EnterThunk
+
+  -- TODO: Delay
+
   App ft ats -> do
     let terms = ft : V.toList ats
     convertNested terms $ \binders -> do
       vars <- reader $ resolveRefs binders
       return $ AnfTailCall $ AppFun (head vars)
                                     (V.fromList $ tail vars)
+
+  -- TODO: PrimApp
 
   Lam binderInfos t -> do
     body <- local (emptyLevel:) $ anfTail t
@@ -281,7 +285,7 @@ anfCont :: Term
         -- the result
         -> (StackTransform -> LoweringM Anf)
         -- ^ The continued lowering of the rest of the program, awaiting a
-        -- a transformation to update the 'BindingStack'.
+        -- transformation to update the 'BindingStack'.
         -> LoweringM Anf
         -- ^ The action which produces lowered ANF for this term
 anfCont term binding k = case term of
@@ -300,8 +304,14 @@ anfCont term binding k = case term of
                     body
 
   Return _terms ->
-    -- TODO: double-check that this is indeed an error
+    -- TODO: probably implement this because 'Return' on the RHS of a 'Let'
+    --       seems valid and analogous to a trivial 'Let' (i.e. with a 'V' on
+    --       its RHS).
     error "encountered Return in non-tail position"
+
+  -- TODO: EnterThunk
+
+  -- TODO: Delay
 
   App ft ats -> do
     let terms = ft : V.toList ats
@@ -312,6 +322,8 @@ anfCont term binding k = case term of
                       (RhsApp $ AppFun (head vars)
                                        (V.fromList $ tail vars))
                       body
+
+  -- TODO: PrimApp
 
   Lam binderInfos t -> do
     lamBody <- local (emptyLevel:) $ anfTail t
