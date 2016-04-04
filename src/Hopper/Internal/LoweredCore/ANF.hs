@@ -182,7 +182,8 @@ closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
 resolveRefs :: [AnfBinder] -> BindingStack -> [Variable]
 resolveRefs binders stack = (varMap Map.!) <$> binders
   where
-    varMap = fromMaybe (error "vars map must exist") $ firstOf (_head.levelRefs) stack
+    varMap = fromMaybe (error "vars map must exist") $
+      firstOf (_head.levelRefs) stack
 
 --
 
@@ -201,20 +202,31 @@ anfTail term = case term of
 
   -- TODO: Return
 
-  -- TODO: switch to support of n-ary application
-  App ft ats
-    | V.length ats == 1 -> do
-        let at0 = V.head ats
-        appBinders <- replicateM (succ $ V.length ats) allocBinder
-        let [fBinder, argBinder0] = appBinders
+  App ft ats -> do
+    appBinders <- replicateM (succ $ V.length ats) allocBinder
+    let (fBinder:argBinders) = appBinders
 
-        anfCont ft (AnfBinding fBinder) $ \trackFn ->
-          local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
-            local trackArg0 $ do
-              vars <- reader $ resolveRefs appBinders
-              return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
-    | otherwise ->
-        error "TODO: add support for n-ary application in anfTail"
+    anfCont ft (AnfBinding fBinder) $
+      foldr (\(t, binder) nextK ->
+              \track ->
+                local track $ anfCont t (AnfBinding binder) $ nextK)
+            (\track ->
+              local track $ do
+                vars <- reader $ resolveRefs appBinders
+                return $ AnfTailCall $ AppFun (head vars)
+                                              (V.fromList $ tail vars))
+            (zip (V.toList ats) argBinders)
+
+    -- | V.length ats == 1 -> do
+    --     let at0 = V.head ats
+    --     appBinders <- replicateM (succ $ V.length ats) allocBinder
+    --     let [fBinder, argBinder0] = appBinders
+    --
+    --     anfCont ft (AnfBinding fBinder) $ \trackFn ->
+    --       local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
+    --         local trackArg0 $ do
+    --           vars <- reader $ resolveRefs appBinders
+    --           return $ AnfTailCall $ AppFun (head vars) (V.fromList $ tail vars)
 
   Lam binderInfos t -> do
     body <- local (emptyLevel:) $ anfTail t
@@ -311,23 +323,38 @@ anfCont term binding k = case term of
 
   -- TODO: Return
 
-  -- TODO: switch to support of n-ary application
-  App ft ats
-    | V.length ats == 1 -> do
-        let at0 = V.head ats
-        appBinders <- replicateM (succ $ V.length ats) allocBinder
-        let [fBinder, argBinder0] = appBinders
+  App ft ats -> do
+    appBinders <- replicateM (succ $ V.length ats) allocBinder
+    let (fBinder:argBinders) = appBinders
 
-        anfCont ft (AnfBinding fBinder) $ \trackFn ->
-          local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
-            local trackArg0 $ do
-              vars <- reader $ resolveRefs appBinders
-              body <- k $ trackBinding binding . closeBinders appBinders
-              return $ AnfLet (Arity 1) -- TODO: support tupled return
-                              (RhsApp $ AppFun (head vars) (V.fromList $ tail vars))
-                              body
-    | otherwise ->
-        error "TODO: support for n-ary application in anfCont"
+    anfCont ft (AnfBinding fBinder) $
+      foldr (\(t, binder) nextK ->
+              \track ->
+                local track $ anfCont t (AnfBinding binder) $ nextK)
+            (\track ->
+              local track $ do
+                vars <- reader $ resolveRefs appBinders
+                body <- k $ trackBinding binding . closeBinders appBinders
+                return $ AnfLet (Arity 1) -- TODO: support tupled return
+                                (RhsApp $ AppFun (head vars)
+                                                 (V.fromList $ tail vars))
+                                body)
+            (zip (V.toList ats) argBinders)
+
+     -- -- OLD 1-ary, but clearer
+     -- | V.length ats == 1 -> do
+     --     let at0 = V.head ats
+     --     appBinders <- replicateM (succ $ V.length ats) allocBinder
+     --     let [fBinder, argBinder0] = appBinders
+     --
+     --     anfCont ft (AnfBinding fBinder) $ \trackFn ->
+     --       local trackFn $ anfCont at0 (AnfBinding argBinder0) $ \trackArg0 ->
+     --         local trackArg0 $ do
+     --           vars <- reader $ resolveRefs appBinders
+     --           body <- k $ trackBinding binding . closeBinders appBinders
+     --           return $ AnfLet (Arity 1) -- TODO: support tupled return
+     --                           (RhsApp $ AppFun (head vars) (V.fromList $ tail vars))
+     --                           body
 
   Lam binderInfos t -> do
     lamBody <- local (emptyLevel:) $ anfTail t

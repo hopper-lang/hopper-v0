@@ -24,6 +24,7 @@ spec =
           abs = GlobalVarSym $ GlobalSymbol $ T.pack "abs"
           neg = GlobalVarSym $ GlobalSymbol $ T.pack "neg"
           id_ = GlobalVarSym $ GlobalSymbol $ T.pack "id"
+          ten = LInteger 10
           dummyBI = BinderInfoData Omega () Nothing
 
       describe "simple tail cases" $ do
@@ -47,9 +48,22 @@ spec =
                            (AnfReturn $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
+        it "converts no-arg tail calls" $
+          let term = App (V v0) $ V.fromList []
+              anf  = AnfTailCall $ AppFun v0 $ V.fromList []
+          in toAnf term `shouldBe` anf
+
         it "converts single-arg tail calls" $
           let term = App (V v0) $ V.singleton $ V v0
-              anf = AnfTailCall $ AppFun v0 $ V.singleton v0
+              anf  = AnfTailCall $ AppFun v0 $ V.singleton v0
+          in toAnf term `shouldBe` anf
+
+        it "converts multi-arg tail calls" $
+          let term = App (V v0) $ V.fromList [ELit ten, V v0]
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $ AllocLit ten)
+                            (AnfTailCall $ AppFun v1
+                                                  (V.fromList [v0, v1]))
           in toAnf term `shouldBe` anf
 
         it "converts lambdas by introducing an allocation" $
@@ -101,6 +115,15 @@ spec =
         --       anf = _todo
         --   in toAnf term `shouldBe` anf
 
+        it "converts no-arg non-tail calls" $
+          let term = App (V abs)
+                         (V.singleton $ App (V v0)
+                                            (V.fromList []))
+              anf  = AnfLet (Arity 1)
+                            (RhsApp $ AppFun v0 $ V.fromList [])
+                            (AnfTailCall $ AppFun abs $ V.singleton v0)
+          in toAnf term `shouldBe` anf
+
         it "converts single-arg non-tail calls" $
           let lit = LInteger (-10)
               -- abs (neg -10)
@@ -113,6 +136,19 @@ spec =
                            (AnfLet (Arity 1)
                                    (RhsApp $ AppFun neg $ V.singleton v0)
                                    (AnfTailCall $ AppFun abs $ V.singleton v0))
+          in toAnf term `shouldBe` anf
+
+        it "converts multi-arg non-tail calls" $
+          let -- abs ((0) 10 (0))
+              term = App (V abs)
+                         (V.singleton $ App (V v0)
+                                            (V.fromList [ELit ten, V v0]))
+              -- letA 10 in letA (1) (0) (1) in letA abs (0)
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $ AllocLit ten)
+                            (AnfLet (Arity 1)
+                                    (RhsApp $ AppFun v1 $ V.fromList [v0, v1])
+                                    (AnfTailCall $ AppFun abs $ V.singleton v0))
           in toAnf term `shouldBe` anf
 
         it "converts lambdas" $
