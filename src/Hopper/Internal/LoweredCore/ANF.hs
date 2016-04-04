@@ -218,7 +218,10 @@ anfTail term = case term of
   ELit lit ->
     return $ returnAllocated $ AllocLit lit
 
-  -- TODO: Return
+  Return terms ->
+    convertNested (V.toList terms) $ \binders -> do
+      vars <- reader $ resolveRefs binders
+      return $ AnfReturn $ V.fromList vars
 
   App ft ats -> do
     let terms = ft : V.toList ats
@@ -295,6 +298,10 @@ anfCont term binding k = case term of
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLit l)
                     body
+
+  Return _terms ->
+    -- TODO: double-check that this is indeed an error
+    error "encountered Return in non-tail position"
 
   App ft ats -> do
     let terms = ft : V.toList ats

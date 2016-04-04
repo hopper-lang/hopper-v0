@@ -48,6 +48,13 @@ spec =
                            (AnfReturn $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
+        it "converts returns" $
+          let term = Return $ V.fromList [ELit ten, V v0]
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $ AllocLit ten)
+                            (AnfReturn $ V.fromList [v0, v1])
+           in toAnf term `shouldBe` anf
+
         it "converts no-arg tail calls" $
           let term = App (V v0) $ V.fromList []
               anf  = AnfTailCall $ AppFun v0 $ V.fromList []
