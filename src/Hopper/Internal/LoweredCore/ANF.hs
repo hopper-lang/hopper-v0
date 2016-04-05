@@ -7,6 +7,7 @@ import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 
+import Data.Foldable (foldr')
 import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (Sum(..), Last(..))
 import Data.Word
@@ -67,6 +68,10 @@ returnAllocated alloc = AnfLet (Arity 1)
 arity :: V.Vector BinderInfo -> Arity
 arity binders = Arity $ fromIntegral $ V.length binders
 
+--
+-- TODO: probably rename to reference or something
+--
+-- | A linear (single-use) reference to a(n existing/term or new/anf) binder
 newtype AnfBinder
   = AnfBinder { _binderId :: Word64 }
   deriving (Eq, Show, Ord)
@@ -78,17 +83,18 @@ instance Enum AnfBinder where
 
 data BindingLevel
   = BindingLevel { _levelRefs :: Map.Map AnfBinder Variable
-                   -- ^ References to both existing (i.e. term) and new (i.e.
-                   -- intermediate/anf) binders.
+                 -- ^ Linear references (to both existing/term and new/anf
+                 -- binders) to the 'Variable's they will be realized as when
+                 -- used.
                  , _levelIntros :: Word32
-                   -- ^ Levels introduced since the last source binder. separate
-                   -- from map for now so we can remove items from the map once
-                   -- used.
-                 , _levelIndirection :: Maybe Variable
-                   -- ^ Set when the source binder corresponding to this
-                   -- 'BindingLevel' points to an earlier variable. e.g. in
-                   -- translating 'Let's with 'V' on the right-hand side, which
-                   -- will not have corresponding 'AnfLet's.
+                 -- ^ Levels introduced since the last source binder. We keep
+                 -- this in addition to _levelRefs because we remove binders
+                 -- from the map once they've been used.
+                 , _levelIndirections :: Maybe (V.Vector Variable)
+                 -- ^ Set when the source binder(s) corresponding to this
+                 -- 'BindingLevel' point to an earlier variable. e.g. in
+                 -- translating 'Let's with 'V' on the right-hand side, which
+                 -- will not have corresponding 'AnfLet's.
                  }
   deriving (Eq, Show)
 makeLenses ''BindingLevel
@@ -106,40 +112,41 @@ makeLenses ''LoweringState
 type LoweringM = ReaderT BindingStack (State LoweringState)
 
 data Binding
-  = TermBinding          -- or ImplicitLet / ExistingLet / ImplicitBinding
-  | AnfBinding AnfBinder -- or IntroducedLet / ReifiedBinding / IntroducedBinding / ExplicitBinding
+  = TermBinding
+  | AnfBinding [AnfBinder]
   deriving (Eq, Show)
 
 emptyLevel :: BindingLevel
-emptyLevel = BindingLevel (Map.fromList []) 0 Nothing
+emptyLevel = BindingLevel Map.empty 0 Nothing
 
-emptyIndirectionLevel :: Variable -> BindingLevel
-emptyIndirectionLevel v = BindingLevel (Map.fromList []) 0 (Just v)
+emptyIndirectionLevel :: [Variable] -> BindingLevel
+emptyIndirectionLevel vars = BindingLevel Map.empty 0 (Just $ V.fromList vars)
 
 -- | Bumps the provided source variable by the number of intermediate lets that
 -- have been introduced since the source binder this variable points to.
 translateTermVar :: Variable -> BindingStack -> Variable
 translateTermVar var@(GlobalVarSym _) _ = var
 translateTermVar var@(LocalVar lnv) stack =
-  case mIndirection of
+  case mIndirections of
     Nothing ->
       adjust displacement var
-    Just indirection ->
-      adjust (displacement + depth) indirection
+    Just indirections ->
+      adjust (displacement + depth) $ indirections V.! slot
 
   where
-    depth = _lnDepth lnv
+    depth = lnv ^. lnDepth
+    slot  = lnv ^. lnSlot.slotIndex.to fromIntegral
 
     levels :: [BindingLevel]
     levels  = take (fromIntegral $ depth + 1) stack
 
     -- Calculate the displacement sum (from the number of let-introductions) and
     -- grab the last (possible) indirection in a single pass:
-    (displacement, mIndirection) = (getSum *** join . getLast) . mconcat $
-      (Sum . _levelIntros &&& Last . Just . _levelIndirection) <$> levels
+    (displacement, mIndirections) = (getSum *** join . getLast) . mconcat $
+      (Sum . _levelIntros &&& Last . Just . _levelIndirections) <$> levels
 
     adjust :: Word32 -> Variable -> Variable
-    adjust offset = over (localNameless.lnDepth) (+ offset)
+    adjust offset = localNameless.lnDepth +~ offset
 
 allocBinder :: LoweringM AnfBinder
 allocBinder = do
@@ -147,37 +154,44 @@ allocBinder = do
   nextBinder.binderId %= succ
   return curr
 
-trackVariable :: Binding
-              -> Variable
-              -- ^ An existing source variable that's already been translated to
-              -- point an appropriate number of binders up in ANF land.
-              -> BindingStack
-              -> BindingStack
-trackVariable (AnfBinding binder) v s = s & (_head.levelRefs.at binder) ?~ v
-trackVariable TermBinding v stack = emptyIndirectionLevel v : stack
+trackVariables :: Binding
+               -> [Variable]
+               -- ^ Existing source variables that've already been translated to
+               -- point an appropriate number of binders up in ANF land.
+               -> BindingStack
+               -> BindingStack
+trackVariables (AnfBinding binders) vars stack =
+  stack & _head.levelRefs %~ addRefs
+  where
+    addRefs m = foldr' (uncurry Map.insert) m $ zip binders vars
+trackVariables TermBinding vars stack =
+  emptyIndirectionLevel vars : stack
 
 -- | Updates the top of the 'BindingStack' to open a new binder for an
 -- introduced 'AnfLet', or adds a new 'BindingLevel' for an existing 'Term'
 -- 'Let'.
 trackBinding :: Binding -> BindingStack -> BindingStack
-trackBinding (AnfBinding binder) stack = stack & _head %~ updateLevel
+trackBinding (AnfBinding binders) stack = stack & _head %~ updateLevel
   where
-    updateLevel = (levelRefs.at binder                    ?~ slot0 0)
+    updateLevel = (levelRefs                              %~ addRefs)
                 . (levelRefs.mapped.localNameless.lnDepth +~ 1)
                 . (levelIntros                            +~ 1)
+    addRefs m = foldr' (uncurry Map.insert) m
+              $ zip binders (repeat $ slot0 0)
 trackBinding TermBinding stack = emptyLevel:stack
 
 -- | Closes the provided 'AnfBinder's in 'BindingLevel'.
-closeBinders :: [AnfBinder] -> BindingStack -> BindingStack
+closeBinders :: Foldable t => t AnfBinder -> BindingStack -> BindingStack
 closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
   where
-    -- TODO: should this be a strict or lazy fold?
-    deleteRefs :: Map.Map AnfBinder Variable -> Map.Map AnfBinder Variable
-    deleteRefs m = foldr Map.delete m binders
+    deleteRefs m = foldr' Map.delete m binders
 
 -- | Resolves 'Variables' in 'BindingLevel' for the provided 'AnfBinder's.
 -- Assumes the binders are all present in the 'Map' of the 'BindingLevel'.
-resolveRefs :: [AnfBinder] -> BindingStack -> [Variable]
+resolveRefs :: (Foldable t, Functor t)
+            => t AnfBinder
+            -> BindingStack
+            -> t Variable
 resolveRefs binders stack = (varMap Map.!) <$> binders
   where
     varMap = fromMaybe (error "vars map must exist") $
@@ -196,7 +210,7 @@ convertNested terms synthesize = do
   id &
     foldr (\(t, binder) nextK ->
             \track ->
-              local track $ anfCont t (AnfBinding binder) $ nextK)
+              local track $ anfCont t (AnfBinding $ pure binder) nextK)
           (\track ->
             local track $ synthesize binders)
           (zip terms binders)
@@ -249,8 +263,8 @@ bindersAddedSince :: BindingStack -> BindingStack -> Word32
 bindersAddedSince extended base = sum $ height <$> extended `levelsSince` base
   where
     height :: BindingLevel -> Word32
-    height level | isJust (_levelIndirection level) = _levelIntros level
-                 | otherwise                        = 1 + _levelIntros level
+    height level | isJust (_levelIndirections level) = _levelIntros level
+                 | otherwise                         = 1 + _levelIntros level
 
     levelsSince :: BindingStack -> BindingStack -> [BindingLevel]
     levelsSince new old | new == old = []
@@ -270,14 +284,12 @@ withBinderIncreasesPer base extended =
 -- TODO: Possibly rename.
 --
 -- | This is what we currently use to represent a deferred transformation to
--- 'BindingStack' (from the use of 'trackVariable' or 'trackBinding') for the
+-- 'BindingStack' (from the use of 'trackVariables' or 'trackBinding') for the
 -- 'anfCont' callee to invoke. We typically call it immediately in the
 -- continuation, except in the 'Let' case, where we need to roll back the stack
 -- before applying the transform.
 type StackTransform = BindingStack -> BindingStack
 
--- NOTE: This fits the shape of '(a -> r) -> r', a suspended computation (that
---       awaits K, of type 'StackTransform -> m Anf', a continuation)
 anfCont :: Term
         -- ^ The term to be lowered
         -> Binding
@@ -291,7 +303,7 @@ anfCont :: Term
 anfCont term binding k = case term of
   V v -> do
     translatedVar <- reader $ translateTermVar v
-    k $ trackVariable binding translatedVar
+    k $ trackVariables binding $ pure translatedVar
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
@@ -304,10 +316,8 @@ anfCont term binding k = case term of
                     body
 
   Return _terms ->
-    -- TODO: probably implement this because 'Return' on the RHS of a 'Let'
-    --       seems valid and analogous to a trivial 'Let' (i.e. with a 'V' on
-    --       its RHS).
-    error "encountered Return in non-tail position"
+    -- TODO: implement
+    error "anfCont does not yet handle Return"
 
   -- TODO: EnterThunk
 
