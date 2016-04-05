@@ -46,7 +46,7 @@ data Alloc
   = AllocLit !Literal
   | AllocLam !Arity -- TODO: switch back to !(V.Vector BinderInfo)
              !Anf
-  -- TODO: AllocThunk !Anf
+  | AllocThunk !Anf
   deriving (Eq,Ord,Read,Show)
 
 data Rhs
@@ -235,7 +235,9 @@ anfTail term = case term of
 
   -- TODO: EnterThunk
 
-  -- TODO: Delay
+  Delay t -> do
+    body <- local (emptyLevel:) $ anfTail t
+    return $ returnAllocated $ AllocThunk body
 
   App ft ats -> do
     let terms = ft : V.toList ats
@@ -327,7 +329,12 @@ anfCont term binding k = case term of
 
   -- TODO: EnterThunk
 
-  -- TODO: Delay
+  Delay t -> do
+    thunkBody <- local (emptyLevel:) $ anfTail t
+    letBody <- k $ trackBinding binding
+    return $ AnfLet (Arity 1)
+                    (RhsAlloc $ AllocThunk thunkBody)
+                    letBody
 
   App ft ats -> do
     let terms = ft : V.toList ats

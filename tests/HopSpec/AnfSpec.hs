@@ -61,6 +61,16 @@ spec =
                             (AnfReturn $ V.fromList [v0, v1])
            in toAnf term `shouldBe` anf
 
+        it "converts delays" $
+          let -- delay ((0) (0))
+              term = Delay $ App (V v0) $ V.singleton (V v0)
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $
+                              AllocThunk $
+                               AnfTailCall $ AppFun v0 $ V.singleton v0)
+                            (AnfReturn $ V.singleton v0)
+          in toAnf term `shouldBe` anf
+
         it "converts no-arg tail calls" $
           let term = App (V v0) $ V.fromList []
               anf  = AnfTailCall $ AppFun v0 $ V.fromList []
@@ -144,6 +154,20 @@ spec =
                              (RhsAlloc $ AllocLit ten)
                              (AnfReturn $ V.fromList [v1, v0])
            in toAnf term `shouldBe` anf
+
+        it "converts delays" $
+          let -- (1) (delay ((0) (0)))
+              term = App (V v1)
+                         (V.singleton $
+                           Delay $
+                             App (V v0) $ V.singleton (V v0))
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $
+                              AllocThunk $
+                               AnfTailCall $ AppFun v0 $ V.singleton v0)
+                            (AnfTailCall $
+                              AppFun v2 $ V.singleton v0)
+          in toAnf term `shouldBe` anf
 
         it "converts no-arg non-tail calls" $
           let term = App (V abs)
