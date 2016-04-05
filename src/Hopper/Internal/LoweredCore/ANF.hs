@@ -315,9 +315,14 @@ anfCont term binding k = case term of
                     (RhsAlloc $ AllocLit l)
                     body
 
-  Return _terms ->
-    -- TODO: implement
-    error "anfCont does not yet handle Return"
+  Return terms ->
+    convertNested (V.toList terms) $ \binders -> do
+      vars <- reader $ resolveRefs binders
+      case binding of
+        TermBinding ->
+          k $ trackVariables binding vars . closeBinders binders
+        (AnfBinding _) ->
+          error "unexpected non-tail Return outside of a Let RHS"
 
   -- TODO: EnterThunk
 
