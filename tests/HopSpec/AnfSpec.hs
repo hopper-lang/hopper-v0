@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module HopSpec.AnfSpec
   ( spec
   ) where
@@ -27,7 +29,9 @@ spec =
           neg = GlobalVarSym $ GlobalSymbol $ T.pack "neg"
           id_ = GlobalVarSym $ GlobalSymbol $ T.pack "id"
           ten = LInteger 10
+          twenty = LInteger 20
           dummyBI = BinderInfoData Omega () Nothing
+          prim0 = PrimopIdGeneral "test"
 
       describe "simple tail cases" $ do
         it "converts variables" $
@@ -73,6 +77,14 @@ spec =
                             (RhsAlloc $ AllocLit ten)
                             (AnfTailCall $ AppFun v1
                                                   (V.fromList [v0, v1]))
+          in toAnf term `shouldBe` anf
+
+        it "converts tail prim apps" $
+          let term = PrimApp prim0 $ V.fromList [ELit ten, V v0]
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $ AllocLit ten)
+                            (AnfTailCall $ AppPrim prim0
+                                                   (V.fromList [v0, v1]))
           in toAnf term `shouldBe` anf
 
         it "converts lambdas by introducing an allocation" $
@@ -169,6 +181,21 @@ spec =
                                     (AnfTailCall $ AppFun abs $ V.singleton v0))
           in toAnf term `shouldBe` anf
 
+        it "converts non-tail prim apps" $
+          let -- (prim0 10 (0)) 20
+              term = App (PrimApp prim0 $ V.fromList [ELit ten, V v0])
+                         (V.singleton $ ELit twenty)
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $ AllocLit ten)
+                            (AnfLet (Arity 1)
+                                    (RhsApp $
+                                      AppPrim prim0 (V.fromList [v0, v1]))
+                                    (AnfLet (Arity 1)
+                                            (RhsAlloc $ AllocLit twenty)
+                                            (AnfTailCall $
+                                              AppFun v1 (V.singleton v0))))
+          in toAnf term `shouldBe` anf
+
         it "converts lambdas" $
           -- (λ. neg (abs (0))) (0)
           let term = App (Lam (V.singleton dummyBI)
@@ -188,7 +215,6 @@ spec =
 
         it "converts lets (AnfBinding/trackBinding)" $
           let ten = LInteger 10
-              twenty = LInteger 20
               -- let 10 in (let 20 in (λ. (1)) (0)
               term = Let (V.singleton dummyBI)
                          (ELit ten)
