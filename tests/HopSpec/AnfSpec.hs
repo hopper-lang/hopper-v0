@@ -18,6 +18,8 @@ spec =
   describe "ANF" $ do
     describe "toAnf" $ do
       let v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
+          v0_0 = v0
+          v0_1 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 1
           v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
           v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
           add = GlobalVarSym $ GlobalSymbol $ T.pack "add"
@@ -121,6 +123,15 @@ spec =
         --   let term = App (V v0) $ V.singleton $ BinderLevelShiftUP 1 $ V v1
         --       anf = _todo
         --   in toAnf term `shouldBe` anf
+
+        it "converts returns on the RHS of a let" $
+           let term = Let (V.replicate 2 dummyBI)
+                          (Return $ V.fromList [ELit ten, V v0])
+                          (Return $ V.fromList [V v0_1, V v0_0])
+               anf  = AnfLet (Arity 1)
+                             (RhsAlloc $ AllocLit ten)
+                             (AnfReturn $ V.fromList [v1, v0])
+           in toAnf term `shouldBe` anf
 
         it "converts no-arg non-tail calls" $
           let term = App (V abs)
