@@ -39,14 +39,14 @@ data App
   = AppFun !Variable
            !(V.Vector Variable)
   -- TODO: AppPrim PrimOpId !(V.Vector Variable)
-  -- TODO: AppThunk
+  -- TODO: AppThunk !Variable
   deriving (Eq,Ord,Read,Show)
 
 data Alloc
   = AllocLit !Literal
   | AllocLam !Arity -- TODO: switch back to !(V.Vector BinderInfo)
              !Anf
-  -- TODO: AllocThunk Anf
+  -- TODO: AllocThunk !Anf
   deriving (Eq,Ord,Read,Show)
 
 data Rhs
@@ -66,35 +66,33 @@ returnAllocated alloc = AnfLet (Arity 1)
                                (AnfReturn $ V.singleton $ slot0 0)
 
 arity :: V.Vector BinderInfo -> Arity
-arity binders = Arity $ fromIntegral $ V.length binders
+arity binderInfos = Arity $ fromIntegral $ V.length binderInfos
 
---
--- TODO: probably rename to reference or something
---
 -- | A linear (single-use) reference to a(n existing/term or new/anf) binder
-newtype AnfBinder
-  = AnfBinder { _binderId :: Word64 }
+newtype AnfRef
+  = AnfRef { _refId :: Word64 }
   deriving (Eq, Show, Ord)
-makeLenses ''AnfBinder
+makeLenses ''AnfRef
 
-instance Enum AnfBinder where
-  toEnum = AnfBinder . toEnum
-  fromEnum = fromEnum . _binderId
+instance Enum AnfRef where
+  toEnum = AnfRef . toEnum
+  fromEnum = fromEnum . _refId
 
 data BindingLevel
-  = BindingLevel { _levelRefs :: Map.Map AnfBinder Variable
+  = BindingLevel { _levelRefs :: Map.Map AnfRef Variable
                  -- ^ Linear references (to both existing/term and new/anf
                  -- binders) to the 'Variable's they will be realized as when
-                 -- used.
+                 -- used. These variables are bumped as new 'AnfLet's are
+                 -- introduced.
                  , _levelIntros :: Word32
                  -- ^ Levels introduced since the last source binder. We keep
-                 -- this in addition to _levelRefs because we remove binders
-                 -- from the map once they've been used.
+                 -- this in addition to _levelRefs because we remove refs from
+                 -- the map once they've been used.
                  , _levelIndirections :: Maybe (V.Vector Variable)
                  -- ^ Set when the source binder(s) corresponding to this
                  -- 'BindingLevel' point to an earlier variable. e.g. in
-                 -- translating 'Let's with 'V' on the right-hand side, which
-                 -- will not have corresponding 'AnfLet's.
+                 -- translating 'Let's with 'V' or a 'Return' on the right-hand
+                 -- side, which will not have corresponding 'AnfLet's.
                  }
   deriving (Eq, Show)
 makeLenses ''BindingLevel
@@ -105,7 +103,7 @@ makeLenses ''BindingLevel
 type BindingStack = [BindingLevel]
 
 newtype LoweringState
-  = LoweringState { _nextBinder :: AnfBinder }
+  = LoweringState { _nextRef :: AnfRef }
   deriving (Eq, Show)
 makeLenses ''LoweringState
 
@@ -113,7 +111,7 @@ type LoweringM = ReaderT BindingStack (State LoweringState)
 
 data Binding
   = TermBinding
-  | AnfBinding [AnfBinder]
+  | AnfBinding [AnfRef]
   deriving (Eq, Show)
 
 emptyLevel :: BindingLevel
@@ -148,10 +146,10 @@ translateTermVar var@(LocalVar lnv) stack =
     adjust :: Word32 -> Variable -> Variable
     adjust offset = localNameless.lnDepth +~ offset
 
-allocBinder :: LoweringM AnfBinder
-allocBinder = do
-  curr <- use nextBinder
-  nextBinder.binderId %= succ
+allocRef :: LoweringM AnfRef
+allocRef = do
+  curr <- use nextRef
+  nextRef.refId %= succ
   return curr
 
 trackVariables :: Binding
@@ -160,39 +158,39 @@ trackVariables :: Binding
                -- point an appropriate number of binders up in ANF land.
                -> BindingStack
                -> BindingStack
-trackVariables (AnfBinding binders) vars stack =
+trackVariables (AnfBinding refs) vars stack =
   stack & _head.levelRefs %~ addRefs
   where
-    addRefs m = foldr' (uncurry Map.insert) m $ zip binders vars
+    addRefs m = foldr' (uncurry Map.insert) m $ zip refs vars
 trackVariables TermBinding vars stack =
   emptyIndirectionLevel vars : stack
 
--- | Updates the top of the 'BindingStack' to open a new binder for an
+-- | Updates the top of the 'BindingStack' to open a new 'AnfRef' for an
 -- introduced 'AnfLet', or adds a new 'BindingLevel' for an existing 'Term'
 -- 'Let'.
 trackBinding :: Binding -> BindingStack -> BindingStack
-trackBinding (AnfBinding binders) stack = stack & _head %~ updateLevel
+trackBinding (AnfBinding refs) stack = stack & _head %~ updateLevel
   where
     updateLevel = (levelRefs                              %~ addRefs)
                 . (levelRefs.mapped.localNameless.lnDepth +~ 1)
                 . (levelIntros                            +~ 1)
-    addRefs m = foldr' (uncurry Map.insert) m
-              $ zip binders (repeat $ slot0 0)
+    addRefs m = foldr' (uncurry Map.insert) m $ zip refs (repeat $ slot0 0)
 trackBinding TermBinding stack = emptyLevel:stack
 
--- | Closes the provided 'AnfBinder's in 'BindingLevel'.
-closeBinders :: Foldable t => t AnfBinder -> BindingStack -> BindingStack
-closeBinders binders stack = stack & _head.levelRefs %~ deleteRefs
+-- | Stops tracking the provided 'AnfRef's in the top 'BindingLevel' of
+-- 'BindingStack'.
+dropRefs :: Foldable t => t AnfRef -> BindingStack -> BindingStack
+dropRefs refs stack = stack & _head.levelRefs %~ deleteRefs
   where
-    deleteRefs m = foldr' Map.delete m binders
+    deleteRefs m = foldr' Map.delete m refs
 
--- | Resolves 'Variables' in 'BindingLevel' for the provided 'AnfBinder's.
--- Assumes the binders are all present in the 'Map' of the 'BindingLevel'.
+-- | Resolves 'Variables' in 'BindingLevel' for the provided 'AnfRef's. Assumes
+-- the refs are all present in the 'Map' of the 'BindingLevel'.
 resolveRefs :: (Foldable t, Functor t)
-            => t AnfBinder
+            => t AnfRef
             -> BindingStack
             -> t Variable
-resolveRefs binders stack = (varMap Map.!) <$> binders
+resolveRefs refs stack = (varMap Map.!) <$> refs
   where
     varMap = fromMaybe (error "vars map must exist") $
       firstOf (_head.levelRefs) stack
@@ -200,20 +198,20 @@ resolveRefs binders stack = (varMap Map.!) <$> binders
 convertNested :: [Term]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
               -- function application, or multi-return.
-              -> ([AnfBinder] -> LoweringM Anf)
+              -> ([AnfRef] -> LoweringM Anf)
               -- ^ Continuation for synthesizing the lowering for the rest of
-              -- the program from binders for each of the terms.
+              -- the program from refs for each of the terms.
               -> LoweringM Anf
 convertNested terms synthesize = do
-  binders <- replicateM (length terms) allocBinder
+  refs <- replicateM (length terms) allocRef
 
   id &
-    foldr (\(t, binder) nextK ->
+    foldr (\(t, ref) nextK ->
             \track ->
-              local track $ anfCont t (AnfBinding $ pure binder) nextK)
+              local track $ anfCont t (AnfBinding $ pure ref) nextK)
           (\track ->
-            local track $ synthesize binders)
-          (zip terms binders)
+            local track $ synthesize refs)
+          (zip terms refs)
 
 --
 
@@ -231,8 +229,8 @@ anfTail term = case term of
     return $ returnAllocated $ AllocLit lit
 
   Return terms ->
-    convertNested (V.toList terms) $ \binders -> do
-      vars <- reader $ resolveRefs binders
+    convertNested (V.toList terms) $ \refs -> do
+      vars <- reader $ resolveRefs refs
       return $ AnfReturn $ V.fromList vars
 
   -- TODO: EnterThunk
@@ -241,8 +239,8 @@ anfTail term = case term of
 
   App ft ats -> do
     let terms = ft : V.toList ats
-    convertNested terms $ \binders -> do
-      vars <- reader $ resolveRefs binders
+    convertNested terms $ \refs -> do
+      vars <- reader $ resolveRefs refs
       return $ AnfTailCall $ AppFun (head vars)
                                     (V.fromList $ tail vars)
 
@@ -316,11 +314,11 @@ anfCont term binding k = case term of
                     body
 
   Return terms ->
-    convertNested (V.toList terms) $ \binders -> do
-      vars <- reader $ resolveRefs binders
+    convertNested (V.toList terms) $ \refs -> do
+      vars <- reader $ resolveRefs refs
       case binding of
         TermBinding ->
-          k $ trackVariables binding vars . closeBinders binders
+          k $ trackVariables binding vars . dropRefs refs
         (AnfBinding _) ->
           error "unexpected non-tail Return outside of a Let RHS"
 
@@ -330,9 +328,9 @@ anfCont term binding k = case term of
 
   App ft ats -> do
     let terms = ft : V.toList ats
-    convertNested terms $ \binders -> do
-      vars <- reader $ resolveRefs binders
-      body <- k $ trackBinding binding . closeBinders binders
+    convertNested terms $ \refs -> do
+      vars <- reader $ resolveRefs refs
+      body <- k $ trackBinding binding . dropRefs refs
       return $ AnfLet (Arity 1) -- TODO: support tupled return
                       (RhsApp $ AppFun (head vars)
                                        (V.fromList $ tail vars))
@@ -361,7 +359,7 @@ toAnf term = evalState (runReaderT (anfTail term) emptyStack) initialState
     -- 'Let' or 'Lam' so that e.g. a toplevel 'Let' with a non-trivial RHS has
     -- a level with which to introduce intermediary 'AnfLet's
     emptyStack = [emptyLevel]
-    initialState = LoweringState $ AnfBinder 0
+    initialState = LoweringState $ AnfRef 0
 
 -- 3/18/16
 -- no more shifts
