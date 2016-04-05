@@ -38,7 +38,7 @@ data Anf
 data App
   = AppFun !Variable
            !(V.Vector Variable)
-  -- TODO: AppPrim PrimOpId !(V.Vector Variable)
+  | AppPrim !PrimOpId !(V.Vector Variable)
   -- TODO: AppThunk !Variable
   deriving (Eq,Ord,Read,Show)
 
@@ -244,7 +244,10 @@ anfTail term = case term of
       return $ AnfTailCall $ AppFun (head vars)
                                     (V.fromList $ tail vars)
 
-  -- TODO: PrimApp
+  PrimApp primId terms ->
+    convertNested (V.toList terms) $ \refs -> do
+      vars <- reader $ resolveRefs refs
+      return $ AnfTailCall $ AppPrim primId $ V.fromList vars
 
   Lam binderInfos t -> do
     body <- local (emptyLevel:) $ anfTail t
@@ -336,7 +339,13 @@ anfCont term binding k = case term of
                                        (V.fromList $ tail vars))
                       body
 
-  -- TODO: PrimApp
+  PrimApp primId terms ->
+    convertNested (V.toList terms) $ \refs -> do
+      vars <- reader $ resolveRefs refs
+      body <- k $ trackBinding binding . dropRefs refs
+      return $ AnfLet (Arity 1) -- TODO: support tupled return
+                      (RhsApp $ AppPrim primId $ V.fromList vars)
+                      body
 
   Lam binderInfos t -> do
     lamBody <- local (emptyLevel:) $ anfTail t
