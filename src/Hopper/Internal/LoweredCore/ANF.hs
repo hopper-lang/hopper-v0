@@ -214,16 +214,16 @@ resolveRefs refs stack = (varMap Map.!) <$> refs
 -- before applying the transform.
 type StackTransform = BindingStack -> BindingStack
 
-convertNested :: [Term]
+convertToVars :: [Term]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
-              -- function application, or multi-return.
+              -- function or thunk application, or returning multiple values.
               -> ([Variable] -> StackTransform -> LoweringM Anf)
               -- ^ Continuation for synthesizing the lowering for the rest of
               -- the program from 'Variable's for each of the terms and a
               -- 'StackTransform' for cleaning up the 'AnfRef's that tracked the
               -- 'Variable's.
               -> LoweringM Anf
-convertNested terms synthesize = do
+convertToVars terms synthesize = do
   refs <- replicateM (length terms) allocRef
 
   id &
@@ -251,11 +251,11 @@ convertTail term = case term of
     return $ returnAllocated $ AllocLit lit
 
   Return terms ->
-    convertNested (V.toList terms) $ \vars _cleanup ->
+    convertToVars (V.toList terms) $ \vars _cleanup ->
       return $ AnfReturn $ V.fromList vars
 
   EnterThunk t ->
-    convertNested [t] $ \[var] _cleanup ->
+    convertToVars [t] $ \[var] _cleanup ->
       return $ AnfTailCall $ AppThunk var
 
   Delay t -> do
@@ -264,12 +264,12 @@ convertTail term = case term of
 
   App ft ats -> do
     let terms = ft : V.toList ats
-    convertNested terms $ \vars _cleanup ->
+    convertToVars terms $ \vars _cleanup ->
       return $ AnfTailCall $ AppFun (head vars)
                                     (V.fromList $ tail vars)
 
   PrimApp primId terms ->
-    convertNested (V.toList terms) $ \vars _cleanup ->
+    convertToVars (V.toList terms) $ \vars _cleanup ->
       return $ AnfTailCall $ AppPrim primId $ V.fromList vars
 
   Lam binderInfos t -> do
@@ -331,16 +331,16 @@ convertWithCont term binding k = case term of
                     body
 
   Return terms ->
-    convertNested (V.toList terms) $ \vars cleanup ->
+    convertToVars (V.toList terms) $ \vars cleanupRefs ->
       case binding of
         TermBinding ->
-          k $ trackVariables binding vars . cleanup
+          k $ trackVariables binding vars . cleanupRefs
         (AnfBinding _) ->
           error "unexpected non-tail Return outside of a Let RHS"
 
   EnterThunk t ->
-    convertNested [t] $ \[var] cleanup -> do
-      body <- k $ trackBinding binding . cleanup
+    convertToVars [t] $ \[var] cleanupRef -> do
+      body <- k $ trackBinding binding . cleanupRef
       return $ AnfLet (Arity 1) -- TODO: support tupled return
                       (RhsApp $ AppThunk var)
                       body
@@ -354,16 +354,16 @@ convertWithCont term binding k = case term of
 
   App ft ats -> do
     let terms = ft : V.toList ats
-    convertNested terms $ \vars cleanup -> do
-      body <- k $ trackBinding binding . cleanup
+    convertToVars terms $ \vars cleanupRefs -> do
+      body <- k $ trackBinding binding . cleanupRefs
       return $ AnfLet (Arity 1) -- TODO: support tupled return
                       (RhsApp $ AppFun (head vars)
                                        (V.fromList $ tail vars))
                       body
 
   PrimApp primId terms ->
-    convertNested (V.toList terms) $ \vars cleanup -> do
-      body <- k $ trackBinding binding . cleanup
+    convertToVars (V.toList terms) $ \vars cleanupRefs -> do
+      body <- k $ trackBinding binding . cleanupRefs
       return $ AnfLet (Arity 1) -- TODO: support tupled return
                       (RhsApp $ AppPrim primId $ V.fromList vars)
                       body
