@@ -207,12 +207,23 @@ resolveRefs refs stack = (varMap Map.!) <$> refs
     varMap = fromMaybe (error "vars map must exist") $
       firstOf (_head.levelRefs) stack
 
+-- TODO: Possibly rename.
+--
+-- | This is what we currently use to represent a deferred transformation to
+-- 'BindingStack' (from the use of 'trackVariables' or 'trackBinding') for the
+-- 'anfCont' callee to invoke. We typically call it immediately in the
+-- continuation, except in the 'Let' case, where we need to roll back the stack
+-- before applying the transform.
+type StackTransform = BindingStack -> BindingStack
+
 convertNested :: [Term]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
               -- function application, or multi-return.
-              -> ([AnfRef] -> LoweringM Anf)
+              -> ([Variable] -> StackTransform -> LoweringM Anf)
               -- ^ Continuation for synthesizing the lowering for the rest of
-              -- the program from refs for each of the terms.
+              -- the program from 'Variable's for each of the terms and a
+              -- 'StackTransform' for cleaning up the 'AnfRef's that tracked the
+              -- 'Variable's.
               -> LoweringM Anf
 convertNested terms synthesize = do
   refs <- replicateM (length terms) allocRef
@@ -222,10 +233,11 @@ convertNested terms synthesize = do
             \track ->
               local track $ anfCont t (AnfBinding $ pure ref) nextK)
           (\track ->
-            local track $ synthesize refs)
+            local track $ do
+              vars <- reader $ resolveRefs refs
+              let cleanup = dropRefs refs
+              synthesize vars cleanup)
           (zip terms refs)
-
---
 
 anfTail :: Term -> LoweringM Anf
 anfTail term = case term of
@@ -241,13 +253,11 @@ anfTail term = case term of
     return $ returnAllocated $ AllocLit lit
 
   Return terms ->
-    convertNested (V.toList terms) $ \refs -> do
-      vars <- reader $ resolveRefs refs
+    convertNested (V.toList terms) $ \vars _cleanup ->
       return $ AnfReturn $ V.fromList vars
 
   EnterThunk t ->
-    convertNested [t] $ \refs -> do
-      [var] <- reader $ resolveRefs refs
+    convertNested [t] $ \[var] _cleanup ->
       return $ AnfTailCall $ AppThunk var
 
   Delay t -> do
@@ -256,14 +266,12 @@ anfTail term = case term of
 
   App ft ats -> do
     let terms = ft : V.toList ats
-    convertNested terms $ \refs -> do
-      vars <- reader $ resolveRefs refs
+    convertNested terms $ \vars _cleanup ->
       return $ AnfTailCall $ AppFun (head vars)
                                     (V.fromList $ tail vars)
 
   PrimApp primId terms ->
-    convertNested (V.toList terms) $ \refs -> do
-      vars <- reader $ resolveRefs refs
+    convertNested (V.toList terms) $ \vars _cleanup ->
       return $ AnfTailCall $ AppPrim primId $ V.fromList vars
 
   Lam binderInfos t -> do
@@ -299,15 +307,6 @@ withBinderIncreasesPer base extended =
   where
     numBinders = extended `bindersAddedSince` base
 
--- TODO: Possibly rename.
---
--- | This is what we currently use to represent a deferred transformation to
--- 'BindingStack' (from the use of 'trackVariables' or 'trackBinding') for the
--- 'anfCont' callee to invoke. We typically call it immediately in the
--- continuation, except in the 'Let' case, where we need to roll back the stack
--- before applying the transform.
-type StackTransform = BindingStack -> BindingStack
-
 anfCont :: Term
         -- ^ The term to be lowered
         -> Binding
@@ -321,7 +320,7 @@ anfCont :: Term
 anfCont term binding k = case term of
   V v -> do
     translatedVar <- reader $ translateTermVar v
-    k $ trackVariables binding $ pure translatedVar
+    k $ trackVariables binding [translatedVar]
 
   -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
@@ -334,18 +333,16 @@ anfCont term binding k = case term of
                     body
 
   Return terms ->
-    convertNested (V.toList terms) $ \refs -> do
-      vars <- reader $ resolveRefs refs
+    convertNested (V.toList terms) $ \vars cleanup ->
       case binding of
         TermBinding ->
-          k $ trackVariables binding vars . dropRefs refs
+          k $ trackVariables binding vars . cleanup
         (AnfBinding _) ->
           error "unexpected non-tail Return outside of a Let RHS"
 
   EnterThunk t ->
-    convertNested [t] $ \refs -> do
-      [var] <- reader $ resolveRefs refs
-      body <- k $ trackBinding binding . dropRefs refs
+    convertNested [t] $ \[var] cleanup -> do
+      body <- k $ trackBinding binding . cleanup
       return $ AnfLet (Arity 1) -- TODO: support tupled return
                       (RhsApp $ AppThunk var)
                       body
@@ -359,18 +356,16 @@ anfCont term binding k = case term of
 
   App ft ats -> do
     let terms = ft : V.toList ats
-    convertNested terms $ \refs -> do
-      vars <- reader $ resolveRefs refs
-      body <- k $ trackBinding binding . dropRefs refs
+    convertNested terms $ \vars cleanup -> do
+      body <- k $ trackBinding binding . cleanup
       return $ AnfLet (Arity 1) -- TODO: support tupled return
                       (RhsApp $ AppFun (head vars)
                                        (V.fromList $ tail vars))
                       body
 
   PrimApp primId terms ->
-    convertNested (V.toList terms) $ \refs -> do
-      vars <- reader $ resolveRefs refs
-      body <- k $ trackBinding binding . dropRefs refs
+    convertNested (V.toList terms) $ \vars cleanup -> do
+      body <- k $ trackBinding binding . cleanup
       return $ AnfLet (Arity 1) -- TODO: support tupled return
                       (RhsApp $ AppPrim primId $ V.fromList vars)
                       body
