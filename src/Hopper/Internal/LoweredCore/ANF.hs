@@ -469,6 +469,10 @@ toAnf term = evalState (runReaderT (convertTail term) emptyStack) initialState
     emptyStack = [emptyLevel]
     initialState = LoweringState $ AnfRef 0
 
+--------------------------
+-- Some Earlier Notes
+--------------------------
+
 -- 3/18/16
 -- no more shifts
 -- we should distinguish between term and anf variables
@@ -564,6 +568,6 @@ toAnf term = evalState (runReaderT (convertTail term) emptyStack) initialState
 -- Could be interesting to play with delimited continuation operators for
 --     nontail let rollbacks.
 
--- TODO: the types seem to line-up to convert convertWithCont to ContT. can we get convertTail
---       to work in ContT as well, or would calls of convertWithCont from convertTail all
---       have to use 'evalContT'?
+-- the types seem to line-up to convert convertWithCont to ContT. can we get convertTail
+-- to work in ContT as well, or would calls of convertWithCont from convertTail all
+-- have to use 'evalContT'?
