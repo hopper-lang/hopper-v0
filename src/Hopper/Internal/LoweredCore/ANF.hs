@@ -1,12 +1,28 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+
+----------------------------------------------------------------------------
+-- |
+-- This module defines an Administrative Normal Form (ANF) representation of a
+-- Hopper abstract syntax tree, 'Anf'. In ANF, only simple allocations or
+-- applications can occur on the right-hand side of a 'Let'. This is similar to
+-- an SSA or CPS form.
+--
+-- The function 'toAnf' lowers a 'Term' AST to 'Anf'. This is achieved by an
+-- adaptation of Olivier Danvy's algorithm from "A New One-Pass Transformation
+-- into Monadic Normal Form" (2002) to our 2D De Bruijn 'Variable'
+-- representation.
+----------------------------------------------------------------------------
 
 module Hopper.Internal.LoweredCore.ANF
-  ( Arity(..)
+  (
+  -- * Data Types
+  Arity(..)
   , Anf(..)
   , App(..)
   , Alloc(..)
   , Rhs(..)
+
+  -- * Lowering to ANF
   , toAnf
   ) where
 
@@ -27,15 +43,15 @@ import Control.Lens hiding (levels)
 import qualified Data.Vector as V
 import qualified Data.Map.Strict as Map
 
+--------------------------
+-- Data Types
+--------------------------
+
 -- TODO: possibly allow more "atomic" expression types (besides variables) once
 --       we have some unboxed values
 
 -- Eventually we might want to collapse lets elaborated from Core->ANF
 -- translation into the same level as its containing source-side binder
-
---
--- Core ANF data types
---
 
 -- TODO: switch back away from this
 newtype Arity = Arity Word32 deriving (Eq,Ord,Read,Show)
@@ -68,23 +84,22 @@ data Rhs
   | RhsApp !App
   deriving (Eq,Ord,Read,Show)
 
---
--- Lowering
---
+--------------------------
+-- Lowering to ANF
+--------------------------
 
 -- | The first slot in the most recent binder
 v0 :: Variable
 v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
 
-returnAllocated :: Alloc -> Anf
-returnAllocated alloc = AnfLet (Arity 1)
-                               (RhsAlloc alloc)
-                               (AnfReturn $ V.singleton v0)
-
+-- | A temporary function to produce an 'Arity' for our ANF binding forms until
+-- we switch to using 'BinderInfo's in 'Anf' as well.
 arity :: V.Vector BinderInfo -> Arity
 arity binderInfos = Arity $ fromIntegral $ V.length binderInfos
 
--- | A linear (single-use) reference to a(n existing/term or new/anf) binder
+-- | A linear (single-use) reference to a(n existing/term or new/anf) binder. If
+-- two source variables refer to the same binder, they are tracked via separate
+-- 'AnfRef's.
 newtype AnfRef
   = AnfRef { _refId :: Word64 }
   deriving (Eq, Show, Ord)
@@ -95,6 +110,7 @@ instance Enum AnfRef where
   toEnum = AnfRef . toEnum
   fromEnum = fromEnum . _refId
 
+-- | Bookkeeping structure that corresponds to a binder scope in the 'Term' AST.
 data BindingLevel
   = BindingLevel { _levelRefs :: Map.Map AnfRef Variable
                  -- ^ Linear references (to both existing/term and new/anf
@@ -115,29 +131,44 @@ data BindingLevel
 
 makeLenses ''BindingLevel
 
+emptyLevel :: BindingLevel
+emptyLevel = BindingLevel Map.empty 0 Nothing
+
+emptyIndirectionLevel :: [Variable] -> BindingLevel
+emptyIndirectionLevel vars = BindingLevel Map.empty 0 (Just $ V.fromList vars)
+
 -- The bottom 'BindingLevel' of this stack does not necessarily correspond to a
 -- 'Term' binding level (i.e. 'Let' or 'Lam') -- consider a toplevel 'Let' with
 -- RHS global var applied to a global var. See 'toAnf'.
 type BindingStack = [BindingLevel]
 
 newtype LoweringState
-  = LoweringState { _nextRef :: AnfRef }
+  = LoweringState { _nextRef :: AnfRef
+                  -- ^ The next 'AnfRef' to track an existing or new variable
+                  -- usage.
+                  }
   deriving (Eq, Show)
 
 makeLenses ''LoweringState
 
+-- | Monad transformer stack for lowering from 'Term' to 'Anf'.
 type LoweringM = ReaderT BindingStack (State LoweringState)
 
+-- | Dispenses an 'AnfRef' to track the usage of a 'Term' or newly-introduced
+-- ("anf") variable to let-name a subexpression.
+allocRef :: LoweringM AnfRef
+allocRef = do
+  curr <- use nextRef
+  nextRef.refId %= succ
+  return curr
+
+-- | In converting a 'Term' to ANF, specifies whether the allocated value or
+-- result of (prim/fun/thunk) application should be bound to an 'AnfLet'
+-- corresponding to an existing ('Let') 'TermBinding' or a new 'AnfBinding'.
 data Binding
   = TermBinding
-  | AnfBinding [AnfRef]
+  | AnfBinding [AnfRef] -- A list because we use unboxed tuples and 2D binders.
   deriving (Eq, Show)
-
-emptyLevel :: BindingLevel
-emptyLevel = BindingLevel Map.empty 0 Nothing
-
-emptyIndirectionLevel :: [Variable] -> BindingLevel
-emptyIndirectionLevel vars = BindingLevel Map.empty 0 (Just $ V.fromList vars)
 
 -- | Bumps the provided source variable by the number of intermediate lets that
 -- have been introduced since the source binder this variable points to.
@@ -165,12 +196,8 @@ translateTermVar var@(LocalVar lnv) stack =
     adjust :: Word32 -> Variable -> Variable
     adjust offset = localNameless.lnDepth +~ offset
 
-allocRef :: LoweringM AnfRef
-allocRef = do
-  curr <- use nextRef
-  nextRef.refId %= succ
-  return curr
-
+-- | Updates the top of the 'BindingStack' to account for the existing
+-- (pre-translated) 'Term' 'Variable's.
 trackVariables :: Binding
                -> [Variable]
                -- ^ Existing source variables that've already been translated to
@@ -221,6 +248,8 @@ resolveRefs refs stack = (varMap Map.!) <$> refs
 -- before applying the transform.
 type StackTransform = BindingStack -> BindingStack
 
+-- | A convenience function for lowering a sequence of "sibling" 'Term's, and
+-- providing 'Variable's for the lowering of the rest of the program.
 convertToVars :: [Term]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
               -- function or thunk application, or returning multiple values.
@@ -233,6 +262,9 @@ convertToVars :: [Term]
 convertToVars terms synthesize = do
   refs <- replicateM (length terms) allocRef
 
+  -- NOTE: To see how we could simplify this function, see notes on the 'Let'
+  -- case of 'convertWithCont' regarding the possibility of using @ContT@. The
+  -- fold in this function would become first-order.
   id &
     foldr (\(t, ref) nextK ->
             \track ->
@@ -244,9 +276,20 @@ convertToVars terms synthesize = do
               synthesize vars cleanup)
           (zip terms refs)
 
+-- | A convenience function for placing a tail 'Alloc'ation on the RHS of a new
+-- 'AnfLet' and 'AnfReturn'ing that value.
+returnAllocated :: Alloc -> Anf
+returnAllocated alloc = AnfLet (Arity 1)
+                               (RhsAlloc alloc)
+                               (AnfReturn $ V.singleton v0)
+
+-- | A convenience function for converting a 'Lam'- or 'Delay'-guarded RHS of a
+-- 'AnfLet'.
 convertGuarded :: Term -> LoweringM Anf
 convertGuarded t = local (emptyLevel:) $ convertTail t
 
+-- | Converts a 'Term' in tail position to ANF. This function corresponds to
+-- Danvy's function "E".
 convertTail :: Term -> LoweringM Anf
 convertTail term = case term of
   V v -> do
@@ -315,6 +358,8 @@ withBinderIncreasesPer base extended =
   where
     numBinders = extended `bindersAddedSince` base
 
+-- | Converts a 'Term' in nontail position to ANF. This function corresponds to
+-- Danvy's function "E_c".
 convertWithCont :: Term
                 -- ^ The term to be lowered
                 -> Binding
@@ -386,18 +431,37 @@ convertWithCont term binding k = case term of
                                          lamBody)
                     letBody
 
+  -- NOTE: This is the one situation where we need to "roll-back" a
+  --       'BindingStack' (and apply appropriate binder increases to an earlier
+  --       stack) *before* invoking a "track" ('StackTransform') to update its
+  --       bindings.
+  --
+  --       It's because of this single special case that we pass the
+  --       'StackTransform' to the caller of 'convertWithCont' via a
+  --       continuation (instead of having the callee simply update the bindings
+  --       using 'local' when it invokes @k@).
+  --
+  --       We could perhaps improve this situation by:
+  --       - Always saving the previous 'BindingStack' and the 'StackTransform'
+  --       to update bindings before invoking @k@.
+  --       - Move to using @ContT@ (which would have the nice side effect of
+  --       un-CPS'ing our code) and roll back via @callCC@ or delimited
+  --       continuation machinery (@shift@ and @reset@).
+  --
   Let binderInfos rhs body -> do
     stackBefore <- ask
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertWithCont body binding $ \trackBody ->
         local (stackBefore `withBinderIncreasesPer`) $ k trackBody
 
+-- | Converts a 'Term' to Administrative Normal Form.
 toAnf :: Term -> Anf
 toAnf term = evalState (runReaderT (convertTail term) emptyStack) initialState
   where
-    -- We provide a bottom level that doesn't correspond to a toplevel term
-    -- 'Let' or 'Lam' so that e.g. a toplevel 'Let' with a non-trivial RHS has
-    -- a level with which to introduce intermediary 'AnfLet's
+    -- We provide a initial bottom level of the 'BindingStack' that doesn't
+    -- correspond to a toplevel term 'Let' or 'Lam' so that e.g. a toplevel
+    -- 'Let' with a non-trivial RHS has a level with which to introduce
+    -- intermediary 'AnfLet's.
     emptyStack = [emptyLevel]
     initialState = LoweringState $ AnfRef 0
 
