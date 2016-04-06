@@ -23,6 +23,13 @@ import qualified Data.Map.Strict as Map
 -- TODO: possibly allow more "atomic" expression types (besides variables) once
 --       we have some unboxed values
 
+-- Eventually we might want to collapse lets elaborated from Core->ANF
+-- translation into the same level as its containing source-side binder
+
+--
+-- Core ANF data types
+--
+
 -- TODO: switch back away from this
 newtype Arity = Arity Word32 deriving (Eq,Ord,Read,Show)
 
@@ -54,16 +61,18 @@ data Rhs
   | RhsApp !App
   deriving (Eq,Ord,Read,Show)
 
--- Eventually we might want to collapse lets elaborated from Core->ANF
--- translation into the same level as its containing source-side binder
+--
+-- Lowering
+--
 
-slot0 :: Word32 -> Variable
-slot0 level = LocalVar $ LocalNamelessVar level $ BinderSlot 0
+-- | The first slot in the most recent binder
+v0 :: Variable
+v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
 
 returnAllocated :: Alloc -> Anf
 returnAllocated alloc = AnfLet (Arity 1)
                                (RhsAlloc alloc)
-                               (AnfReturn $ V.singleton $ slot0 0)
+                               (AnfReturn $ V.singleton v0)
 
 arity :: V.Vector BinderInfo -> Arity
 arity binderInfos = Arity $ fromIntegral $ V.length binderInfos
@@ -72,6 +81,7 @@ arity binderInfos = Arity $ fromIntegral $ V.length binderInfos
 newtype AnfRef
   = AnfRef { _refId :: Word64 }
   deriving (Eq, Show, Ord)
+
 makeLenses ''AnfRef
 
 instance Enum AnfRef where
@@ -95,6 +105,7 @@ data BindingLevel
                  -- side, which will not have corresponding 'AnfLet's.
                  }
   deriving (Eq, Show)
+
 makeLenses ''BindingLevel
 
 -- The bottom 'BindingLevel' of this stack does not necessarily correspond to a
@@ -105,6 +116,7 @@ type BindingStack = [BindingLevel]
 newtype LoweringState
   = LoweringState { _nextRef :: AnfRef }
   deriving (Eq, Show)
+
 makeLenses ''LoweringState
 
 type LoweringM = ReaderT BindingStack (State LoweringState)
@@ -174,7 +186,7 @@ trackBinding (AnfBinding refs) stack = stack & _head %~ updateLevel
     updateLevel = (levelRefs                              %~ addRefs)
                 . (levelRefs.mapped.localNameless.lnDepth +~ 1)
                 . (levelIntros                            +~ 1)
-    addRefs m = foldr' (uncurry Map.insert) m $ zip refs (repeat $ slot0 0)
+    addRefs m = foldr' (uncurry Map.insert) m $ zip refs (repeat v0)
 trackBinding TermBinding stack = emptyLevel:stack
 
 -- | Stops tracking the provided 'AnfRef's in the top 'BindingLevel' of
