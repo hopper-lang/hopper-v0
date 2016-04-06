@@ -1,7 +1,14 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Hopper.Internal.LoweredCore.ANF where
+module Hopper.Internal.LoweredCore.ANF
+  ( Arity(..)
+  , Anf(..)
+  , App(..)
+  , Alloc(..)
+  , Rhs(..)
+  , toAnf
+  ) where
 
 import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
@@ -153,7 +160,7 @@ translateTermVar var@(LocalVar lnv) stack =
     -- Calculate the displacement sum (from the number of let-introductions) and
     -- grab the last (possible) indirection in a single pass:
     (displacement, mIndirections) = (getSum *** join . getLast) . mconcat $
-      (Sum . _levelIntros &&& Last . Just . _levelIndirections) <$> levels
+      (Sum . _levelIntros &&& Last . Just . view levelIndirections) <$> levels
 
     adjust :: Word32 -> Variable -> Variable
     adjust offset = localNameless.lnDepth +~ offset
