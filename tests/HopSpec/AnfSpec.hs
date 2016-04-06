@@ -71,6 +71,19 @@ spec =
                             (AnfReturn $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
+        it "converts thunk invocations" $
+          let -- force (delay 10)
+              term = EnterThunk (Delay $ ELit ten)
+              -- letA (delay (letA 10 in (0)))
+              -- in   force (0)
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $
+                              AllocThunk (AnfLet (Arity 1)
+                                                 (RhsAlloc $ AllocLit ten)
+                                                 (AnfReturn $ V.singleton v0)))
+                            (AnfTailCall $ AppThunk v0)
+          in toAnf term `shouldBe` anf
+
         it "converts no-arg tail calls" $
           let term = App (V v0) $ V.fromList []
               anf  = AnfTailCall $ AppFun v0 $ V.fromList []
@@ -167,6 +180,22 @@ spec =
                                AnfTailCall $ AppFun v0 $ V.singleton v0)
                             (AnfTailCall $
                               AppFun v2 $ V.singleton v0)
+          in toAnf term `shouldBe` anf
+
+        it "converts thunk invocations" $
+          let -- (force (delay id)) 10
+              term = App (EnterThunk (Delay $ V id_))
+                         (V.singleton $ ELit ten)
+              -- letA (delay id) in letA force (0) in letA 10 in letA (1) (0)
+              anf  = AnfLet (Arity 1)
+                            (RhsAlloc $
+                              AllocThunk $ AnfReturn $ V.singleton id_)
+                            (AnfLet (Arity 1)
+                                    (RhsApp $ AppThunk v0)
+                                    (AnfLet (Arity 1)
+                                            (RhsAlloc $ AllocLit ten)
+                                            (AnfTailCall $
+                                              AppFun v1 $ V.singleton v0)))
           in toAnf term `shouldBe` anf
 
         it "converts no-arg non-tail calls" $

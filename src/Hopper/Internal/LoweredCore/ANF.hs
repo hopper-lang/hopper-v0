@@ -39,7 +39,7 @@ data App
   = AppFun !Variable
            !(V.Vector Variable)
   | AppPrim !PrimOpId !(V.Vector Variable)
-  -- TODO: AppThunk !Variable
+  | AppThunk !Variable
   deriving (Eq,Ord,Read,Show)
 
 data Alloc
@@ -233,7 +233,10 @@ anfTail term = case term of
       vars <- reader $ resolveRefs refs
       return $ AnfReturn $ V.fromList vars
 
-  -- TODO: EnterThunk
+  EnterThunk t ->
+    convertNested [t] $ \refs -> do
+      [var] <- reader $ resolveRefs refs
+      return $ AnfTailCall $ AppThunk var
 
   Delay t -> do
     body <- local (emptyLevel:) $ anfTail t
@@ -327,7 +330,13 @@ anfCont term binding k = case term of
         (AnfBinding _) ->
           error "unexpected non-tail Return outside of a Let RHS"
 
-  -- TODO: EnterThunk
+  EnterThunk t ->
+    convertNested [t] $ \refs -> do
+      [var] <- reader $ resolveRefs refs
+      body <- k $ trackBinding binding . dropRefs refs
+      return $ AnfLet (Arity 1) -- TODO: support tupled return
+                      (RhsApp $ AppThunk var)
+                      body
 
   Delay t -> do
     thunkBody <- local (emptyLevel:) $ anfTail t
