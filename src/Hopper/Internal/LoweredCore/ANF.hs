@@ -16,7 +16,7 @@
 module Hopper.Internal.LoweredCore.ANF
   (
   -- * Data Types
-  Arity(..)
+    Arity(..)
   , Anf(..)
   , App(..)
   , Alloc(..)
