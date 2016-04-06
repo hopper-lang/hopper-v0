@@ -391,6 +391,7 @@ convertWithCont term binding k = case term of
         TermBinding ->
           k $ trackVariables binding vars . cleanupRefs
         (AnfBinding _) ->
+          -- TODO: expose this using proper error machinery
           error "unexpected non-tail Return outside of a Let RHS"
 
   EnterThunk t ->
