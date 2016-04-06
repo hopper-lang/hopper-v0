@@ -237,6 +237,9 @@ convertToVars terms synthesize = do
               synthesize vars cleanup)
           (zip terms refs)
 
+convertGuarded :: Term -> LoweringM Anf
+convertGuarded t = local (emptyLevel:) $ convertTail t
+
 convertTail :: Term -> LoweringM Anf
 convertTail term = case term of
   V v -> do
@@ -259,7 +262,7 @@ convertTail term = case term of
       return $ AnfTailCall $ AppThunk var
 
   Delay t -> do
-    body <- local (emptyLevel:) $ convertTail t
+    body <- convertGuarded t
     return $ returnAllocated $ AllocThunk body
 
   App ft ats -> do
@@ -273,7 +276,7 @@ convertTail term = case term of
       return $ AnfTailCall $ AppPrim primId $ V.fromList vars
 
   Lam binderInfos t -> do
-    body <- local (emptyLevel:) $ convertTail t
+    body <- convertGuarded t
     return $ returnAllocated $ AllocLam (arity binderInfos) body
 
   Let binderInfos rhs body ->
@@ -346,7 +349,7 @@ convertWithCont term binding k = case term of
                       body
 
   Delay t -> do
-    thunkBody <- local (emptyLevel:) $ convertTail t
+    thunkBody <- convertGuarded t
     letBody <- k $ trackBinding binding
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocThunk thunkBody)
@@ -369,7 +372,7 @@ convertWithCont term binding k = case term of
                       body
 
   Lam binderInfos t -> do
-    lamBody <- local (emptyLevel:) $ convertTail t
+    lamBody <- convertGuarded t
     letBody <- k $ trackBinding binding
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binderInfos)
