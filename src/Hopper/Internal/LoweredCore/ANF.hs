@@ -248,8 +248,8 @@ resolveRefs refs stack = (varMap Map.!) <$> refs
 -- before applying the transform.
 type StackTransform = BindingStack -> BindingStack
 
--- | A convenience function for lowering a sequence of "sibling" 'Term's, and
--- providing 'Variable's for the lowering of the rest of the program.
+-- | Lowering a sequence of "sibling" 'Term's, and providing 'Variable's for the
+-- lowering of the rest of the program.
 convertToVars :: [Term]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
               -- function or thunk application, or returning multiple values.
