@@ -207,11 +207,9 @@ resolveRefs refs stack = (varMap Map.!) <$> refs
     varMap = fromMaybe (error "vars map must exist") $
       firstOf (_head.levelRefs) stack
 
--- TODO: Possibly rename.
---
 -- | This is what we currently use to represent a deferred transformation to
 -- 'BindingStack' (from the use of 'trackVariables' or 'trackBinding') for the
--- 'anfCont' callee to invoke. We typically call it immediately in the
+-- 'convertWithCont' callee to invoke. We typically call it immediately in the
 -- continuation, except in the 'Let' case, where we need to roll back the stack
 -- before applying the transform.
 type StackTransform = BindingStack -> BindingStack
@@ -231,7 +229,7 @@ convertNested terms synthesize = do
   id &
     foldr (\(t, ref) nextK ->
             \track ->
-              local track $ anfCont t (AnfBinding $ pure ref) nextK)
+              local track $ convertWithCont t (AnfBinding $ pure ref) nextK)
           (\track ->
             local track $ do
               vars <- reader $ resolveRefs refs
@@ -239,8 +237,8 @@ convertNested terms synthesize = do
               synthesize vars cleanup)
           (zip terms refs)
 
-anfTail :: Term -> LoweringM Anf
-anfTail term = case term of
+convertTail :: Term -> LoweringM Anf
+convertTail term = case term of
   V v -> do
     translatedVar <- reader $ translateTermVar v
     return $ AnfReturn $ V.singleton translatedVar
@@ -261,7 +259,7 @@ anfTail term = case term of
       return $ AnfTailCall $ AppThunk var
 
   Delay t -> do
-    body <- local (emptyLevel:) $ anfTail t
+    body <- local (emptyLevel:) $ convertTail t
     return $ returnAllocated $ AllocThunk body
 
   App ft ats -> do
@@ -275,13 +273,13 @@ anfTail term = case term of
       return $ AnfTailCall $ AppPrim primId $ V.fromList vars
 
   Lam binderInfos t -> do
-    body <- local (emptyLevel:) $ anfTail t
+    body <- local (emptyLevel:) $ convertTail t
     return $ returnAllocated $ AllocLam (arity binderInfos) body
 
   Let binderInfos rhs body ->
     -- TODO: use binderInfos
-    anfCont rhs TermBinding $ \trackRhs ->
-      local trackRhs $ anfTail body
+    convertWithCont rhs TermBinding $ \trackRhs ->
+      local trackRhs $ convertTail body
 
 -- | The total number of binders in the levels of the first stack not shared by
 -- the second stack.
@@ -307,17 +305,17 @@ withBinderIncreasesPer base extended =
   where
     numBinders = extended `bindersAddedSince` base
 
-anfCont :: Term
-        -- ^ The term to be lowered
-        -> Binding
-        -- ^ The binding to be used, with which future computation will refer to
-        -- the result
-        -> (StackTransform -> LoweringM Anf)
-        -- ^ The continued lowering of the rest of the program, awaiting a
-        -- transformation to update the 'BindingStack'.
-        -> LoweringM Anf
-        -- ^ The action which produces lowered ANF for this term
-anfCont term binding k = case term of
+convertWithCont :: Term
+                -- ^ The term to be lowered
+                -> Binding
+                -- ^ The binding to be used, with which future computation will
+                -- refer to the result
+                -> (StackTransform -> LoweringM Anf)
+                -- ^ The continued lowering of the rest of the program, awaiting
+                -- a transformation to update the 'BindingStack'.
+                -> LoweringM Anf
+                -- ^ The action which produces lowered ANF for this term
+convertWithCont term binding k = case term of
   V v -> do
     translatedVar <- reader $ translateTermVar v
     k $ trackVariables binding [translatedVar]
@@ -348,7 +346,7 @@ anfCont term binding k = case term of
                       body
 
   Delay t -> do
-    thunkBody <- local (emptyLevel:) $ anfTail t
+    thunkBody <- local (emptyLevel:) $ convertTail t
     letBody <- k $ trackBinding binding
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocThunk thunkBody)
@@ -371,7 +369,7 @@ anfCont term binding k = case term of
                       body
 
   Lam binderInfos t -> do
-    lamBody <- local (emptyLevel:) $ anfTail t
+    lamBody <- local (emptyLevel:) $ convertTail t
     letBody <- k $ trackBinding binding
     return $ AnfLet (Arity 1)
                     (RhsAlloc $ AllocLam (arity binderInfos)
@@ -380,12 +378,12 @@ anfCont term binding k = case term of
 
   Let binderInfos rhs body -> do
     stackBefore <- ask
-    anfCont rhs TermBinding $ \trackRhs ->
-      local trackRhs $ anfCont body binding $ \trackBody ->
+    convertWithCont rhs TermBinding $ \trackRhs ->
+      local trackRhs $ convertWithCont body binding $ \trackBody ->
         local (stackBefore `withBinderIncreasesPer`) $ k trackBody
 
 toAnf :: Term -> Anf
-toAnf term = evalState (runReaderT (anfTail term) emptyStack) initialState
+toAnf term = evalState (runReaderT (convertTail term) emptyStack) initialState
   where
     -- We provide a bottom level that doesn't correspond to a toplevel term
     -- 'Let' or 'Lam' so that e.g. a toplevel 'Let' with a non-trivial RHS has
@@ -476,10 +474,10 @@ toAnf term = evalState (runReaderT (anfTail term) emptyStack) initialState
 --
 -- 4/3/16
 -- Reader could be over '(BindingStack, StackTransform)' instead of just
---     'BindingStack', and toplevel anfCont could be invoked from the outside
+--     'BindingStack', and toplevel convertWithCont could be invoked from the outside
 --     with 'id' for the transform
 --   Though this might work against moving this to Cont -- where
---       'StackTransform' is the 'a' in the 'a -> r' K that 'anfCont' (a
+--       'StackTransform' is the 'a' in the 'a -> r' K that 'convertWithCont' (a
 --       suspended computation) takes
 -- Consider always passing e.g. 'f1 s1', but then stash a pre-transformed (i.e.
 --     with the use of 'f1') stack in a continuation (maybe using 'callCC') and
@@ -488,6 +486,6 @@ toAnf term = evalState (runReaderT (anfTail term) emptyStack) initialState
 -- Could be interesting to play with delimited continuation operators for
 --     nontail let rollbacks.
 
--- TODO: the types seem to line-up to convert anfCont to ContT. can we get anfTail
---       to work in ContT as well, or would calls of anfCont from anfTail all
+-- TODO: the types seem to line-up to convert convertWithCont to ContT. can we get convertTail
+--       to work in ContT as well, or would calls of convertWithCont from convertTail all
 --       have to use 'evalContT'?
