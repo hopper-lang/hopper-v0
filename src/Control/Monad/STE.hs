@@ -10,7 +10,7 @@ module Control.Monad.STE
   where
 
 --import qualified  GHC.ST as GST
-import GHC.Prim (State#,Any)
+import GHC.Prim (State#)
 import Control.Exception as Except
 import Control.Monad (ap)
 import Control.Monad.Primitive
@@ -107,8 +107,8 @@ privateCatch (STE steAction)  = ST $ unsafeCoerceIOAction2StateS $
    where
        handler :: STException -> IO (Either e a )
        handler = (\(STException (x) )->
-                    case unsafeCoerce x  of
-                        y -> return $ Left  y
+                    case unbox $ unsafeCoerce x  of
+                        !y -> return $ Left  y
 
                       )
 
@@ -156,14 +156,24 @@ unsafeCoerceIOAction2StateS = unsafeCoerce id
 {-# INLINE throwSTE #-} -- again audit
 throwSTE :: forall (e:: * ) s (a ::  * ) .  e -> STE e s a
 throwSTE err = STE $ unsafeCoerceIOAction2StateS $ \s# ->
-       case  throwIO (STException $ unsafeCoerce $err) of
+       case  throwIO (STException $ unsafeCoerce $! box err) of
           (IO act) -> case act s# of
                         (# s, res #) -> (# s , res #)
 
+data Box a =
+  Box {-# NOUNPACK #-} a
+  -- question, should this have a dummy | Other
+  --
+box :: a -> Box a
+box = Box
+{-# INLINE box #-}
 
+unbox :: Box a -> a
+unbox = \(Box x) -> x
+{-# INLINE unbox  #-}
 
 data STException where
-   STException :: Any -> STException
+   STException :: {-# NOUNPACK #-} (Box ()) -> STException
   deriving Typeable
 --deriving instance Typeable e => Typeable (STException e)
 
