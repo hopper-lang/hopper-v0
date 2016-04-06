@@ -446,7 +446,11 @@ convertWithCont term binding k = case term of
   --       to update bindings before invoking @k@.
   --       - Move to using @ContT@ (which would have the nice side effect of
   --       un-CPS'ing our code) and roll back via @callCC@ or delimited
-  --       continuation machinery (@shift@ and @reset@).
+  --       continuation machinery (@shift@ and @reset@). It's natural to convert
+  --       'convertWithCont' to @ContT@ but not as obvious how 'convertTail'
+  --       should change. Should the functions continue to operate in the same
+  --       @Monad@, with 'convertTail' taking a dummy continuation, or should
+  --       all calls to 'convertWithCont' from 'convertTail' call @runCont@?
   --
   Let binderInfos rhs body -> do
     stackBefore <- ask
