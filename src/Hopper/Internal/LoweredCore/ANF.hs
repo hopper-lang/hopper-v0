@@ -296,9 +296,9 @@ convertTail term = case term of
     translatedVar <- reader $ translateTermVar v
     return $ AnfReturn $ V.singleton translatedVar
 
-  -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
-    error "unexpected binder shift during ANF conversion"
+    -- TODO: expose this using proper error machinery
+    error "unexpected binder shift in convertTail during ANF conversion"
 
   ELit lit ->
     return $ returnAllocated $ AllocLit lit
@@ -329,8 +329,8 @@ convertTail term = case term of
     body <- convertGuarded t
     return $ returnAllocated $ AllocLam (arity binderInfos) body
 
-  Let binderInfos rhs body ->
-    -- TODO: use binderInfos
+  Let _binderInfos rhs body ->
+    -- TODO: use binderInfos when we moved to type-directed?
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertTail body
 
@@ -375,9 +375,9 @@ convertWithCont term binding k = case term of
     translatedVar <- reader $ translateTermVar v
     k $ trackVariables binding [translatedVar]
 
-  -- TODO: impl a pass to push shifts down to the leaves and off of the AST
   BinderLevelShiftUP _ _ ->
-    error "unexpected binder shift during ANF conversion"
+    -- TODO: expose this using proper error machinery
+    error "unexpected binder shift in convertWithCont during ANF conversion"
 
   ELit l -> do
     body <- k $ trackBinding binding
@@ -453,7 +453,8 @@ convertWithCont term binding k = case term of
   --       @Monad@, with 'convertTail' taking a dummy continuation, or should
   --       all calls to 'convertWithCont' from 'convertTail' call @runCont@?
   --
-  Let binderInfos rhs body -> do
+  Let _binderInfos rhs body -> do
+    -- TODO: use binderInfos when we moved to type-directed?
     stackBefore <- ask
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertWithCont body binding $ \trackBody ->
