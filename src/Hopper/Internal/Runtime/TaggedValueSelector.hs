@@ -6,7 +6,7 @@
 module Hopper.Internal.Runtime.TaggedValueSelector where
 
 
-import  Hopper.Internal.Core.Literal (Literal,ConstrId)
+import Hopper.Internal.Core.Literal (Literal,ConstrId)
 import qualified Data.Vector as V
 
 import Control.Lens.Prism(Prism')
@@ -24,7 +24,7 @@ data BlackHoleF a = BlackHoleF
 data IndirectionF a = IndirectionF (RefOf a)
 data NeutralF a =  NeutralF (NeutralOf a (RefOf a))
 --type family EnvOf (closureLike :: *) :: *
-type family NeutralOf (v :: *  ):: *  -> *
+type family NeutralOf (v :: *):: *  -> *
 type family RefOf (a :: *) :: *
 
 {-
@@ -33,7 +33,7 @@ not sure. At some point thunks and no arg closures have the same runtime rep,
 just different sharing/update machinery. should that leak into the code pointer model???
 -}
 type family ClosureCodeOf (a :: *) :: *
-type family ThunkCodeOf ( a :: * ) :: *
+type family ThunkCodeOf (a :: *) :: *
 
 
 {-# INLINE extract #-}
