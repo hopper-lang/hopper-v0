@@ -238,7 +238,7 @@ resolveRefs :: (Foldable t, Functor t)
             -> t Variable
 resolveRefs refs stack = (varMap Map.!) <$> refs
   where
-    varMap = fromMaybe (error "vars map must exist") $
+    varMap = fromMaybe (error "unexpected binding stack underrun") $
       firstOf (_head.levelRefs) stack
 
 -- | This is what we currently use to represent a deferred transformation to
