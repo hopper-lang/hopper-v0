@@ -30,7 +30,7 @@ import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 
-import Data.Foldable (foldr')
+import Data.Foldable (foldl')
 import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (Sum(..), Last(..))
 import Data.Word
@@ -207,7 +207,7 @@ trackVariables :: Binding
 trackVariables (AnfBinding refs) vars stack =
   stack & _head.levelRefs %~ addRefs
   where
-    addRefs m = foldr' (uncurry Map.insert) m $ zip refs vars
+    addRefs m = foldl' (flip $ uncurry Map.insert) m $ zip refs vars
 trackVariables TermBinding vars stack =
   emptyIndirectionLevel vars : stack
 
@@ -220,7 +220,7 @@ trackBinding (AnfBinding refs) stack = stack & _head %~ updateLevel
     updateLevel = (levelRefs                              %~ addRefs)
                 . (levelRefs.mapped.localNameless.lnDepth +~ 1)
                 . (levelIntros                            +~ 1)
-    addRefs m = foldr' (uncurry Map.insert) m $ zip refs (repeat v0)
+    addRefs m = foldl' (\m' ref -> Map.insert ref v0 m') m refs
 trackBinding TermBinding stack = emptyLevel:stack
 
 -- | Stops tracking the provided 'AnfRef's in the top 'BindingLevel' of
@@ -228,7 +228,7 @@ trackBinding TermBinding stack = emptyLevel:stack
 dropRefs :: Foldable t => t AnfRef -> BindingStack -> BindingStack
 dropRefs refs stack = stack & _head.levelRefs %~ deleteRefs
   where
-    deleteRefs m = foldr' Map.delete m refs
+    deleteRefs m = foldl' (flip Map.delete) m refs
 
 -- | Resolves 'Variables' in 'BindingLevel' for the provided 'AnfRef's. Assumes
 -- the refs are all present in the 'Map' of the 'BindingLevel'.
