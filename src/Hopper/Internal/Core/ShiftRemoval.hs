@@ -3,7 +3,7 @@ module Hopper.Internal.Core.ShiftRemoval
   ) where
 
 import Hopper.Internal.Core.Term (Term(..))
-import Hopper.Utils.LocallyNameless
+import Hopper.Utils.LocallyNameless (localNameless, lnDepth)
 
 import Control.Lens ((+~), (^?))
 import Data.Bits (bit, popCount, setBit, shift, zeroBits, (.&.))
