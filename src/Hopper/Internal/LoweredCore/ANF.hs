@@ -455,10 +455,11 @@ convertWithCont term binding k = case term of
   --
   Let _binderInfos rhs body -> do
     -- TODO: use binderInfos when we moved to type-directed?
-    stackBefore <- ask
+    beforeStack <- ask
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertWithCont body binding $ \trackBody ->
-        local (stackBefore `withBinderIncreasesPer`) $ k trackBody
+        let rollback letStack = beforeStack `withBinderIncreasesPer` letStack
+        in local rollback $ k trackBody
 
 -- | Converts a 'Term' to Administrative Normal Form.
 toAnf :: Term -> Anf
