@@ -9,7 +9,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
@@ -30,12 +29,9 @@ import Hopper.Internal.Runtime.Heap (
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Data.HopperException
-import Control.Applicative
 import Control.Lens.Prism
 import Control.Monad.Reader
 import Control.Monad.STE
-import Control.Monad.State.Strict
-import Control.Monad.Trans.Maybe
 import Data.Data
 import qualified Data.Map as Map
 import Data.Word(Word32)
@@ -183,7 +179,7 @@ envLookup
   -> Variable
   -> forall c. EvalCC c s Ref
 envLookup _registry env control (LocalVar lv) = localEnvLookup env control lv
-envLookup registry _env control (GlobalVarSym global) =
+envLookup registry _env _control (GlobalVarSym global) =
   lookupStaticValue registry global
 
 localEnvLookup
@@ -195,13 +191,12 @@ localEnvLookup env controlStack var@(LocalNamelessVar depth (BinderSlot slot))
   = go env depth
   where
     go :: EnvStackCC -> Word32 -> EvalCC c s Ref
-    go EnvEmptyCC n = throwEvalError (\n ->
-      BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n))
-    go (EnvConsCC theRefVect _) 0 = maybe
-      (throwEvalError (\n ->
-        BadVariableCC (LocalVar var) controlStack (InterpreterStepCC n)))
-      return
-      (theRefVect V.!? fromIntegral slot)
+    go EnvEmptyCC _n = throwEvalError $ \step ->
+      BadVariableCC (LocalVar var) controlStack (InterpreterStepCC step)
+    go (EnvConsCC theRefVect _) 0
+      | Just val <- theRefVect V.!? fromIntegral slot = return val
+      | otherwise = throwEvalError $ \step ->
+          BadVariableCC (LocalVar var) controlStack (InterpreterStepCC step)
     go (EnvConsCC _ rest) w = go rest (w - 1)
 
 
@@ -306,6 +301,7 @@ enterClosureCC _symbolReg _env stack (GlobalVarSym gvsym, _) = do
 enterClosureCC symbolReg env stack (LocalVar localvar, args) = do
   ref <- localEnvLookup env stack localvar
   (lookups, val) <- transitiveHeapLookup ref
+  argRefs <- mapM (envLookup symbolReg env stack) args
   case val of
     ClosureCC closureenv closureid -> do
       ClosureCodeRecordCC _esize _envBindersInfo _asize _argsBindersInfo bod <-
@@ -316,7 +312,11 @@ enterClosureCC symbolReg env stack (LocalVar localvar, args) = do
 
       evalCCAnf
         symbolReg
-        (EnvConsCC closureenv env)
+        -- This is the implicit closure abi. We don't yet have an explicit pack
+        -- / unpack. We need to document / codify this.
+        --
+        -- TODO(joel/carter): make this explicit.
+        (EnvConsCC (closureenv V.++ argRefs) env)
         (UpdateHeapRefCC ref stack)
         bod
     badVal ->
@@ -513,7 +513,6 @@ enterTotalMathPrimopSimple
   -> (GmpMathOpId, V.Vector Ref)
   -> forall c. EvalCC c s (V.Vector Ref)
 enterTotalMathPrimopSimple controlstack (opId, refs) = do
-  heapHandle <- _extractHeapCAH <$> getHSCM
   args <- mapM heapLookup refs
   checkedOp <- return $ do
     areLiterals <- mapM argAsLiteral (V.toList args)
@@ -539,18 +538,9 @@ enterControlStackCC
   -> V.Vector Ref
   -> forall c. EvalCC c s (V.Vector Ref)
 enterControlStackCC _ ControlStackEmptyCC refs = return refs
-enterControlStackCC registry stack@(UpdateHeapRefCC ref newStack) refs = do
-  val <- heapLookup ref
+enterControlStackCC registry (UpdateHeapRefCC ref newStack) refs = do
   unsafeHeapUpdate ref (IndirectionCC refs)
   enterControlStackCC registry newStack refs
-  -- if val == BlackHoleCC then do
-  --   else do
-  --     errMsg <- return $  unwords
-  --           [ "UpdateHeapRefCC expected a black hole instead of"
-  --           , "`" ++ show val ++ "`"
-  --           ]
-  --     throwEvalError
-  --       (\step ->  PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
 enterControlStackCC registry (LetBinderCC _binders () newEnv body newStack) refs = do
   envStack <- return (EnvConsCC refs newEnv)
   evalCCAnf registry envStack newStack body
@@ -563,7 +553,7 @@ type EvalCCT s
   = HeapStepCounterM (ValueRepCC Ref)
                      (STE SomeHopperException s)
 
-type Inflate a = forall c s. ReaderT SymbolTable (EvalCCT s) a
+type Inflate a = forall s. ReaderT SymbolTable (EvalCCT s) a
 
 -- | Look up a global symbol.
 --
