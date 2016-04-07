@@ -56,14 +56,6 @@ type EvalCC c s a
                      (STE SomeHopperException s)
                      a
 
--- once i have explicit exports in this module, this will be dead code
-suppressUnusedWarnings :: Int
-suppressUnusedWarnings = undefined unsafeHeapUpdate
-  heapAllocate
-  heapLookup
-  checkedCounterIncrement
-  checkedCounterCost
-
 {- FIXME: we currently have a quadratic blowup for high-arity curried functions
    with this naive (implicit) closure conversion setup. we can fix this by
    making packs and unpacks explicit and cons-style sharing when we desugar
