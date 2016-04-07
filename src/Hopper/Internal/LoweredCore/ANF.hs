@@ -152,6 +152,13 @@ newtype LoweringState
 makeLenses ''LoweringState
 
 -- | Monad transformer stack for lowering from 'Term' to 'Anf'.
+--
+-- Instead of using Reader to thread 'BindingStack' state around, we could
+-- pass around explicit stacks through @convert*@ and continuations; but by
+-- using explicit /transformations/ (with `local`) we eliminate bugs pertaining
+-- to the use of an incorrect stack variable. Additionally this current design
+-- is more amenable to a move to the use of @Cont@, if we decide to go that
+-- route.
 type LoweringM = ReaderT BindingStack (State LoweringState)
 
 -- | Dispenses an 'AnfRef' to track the usage of a 'Term' or newly-introduced
