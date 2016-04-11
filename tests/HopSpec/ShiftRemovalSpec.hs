@@ -9,6 +9,7 @@ import Hopper.Internal.Core.Term
 import Hopper.Internal.Core.ShiftRemoval (removeBinderShifts)
 import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Type.Relevance
+import Hopper.Internal.Type.BinderInfo
 
 import Test.Hspec
 import Test.Hspec.Expectations

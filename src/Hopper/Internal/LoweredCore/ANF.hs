@@ -29,6 +29,7 @@ module Hopper.Internal.LoweredCore.ANF
 import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
+import Hopper.Internal.Type.BinderInfo
 
 import Data.Foldable (foldl')
 import Data.Maybe (fromMaybe, isJust)

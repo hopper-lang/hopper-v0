@@ -8,6 +8,7 @@ import Hopper.Internal.LoweredCore.ANF
 import Hopper.Internal.Core.Term
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Type.Relevance
+import Hopper.Internal.Type.BinderInfo
 import Hopper.Utils.LocallyNameless
 
 import Test.Hspec

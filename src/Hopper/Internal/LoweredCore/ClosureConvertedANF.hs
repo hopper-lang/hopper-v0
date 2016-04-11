@@ -23,7 +23,6 @@ module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   ,EnvSize(..) --- not sure if this is needed
   ,CodeArity(..) -- not sure if this is needed
    -- ,TypeCC(..) --- this shouldn't need to exist
-  ,BinderInfoCC(..) --- not sure if there need be a lowered form of binders except to lower types?
   ,TransitiveLookup(..) -- this is a class reexport
   ,CodeRecord(..) -- this is an adhoc class that shouldn't be living here :)
   ,ValueRepCC(..)
@@ -41,9 +40,9 @@ import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
 import Hopper.Internal.Core.Literal
 import GHC.Generics
 import qualified  Data.Vector as V
-import Hopper.Internal.Type.Relevance(Relevance)
+import Hopper.Internal.Type.BinderInfo (BinderInfo)
 import Hopper.Internal.Runtime.Heap
-import Hopper.Internal.Runtime.HeapRef(Ref)
+import Hopper.Internal.Runtime.HeapRef (Ref)
 import Hopper.Utils.LocallyNameless
 {-
 DESIGN
@@ -79,38 +78,8 @@ newtype CodeArity =
     CodeArity { getCodeArity :: Word64 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-{-
-subtle issue with typed closure conversion:
-all the fields of the
-
-
--}
-
 -- whether the binder position is a variable, wild card,
 -- live/dead, type/runtime rep info?
-
---- kill these stubs later
---type Relevance = ()
-type TypeCC = () -- TODO FIXME, wire in the real type info? This will be Term???!
-data BinderInfoCC =
-      BinderInfoDataCC
-        { relevanceBICC :: Relevance -- if zero, during evaluation we need not pass around
-                                     --  BUT during NORMALIZATION, we probably do
-                                     --  so the normalizer WILL thread around irrelevant values
-                                     -- to properly support dependent type checking
-                                     -- as is proper, because a runtime irrelevant value
-                                     -- SHOULD be relevant during type checking, or
-                                     -- it has no reason to exist
-        , typeBICC :: TypeCC  -- at least for now, closure converted stuff may need a
-          -- slightly different type system fragment than the Core layer Terms?
-          -- NB: once we have existentials, should just be an "equivalent" subset
-          -- of the full type theory?
-        , sourceInfo :: Maybe String --- this isn't quite right ...
-        -- also should add
-          } --- this needs to be fleshed out
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
-
-
 
 instance TransitiveLookup (ValueRepCC Ref) where
   transitiveHeapLookup initref = go 1 initref
@@ -142,7 +111,7 @@ data ValueRepCC ref =
 
 class CodeRecord a where
   envSize :: a -> Word64
-  envBindersInfo :: a -> V.Vector BinderInfoCC
+  envBindersInfo :: a -> V.Vector BinderInfo
 
 data ThunkCodeRecordCC =
   ThunkCodeRecordCC
@@ -150,7 +119,7 @@ data ThunkCodeRecordCC =
     {-# UNPACK #-} !EnvSize
     -- | source names, if applicable, for the captured free vars in the orig source
     -- TODO(carter): replace the sourcenames list field with V.Vector CCAnfBinderInfo
-    !(V.Vector BinderInfoCC)
+    !(V.Vector BinderInfo)
     -- | the code
     !AnfCC
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
@@ -169,11 +138,11 @@ Additionally
 -}
 data ClosureCodeRecordCC =
   ClosureCodeRecordCC  {-# UNPACK #-}  !EnvSize -- is this redundant
-                      !(V.Vector BinderInfoCC)
+                      !(V.Vector BinderInfo)
                       -- source names, if applicable, for the captured free vars in the orig source
                                     --- TODO / FIXME replace with CCAnfBinderInfo
                       {-# UNPACK #-}  !CodeArity  -- is this redundant?
-                      !(V.Vector BinderInfoCC) -- explicit
+                      !(V.Vector BinderInfo) -- explicit
                       -- ![CCAnfBinderInfo] -- info about the function args
                       -- how many explicit arguments the function takes
                       --- later we'll have [arg rep]
@@ -190,7 +159,7 @@ data AnfCC  =
     ReturnCC !(V.Vector Variable)
     | LetNFCC
           {- TODO: src loc info -}
-          !(V.Vector BinderInfoCC)  -- TODO FIXME, replace with CCAnfBinderInfo
+          !(V.Vector BinderInfo)  -- TODO FIXME, replace with CCAnfBinderInfo
             -- the length == size of RHS multiple return value tuple
                  -- the True positions are the ones whose heap refs are copied into the
                  -- local environment stack

@@ -17,6 +17,7 @@ import Hopper.Internal.LoweredCore.ClosureConvertedANF
 import Hopper.Internal.LoweredCore.EvalClosureConvertedANF as Eval
 import Hopper.Internal.Runtime.Heap
 import Hopper.Internal.Runtime.HeapRef
+import Hopper.Internal.Type.BinderInfo
 import Hopper.Internal.Type.Relevance
 import Hopper.Utils.LocallyNameless
 
@@ -98,7 +99,7 @@ spec = describe "Evaluation Spec" $ do
           (EnvSize 0)
           V.empty
           (CodeArity 1)
-          (V.singleton (BinderInfoDataCC Omega () Nothing))
+          (V.singleton (BinderInfoData Omega () Nothing))
           -- 1 since we need to skip over the closure env
           (ReturnCC (V.singleton (deBruijn 1)))
         startHeap = Heap (Ref 2) Map.empty $ Map.fromList

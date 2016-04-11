@@ -28,6 +28,7 @@ import Hopper.Internal.Runtime.Heap (
   , _extractHeapCAH
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
+import Hopper.Internal.Type.BinderInfo (BinderInfo)
 import Data.HopperException
 import Control.Lens.Prism
 import Control.Monad.Reader
@@ -84,7 +85,7 @@ envStackFromList (x:xs) = EnvConsCC x (envStackFromList xs)
 envStackFromList [] = EnvEmptyCC
 
 data ControlStackCC  =
-      LetBinderCC !(V.Vector BinderInfoCC)
+      LetBinderCC !(V.Vector BinderInfo)
                 !()
                 !EnvStackCC -- the current environment, only needed on nontail calls, not on simple allocations
                             -- this can be optimized / analyzed away later, for now lets conflate the two

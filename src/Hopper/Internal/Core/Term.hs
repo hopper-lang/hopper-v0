@@ -1,49 +1,15 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
-
 
 module  Hopper.Internal.Core.Term where
 
-
-
 import Hopper.Internal.Core.Literal
--- import Hopper.Internal.Core.Type
-import Data.Text  as T (Text)
-import Data.Data
---import Bound
---import Data.Bifunctor
-import Data.Word (Word32)
---import Prelude.Extras
-import GHC.Generics (Generic)
-import Hopper.Internal.Type.Relevance(Relevance)
+import Hopper.Internal.Type.BinderInfo (BinderInfo)
 import Hopper.Utils.LocallyNameless
---import Data.Traversable --  (fmapDefault,foldMapDefault)
+
+import Data.Data
+import Data.Word (Word32)
+
 import qualified Data.Vector as V
-
-
-type Type = () -- TODO FIXME, wire in the real type info?, which will be "Term" :)
-
-data BinderInfo =
-      BinderInfoData
-        {relevanceBI :: Relevance -- if zero, during evaluation we need not pass around
-                                     --  BUT during NORMALIZATION, we probably do
-                                     --  so the normalizer WILL thread around irrelevant values
-                                     -- to properly support dependent type checking
-                                     -- as is proper, because a runtime irrelevant value
-                                     -- SHOULD be relevant during type checking, or
-                                     -- it has no reason to exist
-        , typeBICC :: Type -- at least for now, closure converted stuff may need a
-          -- slightly different type system fragment than the Core layer Terms?
-          -- NB: once we have existentials, should just be an "equivalent" subset
-          -- of the full type theory?
-        , sourceInfo :: Maybe Text --- this isn't quite right ...
-        -- also should add
-          } --- this needs to be fleshed out
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data Term =
   V  Variable
