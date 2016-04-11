@@ -50,9 +50,6 @@ import qualified Data.Map.Strict as Map
 -- TODO: possibly allow more "atomic" expression types (besides variables) once
 --       we have some unboxed values
 
--- Eventually we might want to collapse lets elaborated from Core->ANF
--- translation into the same level as its containing source-side binder
-
 -- TODO: switch back away from this
 newtype Arity = Arity Word32 deriving (Eq,Ord,Read,Show)
 
