@@ -1,0 +1,94 @@
+3/18/16
+we should distinguish between term and anf variables
+  either different types (e.g. newtype wrapping) or completely different handling (see ANF Variables, below)
+when we're dealing with source variables, we bump by the number of lets introduced between source binding levels, and since the last source binding level
+  we can do this by maintaining a stack of # lets introduced per level
+when dealing with anf variables, we bump by the number of lets introduced since its binder
+    some of these lets could actually be source lets -- consider nested/non-tail lets (add 1 (let x=2 in x) 3)
+  key insight here: each introduced let is only used once!
+  we could keep state for anf variables. succ each temp variable as we add successive temp vars
+    due to vars only used once, we know when to retire them (also everything will be retired upon next source binder)
+  if these temp/anf vars are tracked via state, we could generate these vars
+    a priori for use in n-ary application, but we need to care to not bump all of them the same amount.
+      we might want to allocate up-front, and then only start tracking once we are further along, in nested Ks
+  need to efficiently (1) bump all of the anf vars opened (and not yet used) in the current binding level (for this "spine"; i.e. don't bump anf vars for other nested lets)?
+                          - keep in mind that earlier ones will be bumped more often than later ones
+             and also (2) allow for efficient update and removal by some id?
+  - probably just use data.map/intmap for quick insert/read/delete, and eat the O(n*logn) for bumping all vars?
+  - it seems like we can use a separate intmap for temp/anf vars per binding level
+      and when we come back to a lower spine from e.g. a nested let, we can batch bump all anf vars in the
+      intmap by the number of levels that were introduced by this other nested/non-tail let.
+
+3/19/16
+need to figure out how to unify representations for binding levels and and these nested/non-tail situations
+    that can contain multiple binding levels that need to be rolled back simultaneously
+  example:       let x=50 in add 10 (let f = lam... in f x) x
+  anf expansion: letT 50
+                 in   letA 10
+                      in   letT lam...                \ these two lines are for the nested
+                           in   letA (0) (2)          / let and affect our add's first arg
+                                in   add (2) (0) (3)  - the x (3) here is translated from (0)
+                                                        and must not be thrown-off by the
+                                                        nested letT
+
+3/25/16
+for non-tail/nested expressions (which can go arbitrarily deep), we need to
+    either bump the previous "level" when "rolling back", or be bumping these
+    outer scopes at all times, with no special behavior on "rollback".
+
+we should consider cases like:
+    let
+    let
+         let
+         let
+              let
+                   lam <- this, wrapping a tail call, is a bump "firewall"
+                   let
+                        let
+                             let
+              let
+         let
+         let
+    let
+
+in using ReaderT for our stack, we are using haskell's implicit control stack
+  how do things change with an explicit stack?
+    is it easier to calculate the extent to which the previous level should be bumped, on rollback?
+    or maybe our K could return a tuple around Anf with this bump info?
+        (or is *this* where it makes sense to wrap K with a newtype?)
+      and then we could stick with the reader (or cont?)!
+
+we should probably start with a very simple model, and, once we have things
+    working, see how things like ContT can possibly fit into the mix.
+
+
+add 10 (sub 30 5) 20
+
+letA 10
+in   letA 30
+     in   letA 5
+          in   letA sub (1) (0)
+               in   letA 20
+                    in   add (4) (1) (0)
+
+3/31/16
+Once we move to reader, our K becomes (() -> LoweringM Anf). At that point,
+it seems we can just move to (using 'local' and) sequencing monadic actions.
+
+4/3/16
+Reader could be over '(BindingStack, StackTransform)' instead of just
+    'BindingStack', and toplevel convertWithCont could be invoked from the outside
+    with 'id' for the transform
+  Though this might work against moving this to Cont -- where
+      'StackTransform' is the 'a' in the 'a -> r' K that 'convertWithCont' (a
+      suspended computation) takes
+Consider always passing e.g. 'f1 s1', but then stash a pre-transformed (i.e.
+    with the use of 'f1') stack in a continuation (maybe using 'callCC') and
+    keep that in the state or reader env for the special rollback case.
+
+Could be interesting to play with delimited continuation operators for
+    nontail let rollbacks.
+
+the types seem to line-up to convert convertWithCont to ContT. can we get convertTail
+to work in ContT as well, or would calls of convertWithCont from convertTail all
+have to use 'evalContT'?
