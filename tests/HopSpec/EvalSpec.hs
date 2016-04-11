@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, TypeOperators, RankNTypes, ScopedTypeVariables,BangPatterns #-}
+{-# LANGUAGE LambdaCase, TypeOperators, RankNTypes, ScopedTypeVariables,BangPatterns, OverloadedStrings #-}
 module HopSpec.EvalSpec (spec) where
 
 import Test.Hspec
@@ -23,7 +23,7 @@ import Hopper.Utils.LocallyNameless
 emptySymbolReg :: SymbolRegistryCC
 emptySymbolReg = SymbolRegistryCC Map.empty Map.empty Map.empty
 
-makeInt :: Integer -> ValueRepCC Ref
+makeInt :: Integer -> ValueRepCC a
 makeInt = ValueLitCC . LInteger
 
 spec :: Spec
@@ -126,6 +126,25 @@ spec = describe "Evaluation Spec" $ do
                _ -> False
            assertEqual "has right result"
              (heap Map.! (results' V.! 0)) (makeInt 1)
+
+  it "evaluates global values" $ do
+    let x = GlobalSymbol "x"
+        symbolReg = SymbolRegistryCC
+          Map.empty
+          Map.empty
+          (Map.singleton x (makeInt 1))
+        startHeap = Heap (Ref 0) Map.empty Map.empty
+        tm = ReturnCC (V.singleton (GlobalVarSym x))
+        calculation = evalCCAnf symbolReg (Eval.envStackFromList []) ControlStackEmptyCC tm
+        results = handleSTE (left handleSTEErr) $ runHeap startHeap 100 calculation
+
+    case results of
+      Left e -> assertFailure e
+      Right (results', CounterAndHeap _ _ _ (Heap _ _ heap)) -> do
+          assertEqual "returns the right number of results"
+            (V.length results') 1
+          assertEqual "has right result"
+            (heap Map.! (results' V.! 0)) (makeInt 1)
 
 
 -- We don't actually expect any exceptions in these tests so just use this
