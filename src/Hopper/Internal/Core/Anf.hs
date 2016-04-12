@@ -40,7 +40,12 @@ data AppAnf  a
     = EnterThunk !(AnfVariable a) -- if a is neutral term OR a free variable, this becomes neutral
     | FunApp !(AnfVariable a) ![AnfVariable a] --- if function position of FunApp is neutral, its neutral
     | PrimApp  {-!a -} !PrimOpId ![AnfVariable a] -- if any arg of a primop is neutral, its neutral
-      --- case / eliminators will also be in this data type later
+    -- For the Anf form we translate the Map (from variable and arity to
+    -- right-hand-sides, how you should think of this thing) to a list, so we
+    -- can get the functor instance.
+    -- TODO(joel): revisit this
+    | Case !(AnfVariable a) ![((AnfVariable a, Word64), ([AnfBinderInfo a], AnfRHS a))]
+    -- | Case !(AnfVariable a) !(Map.Map (AnfVariable a, Word64) ([AnfBinderInfo a], AnfRHS a))
         deriving ( Data,Generic,Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Eq,Read,Show)
 
 

@@ -1,14 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-
 module  Hopper.Internal.Core.Term where
-
-
 
 import Hopper.Internal.Core.Literal
 -- import Hopper.Internal.Core.Type
@@ -16,12 +12,13 @@ import Data.Text  as T (Text)
 import Data.Data
 --import Bound
 --import Data.Bifunctor
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
 --import Prelude.Extras
 import GHC.Generics (Generic)
 import Hopper.Internal.Type.Relevance(Relevance)
 import Hopper.Utils.LocallyNameless
 --import Data.Traversable --  (fmapDefault,foldMapDefault)
+import qualified Data.Map as Map -- FIXME, use IntMap or WordMap
 import qualified Data.Vector as V
 
 
@@ -46,29 +43,38 @@ data BinderInfo =
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data Term =
-  V  Variable
-  | BinderLevelShiftUP Word32 Term  --
+    V Variable
+  | BinderLevelShiftUP Word32 Term
   | ELit !Literal
   | Return !(V.Vector Term)  -- explicit multiple return values
                       -- should V x be replaced by Return [x] ?
                       --  once we lower to ANF
                       -- NOTE: for valid expressions,
-  | EnterThunk !(Term) -- because we're in a strict IR rep,
+  | EnterThunk !Term -- because we're in a strict IR rep,
                         -- we dont need to provide a seq like operation
                           -- seq a b === let _ := enterThunk a in b
 
-  | Delay !(Term )  --- Delay is a Noop on Thunked values, otherwise creates a Thunked
-                    --- note: may need to change their semantics later?!
-                    --- Q: is it valid to thunk a thunked value? (no?)
-  | App !(Term  )  !(V.Vector Term  )   --this is not curried :)
+  -- Delay is a Noop on Thunked values, otherwise creates a Thunked
+  -- note: may need to change their semantics later?!
+  -- Q: is it valid to thunk a thunked value? (no?)
+  | Delay !Term
+  | App !Term !(V.Vector Term)   --this is not curried :)
   | PrimApp  !PrimOpId --
-             !(V.Vector Term  ) -- not sure if this is needed, but lets go with it for now
+             !(V.Vector Term) -- not sure if this is needed, but lets go with it for now
 
   | Lam !(V.Vector BinderInfo)
          !Term
   | Let !(V.Vector BinderInfo)
            Term --- RHS
            Term --- BODY
+  -- case analysis:
+  -- * the Word64 indicates the arity of the inspected constructor
+  -- * invariant: length of the binders has to match arity
+  -- TODO(joel) should this Word64 instead be a `CodeArity` (which seems
+  -- generally unused)?
+  | Case Term Type (Map.Map (Term, Word64) (V.Vector BinderInfo, Term))
+  -- Apply a constructor to arguments
+  | ConstrApp !ConstrId !(V.Vector Term)
   deriving ({-Show1,Read1,Ord1,Eq1,-}Ord,Eq,Show,Read{-,Functor,Foldable-},Typeable{-,Traversable-})
 
 
@@ -108,13 +114,23 @@ substitute baseLevel initMapper initTerm = goSub 0 initMapper initTerm
     goSub _shift _mapper lit@(ELit _)  = Right lit
     goSub shift mapper (EnterThunk bod ) =  fmap EnterThunk $ goSub shift mapper bod
     goSub shift mapper (Delay bod ) = fmap Delay $ goSub shift mapper bod
+    goSub shift mapper (ConstrApp cId args) = do
+      argsNew <- mapM (goSub shift mapper) args
+      Right (ConstrApp cId argsNew)
+    goSub shift mapper (Case tm () continuations) = do
+      let transformCase
+            :: ((Term, Word64), (V.Vector BinderInfo, Term))
+            -> Either (String, Word32) ((Term, Word64), (V.Vector BinderInfo, Term))
+          transformCase ((matchTm, arity), (binderInfos, matchCont)) = do
+            -- substitute in the left-hand-side
+            matchTm' <- goSub shift mapper matchTm
+            -- ... as well as result continuations
+            matchCont' <- goSub shift mapper matchCont
+            return ((matchTm', arity), (binderInfos, matchCont'))
 
+      tmNew <- goSub shift mapper tm
+      let continuationsList = Map.toList continuations
+      continuationsList' <- mapM transformCase continuationsList
+      let continuations' = Map.fromList continuationsList'
 
-
-{-
-            _ _ (BinderLevelShiftUP _ _)
-            _ _ (ELit _)
-            _ _ (EnterThunk _)
-            _ _ (Delay _)
-
--}
+      Right (Case tmNew () continuations')
