@@ -1,14 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable,DeriveAnyClass #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-
 module  Hopper.Internal.Core.Term where
-
-
 
 import Hopper.Internal.Core.Literal
 -- import Hopper.Internal.Core.Type
@@ -47,23 +43,24 @@ data BinderInfo =
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data Term =
-  V  Variable
-  | BinderLevelShiftUP Word32 Term  --
+    V Variable
+  | BinderLevelShiftUP Word32 Term
   | ELit !Literal
   | Return !(V.Vector Term)  -- explicit multiple return values
                       -- should V x be replaced by Return [x] ?
                       --  once we lower to ANF
                       -- NOTE: for valid expressions,
-  | EnterThunk !(Term) -- because we're in a strict IR rep,
+  | EnterThunk !Term -- because we're in a strict IR rep,
                         -- we dont need to provide a seq like operation
                           -- seq a b === let _ := enterThunk a in b
 
-  | Delay !(Term )  --- Delay is a Noop on Thunked values, otherwise creates a Thunked
-                    --- note: may need to change their semantics later?!
-                    --- Q: is it valid to thunk a thunked value? (no?)
-  | App !(Term  )  !(V.Vector Term  )   --this is not curried :)
+  -- Delay is a Noop on Thunked values, otherwise creates a Thunked
+  -- note: may need to change their semantics later?!
+  -- Q: is it valid to thunk a thunked value? (no?)
+  | Delay !Term
+  | App !Term !(V.Vector Term)   --this is not curried :)
   | PrimApp  !PrimOpId --
-             !(V.Vector Term  ) -- not sure if this is needed, but lets go with it for now
+             !(V.Vector Term) -- not sure if this is needed, but lets go with it for now
 
   | Lam !(V.Vector BinderInfo)
          !Term
@@ -137,13 +134,3 @@ substitute baseLevel initMapper initTerm = goSub 0 initMapper initTerm
       let continuations' = Map.fromList continuationsList'
 
       Right (Case tmNew () continuations')
-
-
-
-{-
-            _ _ (BinderLevelShiftUP _ _)
-            _ _ (ELit _)
-            _ _ (EnterThunk _)
-            _ _ (Delay _)
-
--}
