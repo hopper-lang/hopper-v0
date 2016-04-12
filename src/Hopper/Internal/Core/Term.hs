@@ -22,6 +22,7 @@ import GHC.Generics (Generic)
 import Hopper.Internal.Type.Relevance(Relevance)
 import Hopper.Utils.LocallyNameless
 --import Data.Traversable --  (fmapDefault,foldMapDefault)
+import qualified Data.Map as Map -- FIXME, use IntMap or WordMap
 import qualified Data.Vector as V
 
 
@@ -69,6 +70,13 @@ data Term =
   | Let !(V.Vector BinderInfo)
            Term --- RHS
            Term --- BODY
+  -- case analysis:
+  -- * the Word32 indicates the arity of the inspected constructor
+  -- * invariant: length of the binders has to match arity
+  -- TODO(joel) change this Word32 to an `Arity` when it exists.
+  | Case Term Type (Map.Map (Term, Word32) (V.Vector BinderInfo, Term))
+  -- Apply a constructor to arguments
+  | ConstrApp !ConstrId !(V.Vector Term)
   deriving ({-Show1,Read1,Ord1,Eq1,-}Ord,Eq,Show,Read{-,Functor,Foldable-},Typeable{-,Traversable-})
 
 
@@ -108,6 +116,26 @@ substitute baseLevel initMapper initTerm = goSub 0 initMapper initTerm
     goSub _shift _mapper lit@(ELit _)  = Right lit
     goSub shift mapper (EnterThunk bod ) =  fmap EnterThunk $ goSub shift mapper bod
     goSub shift mapper (Delay bod ) = fmap Delay $ goSub shift mapper bod
+    goSub shift mapper (ConstrApp cId args) = do
+      argsNew <- mapM (goSub shift mapper) args
+      Right (ConstrApp cId argsNew)
+    goSub shift mapper (Case tm () continuations) = do
+      let transformCase
+            :: ((Term, Word32), (V.Vector BinderInfo, Term))
+            -> Either (String, Word32) ((Term, Word32), (V.Vector BinderInfo, Term))
+          transformCase ((matchTm, arity), (binderInfos, matchCont)) = do
+            -- substitute in the left-hand-side
+            matchTm' <- goSub shift mapper matchTm
+            -- ... as well as result continuations
+            matchCont' <- goSub shift mapper matchCont
+            return ((matchTm', arity), (binderInfos, matchCont'))
+
+      tmNew <- goSub shift mapper tm
+      let continuationsList = Map.toList continuations
+      continuationsList' <- mapM transformCase continuationsList
+      let continuations' = Map.fromList continuationsList'
+
+      Right (Case tmNew () continuations')
 
 
 
