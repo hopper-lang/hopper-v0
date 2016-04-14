@@ -157,9 +157,9 @@ data BindingLevel
                  -- used. These variables are bumped as new 'AnfLet's are
                  -- introduced.
                  , _levelIntros :: Word32
-                 -- ^ Levels introduced since the last source binder. We keep
-                 -- this in addition to _levelRefs because we remove refs from
-                 -- the map once they've been used.
+                 -- ^ The number of binders introduced since the last source
+                 -- binder. We keep this in addition to '_levelRefs' because we
+                 -- remove refs from the map once they've been used.
                  , _levelIndirections :: Maybe (V.Vector Variable)
                  -- ^ Set when the source binder(s) corresponding to this
                  -- 'BindingLevel' point to an earlier variable. e.g. in
