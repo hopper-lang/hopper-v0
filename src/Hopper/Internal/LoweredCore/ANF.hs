@@ -294,6 +294,42 @@ resolveRefs refs stack = (varMap Map.!) <$> refs
 -- before applying the transform.
 type StackTransform = BindingStack -> BindingStack
 
+-- | A convenience function for placing a tail 'Alloc'ation on the RHS of a new
+-- 'AnfLet' and 'AnfReturn'ing that value.
+returnAllocated :: Alloc -> Anf
+returnAllocated alloc = AnfLet (Arity 1)
+                               (RhsAlloc alloc)
+                               (AnfReturn $ V.singleton v0)
+
+-- | A convenience function for converting a 'Lam'- or 'Delay'-guarded RHS of a
+-- 'AnfLet'.
+convertGuarded :: Term -> LoweringM Anf
+convertGuarded t = local (emptyLevel:) $ convertTail t
+
+-- | The total number of binders in the levels of the first stack not shared by
+-- the second stack.
+bindersAddedSince :: BindingStack -> BindingStack -> Word32
+bindersAddedSince extended base = sum $ height <$> extended `levelsSince` base
+  where
+    height :: BindingLevel -> Word32
+    height level | isJust (_levelIndirections level) = _levelIntros level
+                 | otherwise                         = 1 + _levelIntros level
+
+    levelsSince :: BindingStack -> BindingStack -> [BindingLevel]
+    levelsSince new old | new == old = []
+    levelsSince [] _old = error "first stack must be an extension of the second"
+    levelsSince (level : newRest) old = level : (newRest `levelsSince` old)
+
+-- | The former with open binders increased for each extra binder present
+-- in the latter. Assumes that the latter is the former extended with extra top
+-- 'BindingLevel's.
+withBinderIncreasesPer :: BindingStack -> BindingStack -> BindingStack
+withBinderIncreasesPer base extended =
+  base & _head.levelIntros                            +~ numBinders
+       & _head.levelRefs.mapped.localNameless.lnDepth +~ numBinders
+  where
+    numBinders = extended `bindersAddedSince` base
+
 -- | Lowering a sequence of "sibling" 'Term's, and providing 'Variable's for the
 -- lowering of the rest of the program. This function helps remove boilerplate
 -- from our two main functions, 'convertTail' and 'convertWithCont' in
@@ -344,17 +380,11 @@ convertToVars terms synthesize = do
           innermostContinuation
           (zip terms refs)
 
--- | A convenience function for placing a tail 'Alloc'ation on the RHS of a new
--- 'AnfLet' and 'AnfReturn'ing that value.
-returnAllocated :: Alloc -> Anf
-returnAllocated alloc = AnfLet (Arity 1)
-                               (RhsAlloc alloc)
-                               (AnfReturn $ V.singleton v0)
-
--- | A convenience function for converting a 'Lam'- or 'Delay'-guarded RHS of a
--- 'AnfLet'.
-convertGuarded :: Term -> LoweringM Anf
-convertGuarded t = local (emptyLevel:) $ convertTail t
+----------------------------------------------------------------------------
+-- The main two functions for conversion to ANF follow. They correspond to the
+-- two functions in Danvy's "A New One-Pass Transformation into Monadic Normal
+-- Form" (2002).
+----------------------------------------------------------------------------
 
 -- | Converts a 'Term' in tail position to ANF. This function corresponds to
 -- Danvy's function "E".
@@ -401,30 +431,6 @@ convertTail term = case term of
     -- TODO(bts): use binderInfos when we moved to type-directed
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertTail body
-
--- | The total number of binders in the levels of the first stack not shared by
--- the second stack.
-bindersAddedSince :: BindingStack -> BindingStack -> Word32
-bindersAddedSince extended base = sum $ height <$> extended `levelsSince` base
-  where
-    height :: BindingLevel -> Word32
-    height level | isJust (_levelIndirections level) = _levelIntros level
-                 | otherwise                         = 1 + _levelIntros level
-
-    levelsSince :: BindingStack -> BindingStack -> [BindingLevel]
-    levelsSince new old | new == old = []
-    levelsSince [] _old = error "first stack must be an extension of the second"
-    levelsSince (level : newRest) old = level : (newRest `levelsSince` old)
-
--- | The former with open binders increased for each extra binder present
--- in the latter. Assumes that the latter is the former extended with extra top
--- 'BindingLevel's.
-withBinderIncreasesPer :: BindingStack -> BindingStack -> BindingStack
-withBinderIncreasesPer base extended =
-  base & _head.levelIntros                            +~ numBinders
-       & _head.levelRefs.mapped.localNameless.lnDepth +~ numBinders
-  where
-    numBinders = extended `bindersAddedSince` base
 
 -- | Converts a 'Term' in nontail position to ANF. This function corresponds to
 -- Danvy's function "E_c".
