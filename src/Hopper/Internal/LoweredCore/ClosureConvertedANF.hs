@@ -205,30 +205,28 @@ data AppCC  =
     EnterThunkCC !Variable -- if a is neutral term OR a free variable, this becomes neutral
     | FunAppCC !Variable !(V.Vector Variable) --- if function position of FunApp is neutral, its neutral
     | PrimAppCC !PrimOpId !(V.Vector Variable) -- if any arg of a primop is neutral, its neutral
-      --- case / eliminators will also be in this data type later
-     {- | CaseCc
-        --- desugared case, not perfect, but good enough for sum data types,
-        --- not sure about if it aligns with say... record projections and stuff
-            VariableCC -- variable to case on
-            TypeCC
-            --- the type of the variable, because we need that to determine what constructors are admissible
-            --- and do correct coverage checking
-            [(ConstrId
-              , V.Vector BinderInfoCC ---
-              , AnfCC)] -- tag based dispatch??? kinda lame for Numbers and strings and stuff, only constructors
-            Maybe AnfCc
-                --- wild card case if applicable???
-                ---  may correspond to either catch all cases or absurds??
-                --- or would Case x typ [] Nothing , --- be the absurd case
+    -- | desugared case
+    --
+    -- TODO(joel/carter): figure out how to handle wild cards / absurds
+    | CaseCC
+        -- | variable to case on
+        !VariableCC
+        -- | the type of the variable
+        --
+        -- because we need that to determine what constructors are admissible
+        -- and do correct coverage checking
+        !TypeCC
+        -- | tag based dispatch
+        --
+        -- TODO(joel/carter): "kinda lame for Numbers and strings and stuff,
+        -- only constructors" <- is this an issue? address it?
+        ![(ConstrId, Word32, V.Vector BinderInfoCC, AnfCC)]
 
-        | RecordProjection   LocalVar   Type  Selector info
-          --- for projecting out from nonlinear dependent or ordinary products?
-          -- ghc and friends just use case for products, but that actually
-          -- has known blowups in complexity  on large records
-          -- TODO: look at how agda and idris and lean do this stuff
-
-
-               -}
+    -- | RecordProjection   LocalVar   Type  Selector info
+    -- for projecting out from nonlinear dependent or ordinary products?
+    -- ghc and friends just use case for products, but that actually
+    -- has known blowups in complexity  on large records
+    -- TODO: look at how agda and idris and lean do this stuff
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 data RhsCC
@@ -238,8 +236,9 @@ data RhsCC
 
 data AllocCC
   = SharedLiteralCC !Literal
-  | ConstrAppCC {-# UNPACK #-}  !ConstrId
-                !(V.Vector Variable)
+  | ConstrAppCC
+      {-# UNPACK #-} !ConstrId
+      !(V.Vector Variable)
   | AllocateThunkCC
         !(V.Vector Variable) -- the set of local variables captured in the thunk environment, in this order
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
