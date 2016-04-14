@@ -1,3 +1,8 @@
+----------------------------------------------------------------------------
+-- |
+-- Experimental zipper AST representations
+----------------------------------------------------------------------------
+
 module Hopper.Internal.Core.TermZipper where
 
 import Hopper.Internal.Core.Literal
@@ -5,8 +10,6 @@ import Hopper.Internal.Core.Term
 
 import Data.Word (Word32)
 import qualified Data.Vector as V
-
--- TODO: MOVE TO MODELS
 
 -- Carter's original formulation:
 --
@@ -106,6 +109,7 @@ data Path
 data Location
   = Loc Path Term
 
+-- | Fills a ('Term') hole in a 'Context'.
 reconstruct :: Context -> Term -> Term
 reconstruct (CShift amount ()) t = BinderLevelShiftUP amount t
 reconstruct (CReturn before () after) t = Return $ V.concat [before, V.singleton t, after]
