@@ -210,7 +210,7 @@ data AppCC  =
     -- TODO(joel/carter): figure out how to handle wild cards / absurds
     | CaseCC
         -- | variable to case on
-        !VariableCC
+        !Variable
         -- | the type of the variable
         --
         -- because we need that to determine what constructors are admissible
