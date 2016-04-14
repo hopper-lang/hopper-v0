@@ -36,11 +36,34 @@ data AnfBinderInfo  a  = AnfBI_Stub -- fill me in!
   type???
 -}
 
+type TypeAnf = ()
+
 data AppAnf  a
     = EnterThunk !(AnfVariable a) -- if a is neutral term OR a free variable, this becomes neutral
     | FunApp !(AnfVariable a) ![AnfVariable a] --- if function position of FunApp is neutral, its neutral
     | PrimApp  {-!a -} !PrimOpId ![AnfVariable a] -- if any arg of a primop is neutral, its neutral
-      --- case / eliminators will also be in this data type later
+    -- For the Anf form we translate the Map (from variable and arity to
+    -- right-hand-sides, how you should think of this thing) to a list, so we
+    -- can get the functor instance.
+    --
+    -- On the other hand, lists have ordering, which might (or might not) be an
+    -- important aspect of our semantics. Also on the other hand, Brian's PR
+    -- removes the parameter, so the problematic instance goes away.
+    --
+    -- TODO(joel): revisit the List / Map decision
+    -- TODO(joel): this is going to conflict with Brian's PR -- we need to
+    -- un-paramaterize the subterms
+    | Case
+        -- | The variable to case on
+        !(AnfVariable a)
+        -- | Its type, so we can determine which constructors are admissible
+        -- for converage checking
+        TypeAnf
+        -- | The cases
+        --
+        -- (constructor, arity, binding info, rhs)
+        ![(ConstrId, Word32, [AnfBinderInfo a], AnfRHS a)]
+        -- | Case !(AnfVariable a) !(Map.Map (AnfVariable a, Word32) ([AnfBinderInfo a], AnfRHS a))
         deriving ( Data,Generic,Ord,Functor,Ord1,Show1,Eq1,Read1,Foldable,Traversable,Typeable,Eq,Read,Show)
 
 

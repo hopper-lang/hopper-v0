@@ -45,6 +45,7 @@ import Hopper.Internal.Core.Literal (
   ,evalTotalMathPrimopCode
   ,gmpMathCost
   ,hoistTotalMathLiteralOp
+  ,ConstrId
   )
 
 type EvalCC s a
@@ -282,6 +283,7 @@ applyCC symbolReg envStk stack alloc = case alloc of
   EnterThunkCC var -> enterOrResolveThunkCC symbolReg envStk stack var
   FunAppCC var vec -> enterClosureCC symbolReg envStk stack (var, vec)
   PrimAppCC opId vec -> enterPrimAppCC symbolReg envStk stack (opId, vec)
+  CaseCC var () branches -> enterCaseCC symbolReg envStk stack (var, branches)
 
 {- | enterClosureCC has to resolve its first heap ref argument to the closure code id
 and then it pushes
@@ -530,6 +532,14 @@ enterTotalMathPrimopSimple controlstack (opId, refs) = do
   where argAsLiteral :: ValueRepCC Ref -> Either String Literal
         argAsLiteral (ValueLitCC lit) = Right lit
         argAsLiteral notLit = Left $ "Not a literal: `" ++ show notLit ++ "`"
+
+enterCaseCC
+  :: SymbolRegistryCC
+  -> EnvStackCC
+  -> ControlStackCC
+  -> (Variable, [(ConstrId, Word32, V.Vector BinderInfoCC, AnfCC)])
+  -> EvalCC s (V.Vector Ref)
+enterCaseCC = error "enterCaseCC not yet defined"
 
 -- | Enter the top of the stack, adding some refs to scope.
 enterControlStackCC
