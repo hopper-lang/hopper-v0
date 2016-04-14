@@ -253,7 +253,7 @@ trackVariables :: Binding
 trackVariables (AnfBinding refs) vars stack =
   stack & _head.levelRefs %~ addRefs
   where
-    addRefs m = foldl' (flip $ uncurry Map.insert) m $ zip refs vars
+    addRefs = Map.union $ Map.fromList $ zip refs vars
 trackVariables TermBinding vars stack =
   emptyIndirectionLevel vars : stack
 
@@ -266,7 +266,7 @@ trackBinding (AnfBinding refs) stack = stack & _head %~ updateLevel
     updateLevel = (levelRefs                              %~ addRefs)
                 . (levelRefs.mapped.localNameless.lnDepth +~ 1)
                 . (levelIntros                            +~ 1)
-    addRefs m = foldl' (\m' ref -> Map.insert ref v0 m') m refs
+    addRefs = Map.union $ Map.fromList $ zip refs $ repeat v0
 trackBinding TermBinding stack = emptyLevel:stack
 
 -- | Stops tracking the provided 'AnfRef's in the top 'BindingLevel' of
@@ -328,6 +328,12 @@ convertToVars :: [Term]
 convertToVars terms synthesize = do
   refs <- replicateM (length terms) allocRef
 
+  let innermostContinuation = \track ->
+        local track $ do
+          vars <- reader $ resolveRefs refs
+          let cleanup = dropRefs refs
+          synthesize vars cleanup
+
   -- NOTE: To see how we could simplify this function, see notes on the 'Let'
   -- case of 'convertWithCont' regarding the possibility of using @ContT@. The
   -- fold in this function would become first-order.
@@ -335,11 +341,7 @@ convertToVars terms synthesize = do
     foldr (\(t, ref) nextK ->
             \track ->
               local track $ convertWithCont t (AnfBinding $ pure ref) nextK)
-          (\track ->
-            local track $ do
-              vars <- reader $ resolveRefs refs
-              let cleanup = dropRefs refs
-              synthesize vars cleanup)
+          innermostContinuation
           (zip terms refs)
 
 -- | A convenience function for placing a tail 'Alloc'ation on the RHS of a new
