@@ -108,6 +108,48 @@ instance Enum AnfRef where
   fromEnum = fromEnum . _refId
 
 -- | Bookkeeping structure that corresponds to a binder scope in the 'Term' AST.
+-- Conversion to ANF begins with a single empty 'BindingLevel' (not an empty
+-- 'BindingStack').
+--
+-- In converting the following (pseudo 'Term') program,
+--
+-- @
+-- let f = λy. add 1 (sub y 20)
+-- in f 10
+-- @
+--
+-- we (start) run(ning) ANF conversion as follows:
+-- 0. start converting the entire (tail position) 'Let', with the single empty
+--    'BindingLevel'.
+-- 1. start converting the (non-tail) lambda on the 'Let' RHS, with the single
+--    empty 'BindingLevel'. as we pass into the lambda, we push a 'BindingLevel'
+--    onto the stack because 'Lam' induces a new binding scope in the 'Term'
+--    program.
+-- 2. start converting the (tail) @add ...@ application with the stack of size
+--    2, allocating (but not yet "tracking") an 'AnfRef' for each of the
+--    variables we'll need when drop an 'AnfTailCall' for this app in the
+--    future.
+-- 3. start converting the (non-tail) @add@ global var; leave it as-is.
+-- 4. upon encountering the (non-tail) literal @1@, we introduce an 'AnfLet'
+--    which allocates the literal on the RHS. As we introduce this 'AnfLet',
+--    (via 'trackBinding') we:
+--    - increment @_levelIntros@ in our 'BindingLevel'. this will be useful when
+--    we encounter the future variable @y@, because this let-introduction will
+--    necessitate that this source variable be bumped.
+--    - bump all references to "ANF variables" (from intro'd lets, as opposed to
+--    existing 'Term' 'Variable's) that are "open", or being "tracked" in
+--    @_levelRefs@.
+--    - start tracking the 'AnfRef' for the future ANF variable that refers to
+--    this allocated literal. we start "tracking" because any futher-introduced
+--    'AnfLet's between here and our variable usage in the app will call for
+--    bumps to the variable.
+-- 5. start converting the (non-tail) @sub ...@ application with the stack of
+--    size 2.
+-- 6. upon encountering @y@ we see that it points 0 'Term' binding levels up, so
+--    we will look at (0 + 1) binding levels (namely, only the top level) in our
+--    stack, and increase @y@'s depth by the total number of @_levelIntros@
+--    across these 'BindingLevel's.
+-- ...
 data BindingLevel
   = BindingLevel { _levelRefs :: Map.Map AnfRef Variable
                  -- ^ Linear references (to both existing/term and new/anf
@@ -253,7 +295,27 @@ resolveRefs refs stack = (varMap Map.!) <$> refs
 type StackTransform = BindingStack -> BindingStack
 
 -- | Lowering a sequence of "sibling" 'Term's, and providing 'Variable's for the
--- lowering of the rest of the program.
+-- lowering of the rest of the program. This function helps remove boilerplate
+-- from our two main functions, 'convertTail' and 'convertWithCont' in
+-- situations where they need to convert multiple terms from left-to-right (e.g.
+-- in the case of function application).
+--
+-- The expression 'convertToVars [fun, arg0, arg1] synthesize' will expand to
+-- something like:
+--
+-- @
+-- [funRef, arg0Ref, arg1Ref] <- replicateM 3 allocRef
+--
+-- local id $ convertWithCont fun (AnfBinding [funRef]) $ \trackFun ->
+--   local trackFun $ convertWithCont arg0 (AnfBinding [arg0Ref]) $ \trackArg0 ->
+--     local trackArg0 $ convertWithCont arg1 (AnfBinding [arg1Ref]) $ \trackArg1 ->
+--       local trackArg1 $ do
+--         vars <- reader resolveRefs [funRef, arg0Ref, arg1Ref]
+--         let cleanup = dropRefs refs
+--         synthesize vars cleanup
+-- @
+--
+-- where 'synthesize' will provide the body of the inner-most continuation.
 convertToVars :: [Term]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
               -- function or thunk application, or returning multiple values.
