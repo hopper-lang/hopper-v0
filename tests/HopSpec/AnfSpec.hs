@@ -12,22 +12,22 @@ import Hopper.Utils.LocallyNameless
 
 import Test.Hspec
 import Test.Hspec.Expectations
-import qualified Data.Text as T
 import qualified Data.Vector as V
 
 spec :: Spec
 spec =
-  describe "ANF" $ do
+  describe "ANF" $
     describe "toAnf" $ do
       let v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
           v0_0 = v0
           v0_1 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 1
           v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
+          v1_1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 1
           v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
-          add = GlobalVarSym $ GlobalSymbol $ T.pack "add"
-          abs = GlobalVarSym $ GlobalSymbol $ T.pack "abs"
-          neg = GlobalVarSym $ GlobalSymbol $ T.pack "neg"
-          id_ = GlobalVarSym $ GlobalSymbol $ T.pack "id"
+          add = GlobalVarSym $ GlobalSymbol "add"
+          abs = GlobalVarSym $ GlobalSymbol "abs"
+          neg = GlobalVarSym $ GlobalSymbol "neg"
+          id_ = GlobalVarSym $ GlobalSymbol "id"
           ten = LInteger 10
           twenty = LInteger 20
           dummyBI = BinderInfoData Omega () Nothing
@@ -39,12 +39,7 @@ spec =
               anf = AnfReturn $ V.singleton v0
           in toAnf term `shouldBe` anf
 
-        -- TODO: need to add pass to remove shifts
-        --
-        -- it "converts shifted variables" $
-        --   let term = BinderLevelShiftUP 2 $ V v0
-        --       anf = AnfShift 2 $ AnfReturn $ V.singleton v0
-        --   in toAnf term `shouldBe` anf
+        -- TODO(bts): add test for throwing errors upon binder shifts
 
         it "converts literals" $
           let lit = LInteger 42
@@ -121,10 +116,9 @@ spec =
 
         it "converts lets with a debruijn var on the RHS" $
           let term = Let (V.singleton dummyBI)
-                         (V v1)
+                         (V v1_1)
                          (V v0)
-              anf = AnfReturn $ V.singleton v1
-          -- TODO: check that the correct binder slot is used
+              anf = AnfReturn $ V.singleton v1_1
           in toAnf term `shouldBe` anf
 
         it "converts lets with a global var on the RHS" $
@@ -152,12 +146,7 @@ spec =
                            (AnfTailCall $ AppFun v1 $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
-        -- TODO: need to add pass to remove shifts
-        --
-        -- it "converts shifted variable" $
-        --   let term = App (V v0) $ V.singleton $ BinderLevelShiftUP 1 $ V v1
-        --       anf = _todo
-        --   in toAnf term `shouldBe` anf
+        -- TODO(bts): add test for throwing errors upon binder shifts
 
         it "converts returns on the RHS of a let" $
            let term = Let (V.replicate 2 dummyBI)
