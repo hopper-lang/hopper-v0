@@ -47,15 +47,15 @@ import qualified Data.Map.Strict as Map
 -- Data Types
 --------------------------
 
--- TODO: possibly allow more "atomic" expression types (besides variables) once
---       we have some unboxed values
+-- We should possibly allow more "atomic" expression types (besides variables)
+-- once we have some unboxed values.
 
--- TODO: switch back away from this
+-- TODO(bts): switch back away from this
 newtype Arity = Arity Word32 deriving (Eq,Ord,Read,Show)
 
 data Anf
   = AnfReturn !(V.Vector Variable) -- indices into the current env stack
-  | AnfLet !Arity -- TODO: switch back to !(V.Vector BinderInfo)
+  | AnfLet !Arity -- TODO(bts): switch back to !(V.Vector BinderInfo)
            -- !(Maybe SourcePos)
            !Rhs
            !Anf
@@ -71,7 +71,7 @@ data App
 
 data Alloc
   = AllocLit !Literal
-  | AllocLam !Arity -- TODO: switch back to !(V.Vector BinderInfo)
+  | AllocLam !Arity -- TODO(bts): switch back to !(V.Vector BinderInfo)
              !Anf
   | AllocThunk !Anf
   deriving (Eq,Ord,Read,Show)
@@ -363,7 +363,7 @@ convertTail term = case term of
     return $ AnfReturn $ V.singleton translatedVar
 
   BinderLevelShiftUP _ _ ->
-    -- TODO: expose this using proper error machinery
+    -- TODO(bts): expose this using proper error machinery
     error "unexpected binder shift in convertTail during ANF conversion"
 
   ELit lit ->
@@ -396,7 +396,7 @@ convertTail term = case term of
     return $ returnAllocated $ AllocLam (arity binderInfos) body
 
   Let _binderInfos rhs body ->
-    -- TODO: use binderInfos when we moved to type-directed?
+    -- TODO(bts): use binderInfos when we moved to type-directed
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertTail body
 
@@ -442,7 +442,7 @@ convertWithCont term binding k = case term of
     k $ trackVariables binding [translatedVar]
 
   BinderLevelShiftUP _ _ ->
-    -- TODO: expose this using proper error machinery
+    -- TODO(bts): expose this using proper error machinery
     error "unexpected binder shift in convertWithCont during ANF conversion"
 
   ELit l -> do
@@ -457,13 +457,13 @@ convertWithCont term binding k = case term of
         TermBinding ->
           k $ trackVariables binding vars . cleanupRefs
         (AnfBinding _) ->
-          -- TODO: expose this using proper error machinery
+          -- TODO(bts): expose this using proper error machinery
           error "unexpected non-tail Return outside of a Let RHS"
 
   EnterThunk t ->
     convertToVars [t] $ \[var] cleanupRef -> do
       body <- k $ trackBinding binding . cleanupRef
-      return $ AnfLet (Arity 1) -- TODO: support tupled return
+      return $ AnfLet (Arity 1) -- TODO(bts): support tupled return
                       (RhsApp $ AppThunk var)
                       body
 
@@ -478,7 +478,7 @@ convertWithCont term binding k = case term of
     let terms = ft : V.toList ats
     convertToVars terms $ \vars cleanupRefs -> do
       body <- k $ trackBinding binding . cleanupRefs
-      return $ AnfLet (Arity 1) -- TODO: support tupled return
+      return $ AnfLet (Arity 1) -- TODO(bts): support tupled return
                       (RhsApp $ AppFun (head vars)
                                        (V.fromList $ tail vars))
                       body
@@ -486,7 +486,7 @@ convertWithCont term binding k = case term of
   PrimApp primId terms ->
     convertToVars (V.toList terms) $ \vars cleanupRefs -> do
       body <- k $ trackBinding binding . cleanupRefs
-      return $ AnfLet (Arity 1) -- TODO: support tupled return
+      return $ AnfLet (Arity 1) -- TODO(bts): support tupled return
                       (RhsApp $ AppPrim primId $ V.fromList vars)
                       body
 
@@ -520,7 +520,7 @@ convertWithCont term binding k = case term of
   --       all calls to 'convertWithCont' from 'convertTail' call @runCont@?
   --
   Let _binderInfos rhs body -> do
-    -- TODO: use binderInfos when we moved to type-directed?
+    -- TODO(bts): use binderInfos when we moved to type-directed
     beforeStack <- ask
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertWithCont body binding $ \trackBody ->
