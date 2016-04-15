@@ -31,6 +31,11 @@ spec =
           term' = App v1 $ V.fromList [v0, v2]
       in removeBinderShifts term `shouldBe` term'
 
+    it "bumps multiple times for a duplicate shift value" $
+      let term  = shift 0 $ shift 0 $ v1
+          term' = v3
+      in removeBinderShifts term `shouldBe` term'
+
     it "preserves binder slots when bumping variables" $
       let slot = BinderSlot 3
           term  = shift 1 $ V $ LocalVar $ LocalNamelessVar 1 slot
