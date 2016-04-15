@@ -58,23 +58,23 @@ spec =
       in removeBinderShifts term `shouldBe` term'
 
     it "does not succ shift levels as it moves through an App" $
-       let term  = shift 1 $ App v1 $ V.fromList [lit, v0, v1, v2]
-           term' = App v2 $ V.fromList [lit, v0, v2, v3]
-       in removeBinderShifts term `shouldBe` term'
+      let term  = shift 1 $ App v1 $ V.fromList [lit, v0, v1, v2]
+          term' = App v2 $ V.fromList [lit, v0, v2, v3]
+      in removeBinderShifts term `shouldBe` term'
 
     it "does not succ shift levels as it moves through a PrimApp" $
-       let term  = shift 1 $ PrimApp prim0 $ V.fromList [lit, v0, v1, v2]
-           term' = PrimApp prim0 $ V.fromList [lit, v0, v2, v3]
-       in removeBinderShifts term `shouldBe` term'
+      let term  = shift 1 $ PrimApp prim0 $ V.fromList [lit, v0, v1, v2]
+          term' = PrimApp prim0 $ V.fromList [lit, v0, v2, v3]
+      in removeBinderShifts term `shouldBe` term'
 
     it "succs shift levels as it moves through a Lam" $
-       let term  = shift 1 $ Lam dummyBIs $ Return $ V.fromList [v0, v1, v2]
-           term' = Lam dummyBIs $ Return $ V.fromList [v0, v1, v3]
-       in removeBinderShifts term `shouldBe` term'
+      let term  = shift 1 $ Lam dummyBIs $ Return $ V.fromList [v0, v1, v2]
+          term' = Lam dummyBIs $ Return $ V.fromList [v0, v1, v3]
+      in removeBinderShifts term `shouldBe` term'
 
     it "succs shift levels as it moves through a Let body" $
-       let term  = shift 1 $ Let dummyBIs (Return $ V.fromList [v0, v1, v2])
-                                          (Return $ V.fromList [v0, v1, v2])
-           term' = Let dummyBIs (Return $ V.fromList [v0, v2, v3])
-                                (Return $ V.fromList [v0, v1, v3])
-       in removeBinderShifts term `shouldBe` term'
+      let term  = shift 1 $ Let dummyBIs (Return $ V.fromList [v0, v1, v2])
+                                         (Return $ V.fromList [v0, v1, v2])
+          term' = Let dummyBIs (Return $ V.fromList [v0, v2, v3])
+                               (Return $ V.fromList [v0, v1, v3])
+      in removeBinderShifts term `shouldBe` term'
