@@ -64,6 +64,18 @@ topEnvUse l = projectValue <$> get
     projectValue state = fromMaybe (error "impossible env stack underrun") $
       firstOf (topEnv.l) state
 
+allocClosureCodeId :: ConversionM ClosureCodeId
+allocClosureCodeId = do
+  curr <- use csNextClosureId
+  csNextClosureId %= succ
+  return curr
+
+allocThunkCodeId :: ConversionM ThunkCodeId
+allocThunkCodeId = do
+  curr <- use csNextThunkId
+  csNextThunkId %= succ
+  return curr
+
 -- TODO(bts): integrate real binder infos
 dummyBI :: BinderInfo
 dummyBI = BinderInfoData Omega () Nothing

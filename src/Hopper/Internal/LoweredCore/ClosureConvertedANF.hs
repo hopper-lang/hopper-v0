@@ -7,7 +7,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
-
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   AnfCC(..)
@@ -67,10 +67,10 @@ maybe
 
 newtype ThunkCodeId =
     ThunkCodeId { unThunkCodeId :: Word64 }
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+  deriving(Enum,Eq,Ord,Read,Show,Typeable,Data,Generic)
 newtype ClosureCodeId =
     ClosureCodeId { unClosureCodeId :: Word64 }
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+  deriving(Enum,Eq,Ord,Read,Show,Typeable,Data,Generic)
 newtype EnvSize =
     EnvSize { getEnvSize :: Word64 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
