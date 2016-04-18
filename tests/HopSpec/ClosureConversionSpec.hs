@@ -35,13 +35,19 @@ spec =
         emptyRegistry = SymbolRegistryCC Map.empty Map.empty Map.empty
         -- prim0 = PrimopIdGeneral "test"
 
-    it "handles trivial closureless-code" $
+    it "handles closure-less let and return" $
       let anf = AnfLet infos1
                        (RhsAlloc $ AllocLit ten)
                        (AnfReturn $ V.singleton v0)
           ccd = LetNFCC infos1
                         (AllocRhsCC $ SharedLiteralCC ten)
                         (ReturnCC $ V.singleton v0)
+          registry = emptyRegistry
+      in closureConvert anf `shouldBe` (ccd, registry)
+
+    it "allows free vars" $
+      let anf = AnfReturn $ V.singleton v1
+          ccd = ReturnCC $ V.singleton v1
           registry = emptyRegistry
       in closureConvert anf `shouldBe` (ccd, registry)
 
@@ -81,8 +87,6 @@ spec =
                                       Map.empty
       in closureConvert anf `shouldBe` (ccd, registry)
 
-    -- TODO: test ordering of >1 closure env var
-
     it "converts thunks" $
       let anf = AnfLet infos1
                        (RhsAlloc $ AllocLit ten)
@@ -115,7 +119,11 @@ spec =
                                       Map.empty
       in closureConvert anf `shouldBe` (ccd, registry)
 
-    -- TODO: test ordering of >1 thunk env var
+    it "allocates env vars from left to right" $
+      pending
 
-    -- TODO: test nested closures/thunks; that only levels that need vars close
-    --       over them.
+    it "only allocates an env var if a var is used in that closure" $
+      pending
+
+    it "converts nested closures and thunks" $
+      pending
