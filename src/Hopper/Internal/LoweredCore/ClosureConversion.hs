@@ -66,8 +66,8 @@ type ConversionM = State ConversionState
 
 -- Some notes:
 --
--- - "Closure height" refers to the number of lets passed since entering
---   the closure or thunk. TODO(bts): possibly rename this?
+-- - "letsPassed" refers to the number of lets passed since entering the closure
+--   or thunk.
 --
 -- - Our implicit ABI is currently such that explicit closure args and captured
 --   env vars live on two separate levels, with env vars as the inner binding
@@ -112,8 +112,8 @@ dummyBI :: BinderInfo
 dummyBI = BinderInfoData Omega () Nothing
 
 adjustVar :: Word32 -> Variable -> ConversionM Variable
-adjustVar _closureHeight var@(GlobalVarSym _) = return var
-adjustVar closureHeight  var@(LocalVar lnv) = do
+adjustVar _letsPassed var@(GlobalVarSym _) = return var
+adjustVar letsPassed  var@(LocalVar lnv) = do
   mClosureType <- firstOf (topEnv.esClosureType) <$> get
 
   case mClosureType of
@@ -134,7 +134,7 @@ adjustVar closureHeight  var@(LocalVar lnv) = do
                   . over esInfos (`DL.snoc` dummyBI)
                   . over esVars (`DL.snoc` envVar)
 
-          return $ LocalVar $ LocalNamelessVar closureHeight envSlot
+          return $ LocalVar $ LocalNamelessVar letsPassed envSlot
 
   where
     depth = lnv ^. lnDepth
@@ -142,12 +142,12 @@ adjustVar closureHeight  var@(LocalVar lnv) = do
 
     reach :: ClosureType -> Reach
     reach Thunk
-      | depth >= closureHeight = FreeReference $ depth - closureHeight
-      | otherwise              = LocalReference
+      | depth >= letsPassed = FreeReference $ depth - letsPassed
+      | otherwise           = LocalReference
     reach Closure
-      | depth >  closureHeight = FreeReference $ depth - (closureHeight + 1)
-      | depth == closureHeight = ArgReference
-      | otherwise              = LocalReference
+      | depth >  letsPassed = FreeReference $ depth - (letsPassed + 1)
+      | depth == letsPassed = ArgReference
+      | otherwise           = LocalReference
 
     bump :: Variable -> Variable
     bump = localNameless.lnDepth %~ succ
@@ -162,16 +162,16 @@ closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
                              []
 
     ccAnf :: Word32 -> Anf -> ConversionM AnfCC
-    ccAnf closureHeight (AnfReturn vars) =
-      ReturnCC <$> traverse (adjustVar closureHeight) vars
+    ccAnf letsPassed (AnfReturn vars) =
+      ReturnCC <$> traverse (adjustVar letsPassed) vars
 
-    ccAnf closureHeight (AnfLet infos rhs body) = do
-      rhsCC <- ccRhs closureHeight rhs
-      bodyCC <- ccAnf (succ closureHeight) body
+    ccAnf letsPassed (AnfLet infos rhs body) = do
+      rhsCC <- ccRhs letsPassed rhs
+      bodyCC <- ccAnf (succ letsPassed) body
       return $ LetNFCC infos rhsCC bodyCC
 
     ccRhs :: Word32 -> Rhs -> ConversionM RhsCC
-    ccRhs _closureHeight (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc alloc
+    ccRhs _letsPassed (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc alloc
 
     ccAlloc :: Alloc -> ConversionM AllocCC
     ccAlloc (AllocLit lit) = return $ SharedLiteralCC lit
