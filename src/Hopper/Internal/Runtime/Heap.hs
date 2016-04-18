@@ -80,7 +80,7 @@ instance HopperException HeapError where
 _HeapError :: Prism' SomeHopperException HeapError
 _HeapError = prism' toHopperException fromHopperException
 
-heapRefUpdate ::  forall s val. Ref -> val -> Heap val -> HeapStepCounterM val (STE SomeHopperException s) (Heap val)
+heapRefUpdate :: forall s val. Ref -> val -> Heap val -> HeapStepCounterM val (STE SomeHopperException s) (Heap val)
 heapRefUpdate ref val (Heap ct symTable mp)
         | ref < ct  && ref `Map.member` mp = return $ Heap ct symTable $ Map.insert ref val mp
         | ref >= ct = throwHeapErrorWithStepInfoSTE (\_ -> HeapLookupOutOfBounds) -- error $ "impossible heap ref greater than heap max, deep invariant failure" ++ show ref
@@ -128,10 +128,10 @@ instance Monad m => Monad (HeapStepCounterM val m) where
     return = pure
     (>>=)= \ (HSCM mv) f -> HSCM (mv  >>= (_xtractHSCM. f))
 
-getHSCM ::Monad m => HeapStepCounterM val  m (CounterAndHeap val )
+getHSCM :: Monad m => HeapStepCounterM val  m (CounterAndHeap val )
 getHSCM  = HSCM State.get
 
-setHSCM ::Monad m =>  CounterAndHeap val   -> HeapStepCounterM  val  m  ()
+setHSCM :: Monad m =>  CounterAndHeap val   -> HeapStepCounterM  val  m  ()
 setHSCM v = HSCM $ State.put  v
 
 

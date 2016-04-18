@@ -37,10 +37,10 @@ refRepLens :: ( Word64 -> f a ) -> Ref -> f a
 refRepLens = \ f (Ref r) -> f r
 
 -- | interface for doing bitwise transformations that yield a new ref
-refTransform :: Functor f => (Word64 -> f Word64) -> Ref -> f Ref
+refTransform :: Functor f => (Word64 -> f Word64 ) -> Ref -> f Ref
 refTransform = \ f (Ref r) -> Ref <$> f r
 
-absoluteDistance  :: Ref -> Ref -> Word64
+absoluteDistance :: Ref -> Ref -> Word64
 absoluteDistance = \(Ref a) (Ref b) -> if a > b then a - b else b - a
 
 instance Enum Ref where
