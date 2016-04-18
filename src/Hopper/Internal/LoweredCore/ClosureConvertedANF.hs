@@ -221,7 +221,7 @@ data AllocCC
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
   | AllocateClosureCC
         !(V.Vector Variable) -- set of local variables captured in the thunk environment, in this order
-        !Word32 --- arity of closure (need that even be here?) TODO
+        !CodeArity --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
