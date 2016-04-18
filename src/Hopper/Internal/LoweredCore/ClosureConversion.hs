@@ -13,7 +13,7 @@ import Hopper.Utils.LocallyNameless
 
 import Control.Arrow (second)
 import Control.Lens (Lens', Traversal', (^.), (%~), (%=), _head, makeLenses,
-                     firstOf, over)
+                     firstOf, over, use)
 import Control.Monad.Trans.State.Strict (State, runState, get)
 import Data.Function ((&))
 import Data.Maybe (fromMaybe)
