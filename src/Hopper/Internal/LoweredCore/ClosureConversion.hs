@@ -12,21 +12,24 @@ import Hopper.Internal.Type.Relevance (Relevance(..))
 import Hopper.Utils.LocallyNameless
 
 import Control.Arrow (second)
-import Control.Lens (Lens', Traversal', (^.), (%~), (%=), _head, makeLenses,
-                     firstOf, over, use)
+import Control.Lens (Lens', Traversal', (^.), (%~), (%=), (?=), _head,
+                     makeLenses, firstOf, over, use, at, view)
 import Control.Monad.Trans.State.Strict (State, runState, get)
+import Data.Foldable (toList)
 import Data.Function ((&))
 import Data.Maybe (fromMaybe)
 import Data.Word (Word32)
 
+import qualified Data.DList as DL
 import qualified Data.Map.Strict as Map
+import qualified Data.Vector as V
 
 data EnvState
-  = EnvState { _esVars  :: [Variable]
+  = EnvState { _esVars  :: DL.DList Variable
              -- ^ Reversed env vars seen so far
-             , _esInfos :: [BinderInfo]
+             , _esInfos :: DL.DList BinderInfo
              -- ^ Reversed env binder infos seen so far
-             , _esSize  :: Word32
+             , _esSize  :: EnvSize
              -- ^ Size of the env so far, to avoid O(n) 'length' calls
              }
   deriving (Show)
@@ -54,6 +57,10 @@ type ConversionM = State ConversionState
 -- - Our implicit ABI is currently such that explicit closure args and captured
 --   env vars live on two separate levels, with env vars as the inner binding
 --   level. TODO(bts): update the evaluator to reflect this new ABI.
+-- - In the future we should move to elaborating explicit lets for the env
+
+emptyEnv :: EnvState
+emptyEnv = EnvState mempty mempty $ EnvSize 0
 
 topEnv :: Traversal' ConversionState EnvState
 topEnv = csEnvStack._head
@@ -63,6 +70,15 @@ topEnvUse l = projectValue <$> get
   where
     projectValue state = fromMaybe (error "impossible env stack underrun") $
       firstOf (topEnv.l) state
+
+pushEmptyEnv :: ConversionM ()
+pushEmptyEnv = csEnvStack %= (emptyEnv:)
+
+popEnv :: ConversionM EnvState
+popEnv = do
+  envState <- topEnvUse id
+  csEnvStack %= tail
+  return envState
 
 allocClosureCodeId :: ConversionM ClosureCodeId
 allocClosureCodeId = do
@@ -93,14 +109,14 @@ adjustVar closureHeight  var@(LocalVar lnv)
 
     capturedVar :: ConversionM Variable
     capturedVar = do
-      let envVarDepth = depth - closureHeight + 1
+      let envVarDepth = depth - closureHeight - 1
           envVar = LocalVar $ LocalNamelessVar envVarDepth slot
 
-      envSlot <- BinderSlot <$> topEnvUse esSize
+      envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
 
       topEnv %= over esSize succ
-              . over esInfos (dummyBI:) -- TODO(bts): populate useful BinderInfo
-              . over esVars (envVar:)
+              . over esInfos (`DL.snoc` dummyBI)
+              . over esVars (`DL.snoc` envVar)
 
       return $ LocalVar $ LocalNamelessVar closureHeight envSlot
 
@@ -126,8 +142,24 @@ closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
       return $ LetNFCC infos rhsCC bodyCC
 
     ccRhs :: Word32 -> Rhs -> ConversionM RhsCC
-    ccRhs closureHeight (RhsAlloc alloc) =
-      AllocRhsCC <$> ccAlloc closureHeight alloc
+    ccRhs _closureHeight (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc alloc
 
-    ccAlloc :: Word32 -> Alloc -> ConversionM AllocCC
-    ccAlloc _closureHeight (AllocLit lit) = return $ SharedLiteralCC lit
+    ccAlloc :: Alloc -> ConversionM AllocCC
+    ccAlloc (AllocLit lit) = return $ SharedLiteralCC lit
+
+    ccAlloc (AllocLam argInfos body) = do
+      pushEmptyEnv
+      codeId <- allocClosureCodeId
+      bodyCC <- ccAnf 0 body
+      envState <- popEnv
+      let arity = CodeArity $ fromIntegral $ V.length argInfos
+          record = ClosureCodeRecordCC (view esSize envState)
+                                       (V.fromList $ toList $ _esInfos envState)
+                                       arity
+                                       argInfos
+                                       bodyCC
+      csRegistry.symRegClosureMap.at codeId ?= record
+
+      return $ AllocateClosureCC (V.fromList $ toList $ _esVars envState)
+                                 arity
+                                 codeId

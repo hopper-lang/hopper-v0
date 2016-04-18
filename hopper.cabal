@@ -106,6 +106,7 @@ library
                       ,lens >= 4.12 && < 4.14
                      --  ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
                       ,integer-gmp >= 1.0 && < 1.1
+                      ,dlist >= 0.7.1 && < 0.8
 
 
   -- Directories containing source files.
