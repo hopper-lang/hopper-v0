@@ -13,10 +13,9 @@ import Hopper.Utils.LocallyNameless
 
 import Control.Arrow (second)
 import Control.Lens (Lens', Traversal', (^.), (%~), (%=), (?=), _head,
-                     makeLenses, firstOf, over, use, at, view)
+                     makeLenses, firstOf, over, use, at)
 import Control.Monad.Trans.State.Strict (State, runState, get)
 import Data.Foldable (toList)
-import Data.Function ((&))
 import Data.Maybe (fromMaybe)
 import Data.Word (Word32)
 
@@ -24,13 +23,28 @@ import qualified Data.DList as DL
 import qualified Data.Map.Strict as Map
 import qualified Data.Vector as V
 
+data ClosureType
+  = Thunk
+  | Closure
+  deriving (Eq, Show)
+
+data Reach
+  = LocalReference
+  | ArgReference
+  | FreeReference Word32 -- de Bruijn depth beyond the closure/thunk
+  deriving (Eq, Show)
+
 data EnvState
   = EnvState { _esVars  :: DL.DList Variable
-             -- ^ Reversed env vars seen so far
+             -- ^ Environment vars seen so far
              , _esInfos :: DL.DList BinderInfo
-             -- ^ Reversed env binder infos seen so far
+             -- ^ Environment BinderInfos seen so far
              , _esSize  :: EnvSize
-             -- ^ Size of the env so far, to avoid O(n) 'length' calls
+             -- ^ Size of the environment so far, to avoid O(n) 'length' calls
+             , _esClosureType :: ClosureType
+             -- ^ Whether we're building a closure or thunk. This is necessary
+             -- to calculate whether variables are reaching outside of the
+             -- closure (because thunks don't induce new scopes, like closures).
              }
   deriving (Show)
 
@@ -54,13 +68,12 @@ type ConversionM = State ConversionState
 --
 -- - "Closure height" refers to the number of lets passed since entering
 --   the closure or thunk. TODO(bts): possibly rename this?
+--
 -- - Our implicit ABI is currently such that explicit closure args and captured
 --   env vars live on two separate levels, with env vars as the inner binding
 --   level. TODO(bts): update the evaluator to reflect this new ABI.
+--
 -- - In the future we should move to elaborating explicit lets for the env
-
-emptyEnv :: EnvState
-emptyEnv = EnvState mempty mempty $ EnvSize 0
 
 topEnv :: Traversal' ConversionState EnvState
 topEnv = csEnvStack._head
@@ -71,8 +84,10 @@ topEnvUse l = projectValue <$> get
     projectValue state = fromMaybe (error "impossible env stack underrun") $
       firstOf (topEnv.l) state
 
-pushEmptyEnv :: ConversionM ()
-pushEmptyEnv = csEnvStack %= (emptyEnv:)
+pushEmptyEnv :: ClosureType -> ConversionM ()
+pushEmptyEnv closureType = csEnvStack %= (emptyEnv:)
+  where
+    emptyEnv = EnvState mempty mempty (EnvSize 0) closureType
 
 popEnv :: ConversionM EnvState
 popEnv = do
@@ -98,30 +113,44 @@ dummyBI = BinderInfoData Omega () Nothing
 
 adjustVar :: Word32 -> Variable -> ConversionM Variable
 adjustVar _closureHeight var@(GlobalVarSym _) = return var
-adjustVar closureHeight  var@(LocalVar lnv)
-  | depth > closureHeight  = capturedVar
-  | depth == closureHeight = bumpedVar   -- var refers to fn arg; bump past env
-  | otherwise              = return var
+adjustVar closureHeight  var@(LocalVar lnv) = do
+  mClosureType <- firstOf (topEnv.esClosureType) <$> get
+
+  case mClosureType of
+    Nothing ->
+      return var -- TODO(bts): possibly error that this var is free
+    Just closureType ->
+      case reach closureType of
+        LocalReference ->
+          return var
+        ArgReference ->
+          return $ bump var
+        FreeReference envVarDepth -> do
+          let envVar = LocalVar $ LocalNamelessVar envVarDepth slot
+
+          envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
+
+          topEnv %= over esSize succ
+                  . over esInfos (`DL.snoc` dummyBI)
+                  . over esVars (`DL.snoc` envVar)
+
+          return $ LocalVar $ LocalNamelessVar closureHeight envSlot
 
   where
     depth = lnv ^. lnDepth
     slot = lnv ^. lnSlot
 
-    capturedVar :: ConversionM Variable
-    capturedVar = do
-      let envVarDepth = depth - closureHeight - 1
-          envVar = LocalVar $ LocalNamelessVar envVarDepth slot
+    reach :: ClosureType -> Reach
+    reach Thunk
+      | depth >= closureHeight = FreeReference $ depth - closureHeight
+      | otherwise              = LocalReference
+    reach Closure
+      | depth >  closureHeight = FreeReference $ depth - (closureHeight + 1)
+      | depth == closureHeight = ArgReference
+      | otherwise              = LocalReference
 
-      envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
-
-      topEnv %= over esSize succ
-              . over esInfos (`DL.snoc` dummyBI)
-              . over esVars (`DL.snoc` envVar)
-
-      return $ LocalVar $ LocalNamelessVar closureHeight envSlot
-
-    bumpedVar :: ConversionM Variable
-    bumpedVar = return $ var & localNameless.lnDepth %~ succ
+    bump :: Variable -> Variable
+    bump = localNameless.lnDepth %~ succ
 
 closureConvert :: Anf -> (AnfCC, SymbolRegistryCC)
 closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
@@ -148,18 +177,31 @@ closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
     ccAlloc (AllocLit lit) = return $ SharedLiteralCC lit
 
     ccAlloc (AllocLam argInfos body) = do
-      pushEmptyEnv
-      codeId <- allocClosureCodeId
+      pushEmptyEnv Closure
+      closureId <- allocClosureCodeId
       bodyCC <- ccAnf 0 body
       envState <- popEnv
       let arity = CodeArity $ fromIntegral $ V.length argInfos
-          record = ClosureCodeRecordCC (view esSize envState)
+          record = ClosureCodeRecordCC (_esSize envState)
                                        (V.fromList $ toList $ _esInfos envState)
                                        arity
                                        argInfos
                                        bodyCC
-      csRegistry.symRegClosureMap.at codeId ?= record
+      csRegistry.symRegClosureMap.at closureId ?= record
 
       return $ AllocateClosureCC (V.fromList $ toList $ _esVars envState)
                                  arity
-                                 codeId
+                                 closureId
+
+    ccAlloc (AllocThunk body) = do
+      pushEmptyEnv Thunk
+      thunkId <- allocThunkCodeId
+      bodyCC <- ccAnf 0 body
+      envState <- popEnv
+      let record = ThunkCodeRecordCC (_esSize envState)
+                                     (V.fromList $ toList $ _esInfos envState)
+                                     bodyCC
+      csRegistry.symRegThunkMap.at thunkId ?= record
+
+      return $ AllocateThunkCC (V.fromList $ toList $ _esVars envState)
+                               thunkId
