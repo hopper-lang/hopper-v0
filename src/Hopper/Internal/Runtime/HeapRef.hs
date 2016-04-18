@@ -33,7 +33,7 @@ instance Bounded Ref where
 -- | interface for doing queries on bitwise representation and inspecting it
 -- this could eg be used to query the upper 16 bits if we were to use a pointer
 -- tagging scheme or the like. No such tagging scheme for now though :)
-refRepLens :: Functor f =>(Word64 -> f a) -> Ref -> f a
+refRepLens :: ( Word64 -> f a ) -> Ref -> f a
 refRepLens = \ f (Ref r) -> f r
 
 -- | interface for doing bitwise transformations that yield a new ref

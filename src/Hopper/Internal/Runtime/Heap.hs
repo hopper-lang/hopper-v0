@@ -189,20 +189,16 @@ heapLookup ref = do
 
 
 --- this doesn't validate Heap and heap allocator correctness, VERY UNSAFE :)
-unsafeRunHSCM :: Monad m =>  Natural -> Heap val  -> HeapStepCounterM val m b -> m (b,CounterAndHeap val  )
+unsafeRunHSCM :: Natural -> Heap val  -> HeapStepCounterM val m b -> m (b,CounterAndHeap val  )
 unsafeRunHSCM cnt hp (HSCM m)  = State.runStateT m (CounterAndHeap 0 0 cnt hp)
 
 -- run a program in an empty heap
-runEmptyHeap
-  :: Monad m
-  => Natural
+runEmptyHeap :: Natural
   -> HeapStepCounterM val m b
   -> m (b, CounterAndHeap val)
 runEmptyHeap = runHeap (Heap (Ref 1) Map.empty Map.empty)
 
-runHeap
-  :: Monad m
-  => Heap val
+runHeap :: Heap val
   -> Natural
   -> HeapStepCounterM val m b
   -> m (b, CounterAndHeap val)
