@@ -50,8 +50,10 @@ spec =
                        (RhsAlloc $ AllocLit ten)
                        (AnfLet infos1
                                (RhsAlloc $
-                                 AllocLam infos1
-                                          (AnfReturn $ V.fromList [v0, v1]))
+                                 AllocLam infos1 $
+                                   AnfLet infos1
+                                          (RhsAlloc $ AllocLit twenty)
+                                          (AnfReturn $ V.fromList [v0, v1, v2]))
                                (AnfReturn $ V.singleton v0))
           ccd = LetNFCC infos1
                         (AllocRhsCC $ SharedLiteralCC ten)
@@ -65,11 +67,16 @@ spec =
                                        infos1 -- for env
                                        arity1
                                        infos1 -- for args
-                                       (ReturnCC $ V.fromList [ v1 -- arg slot 0
-                                                              , v0 -- env slot 0
-                                                              ])
+                                       (LetNFCC infos1
+                                                (AllocRhsCC $
+                                                  SharedLiteralCC twenty)
+                                                (ReturnCC $
+                                                  V.fromList [ v0 -- local var
+                                                             , v2 -- arg slot 0
+                                                             , v1 -- env slot 0
+                                                             ]))
           registry = SymbolRegistryCC Map.empty
-                                      (Map.fromList [( (ClosureCodeId 0)
+                                      (Map.fromList [( ClosureCodeId 0
                                                      , record)])
                                       Map.empty
       in closureConvert anf `shouldBe` (ccd, registry)
@@ -102,7 +109,7 @@ spec =
                                                 V.fromList [ v0 -- local let
                                                            , v1 -- env slot 0
                                                            ]))
-          registry = SymbolRegistryCC (Map.fromList [( (ThunkCodeId 0)
+          registry = SymbolRegistryCC (Map.fromList [( ThunkCodeId 0
                                                      , record)])
                                       Map.empty
                                       Map.empty
