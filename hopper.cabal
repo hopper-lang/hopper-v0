@@ -69,6 +69,7 @@ library
                     Hopper.Internal.Type.BinderInfo
                     Hopper.Internal.Type.Relevance
                     Hopper.Internal.Core.Term
+                    Hopper.Internal.Core.HOAS
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Literal
                     Hopper.Internal.LoweredCore.ANF
@@ -104,7 +105,7 @@ library
                       ,bifunctors >= 4.2 &&  < 5.4
                       --- this may need to be tightened later
                       ,lens >= 4.12 && < 4.14
-                     --  ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
+                      ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
                       ,integer-gmp >= 1.0 && < 1.1
                       ,dlist >= 0.7.1 && < 0.8
 
