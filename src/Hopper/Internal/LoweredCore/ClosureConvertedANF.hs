@@ -82,7 +82,7 @@ newtype EnvSize =
 makeLenses ''EnvSize
 
 newtype CodeArity =
-    CodeArity { getCodeArity :: Word64 }
+    CodeArity { getCodeArity :: Word32 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 -- whether the binder position is a variable, wild card,
@@ -221,7 +221,7 @@ data AllocCC
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
   | AllocateClosureCC
         !(V.Vector Variable) -- set of local variables captured in the thunk environment, in this order
-        !Word64 --- arity of closure (need that even be here?) TODO
+        !Word32 --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
