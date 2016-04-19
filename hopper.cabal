@@ -55,9 +55,9 @@ flag fullprofiling
 library
   -- Modules exported by the library.
   exposed-modules:
+                    Control.Monad.STE
                     Data.Hop.Or
                     Data.HopperException
-                    Control.Monad.STE
                     Hopper.HBound
                     Hopper.Utils.Swap
                     Hopper.Utils.Closed
@@ -72,8 +72,8 @@ library
                     Hopper.Internal.Core.Term
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Literal
-                    Hopper.Internal.LoweredCore.ANF
                     Hopper.Internal.Core.ShiftRemoval
+                    Hopper.Internal.LoweredCore.ANF
                     Hopper.Internal.LoweredCore.ClosureConvertedANF
                     Hopper.Internal.LoweredCore.EvalClosureConvertedANF
 
