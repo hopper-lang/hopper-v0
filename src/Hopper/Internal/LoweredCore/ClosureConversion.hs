@@ -170,8 +170,24 @@ closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
       bodyCC <- ccAnf (succ letsPassed) body
       return $ LetNFCC infos rhsCC bodyCC
 
+    ccAnf letsPassed (AnfTailCall app) = TailCallCC <$> ccApp letsPassed app
+
     ccRhs :: Word32 -> Rhs -> ConversionM RhsCC
     ccRhs _letsPassed (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc alloc
+
+    ccRhs letsPassed (RhsApp app) = NonTailCallAppCC <$> ccApp letsPassed app
+
+    ccApp :: Word32 -> App -> ConversionM AppCC
+    ccApp letsPassed (AppFun fv avs) = do
+      ccFnVar <- adjustVar letsPassed fv
+      ccArgVars <- traverse (adjustVar letsPassed) avs
+      return $ FunAppCC ccFnVar ccArgVars
+
+    ccApp letsPassed (AppPrim primId avs) = do
+      ccArgVars <- traverse (adjustVar letsPassed) avs
+      return $ PrimAppCC primId ccArgVars
+
+    ccApp letsPassed (AppThunk var) = EnterThunkCC <$> adjustVar letsPassed var
 
     ccAlloc :: Alloc -> ConversionM AllocCC
     ccAlloc (AllocLit lit) = return $ SharedLiteralCC lit
