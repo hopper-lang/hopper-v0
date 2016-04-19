@@ -22,6 +22,8 @@ spec :: Spec
 spec =
   describe "Closure conversion" $ do
     let v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
+        v0_0 = v0
+        v0_1 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 1
         v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
         v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
         add = GlobalVarSym $ GlobalSymbol "add"
@@ -120,7 +122,33 @@ spec =
       in closureConvert anf `shouldBe` (ccd, registry)
 
     it "allocates env vars from left to right" $
-      pending
+      let anf = AnfLet infos1
+                       (RhsAlloc $ AllocLit ten)
+                       (AnfLet infos1
+                               (RhsAlloc $ AllocLit twenty)
+                               (AnfLet infos1
+                                       (RhsAlloc $
+                                         AllocThunk $
+                                           AnfReturn $ V.fromList [v1, v0])
+                                       (AnfReturn $ V.singleton v0)))
+          ccd = LetNFCC infos1
+                        (AllocRhsCC $ SharedLiteralCC ten)
+                        (LetNFCC infos1
+                                 (AllocRhsCC $ SharedLiteralCC twenty)
+                                 (LetNFCC infos1
+                                          (AllocRhsCC $
+                                            AllocateThunkCC (V.fromList [ v1
+                                                                        , v0])
+                                                            (ThunkCodeId 0))
+                                          (ReturnCC $ V.singleton v0)))
+          record = ThunkCodeRecordCC (EnvSize 2)
+                                     infos2
+                                     (ReturnCC $ V.fromList [v0_0, v0_1])
+          registry = SymbolRegistryCC (Map.fromList [( ThunkCodeId 0
+                                                     , record)])
+                                      Map.empty
+                                      Map.empty
+      in closureConvert anf `shouldBe` (ccd, registry)
 
     it "only allocates an env var if a var is used in that closure" $
       pending
