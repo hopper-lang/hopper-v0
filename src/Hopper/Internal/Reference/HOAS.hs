@@ -1,12 +1,14 @@
 {-# LANGUAGE DataKinds, GADTs  #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeInType #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-module Hopper.Internal.Core.HOAS where
+{-# LANGUAGE KindSignatures #-}
+--
+-- {-# LANGUAGE TypeInType #-}
+-- {-# LANGUAGE DuplicateRecordFields #-}
+module Hopper.Internal.Reference.HOAS where
 
 import qualified GHC.TypeLits as GT
 import GHC.TypeLits (Nat)
-import GHC.Types (Type)
+import GHC.Types (Type) -- this isn't 7.10 compatible but its sooo nice :)
 
 {- A Higher Order  abstract syntax model of the term AST
 There will be a few infelicities to simplify / leverage the use
@@ -18,14 +20,14 @@ of metalanguage (haskell) lambdas/binders
 
 
 data ValFun :: Nat -> Type where
-  OneVF :: (Value -> [Value]) -> ValFun 1
-  SomeVF :: GT.KnownNat n => (Value -> ValFun n) -> ValFun (n GT.+ 1)
+  ZeroVF :: (() -> [Value]) -> ValFun 0
+  SucVF :: GT.KnownNat n => (Value -> ValFun n) -> ValFun (n GT.+ 1)
 
 --data ValFun :: Nat  One (Value -> [Value ])
 
 data ExpFun :: Nat -> Type ->  Type where
-  One :: (a -> [Exp a]) -> ExpFun 1 a
-  Some :: GT.KnownNat n => (a -> ExpFun n a) -> ExpFun (n GT.+ 1) a
+  Z :: ([Exp a]) -> ExpFun 0 a
+  S :: GT.KnownNat n => (a -> ExpFun n a) -> ExpFun (n GT.+ 1) a
 
 data Literal --- this lives in a nother module
 

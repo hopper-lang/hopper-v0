@@ -63,13 +63,13 @@ library
                     Hopper.Utils.Closed
                     Hopper.Utils.BigMath
                     Hopper.Utils.LocallyNameless
+                    Hopper.Internal.Reference.HOAS
                     Hopper.Internal.Runtime.Heap
                     Hopper.Internal.Runtime.HeapRef
                     Hopper.Internal.Runtime.TaggedValueSelector
                     Hopper.Internal.Type.BinderInfo
                     Hopper.Internal.Type.Relevance
                     Hopper.Internal.Core.Term
-                    Hopper.Internal.Core.HOAS
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Literal
                     Hopper.Internal.LoweredCore.ANF
