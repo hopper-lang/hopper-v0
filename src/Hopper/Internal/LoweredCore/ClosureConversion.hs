@@ -121,20 +121,9 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
       return var -- TODO(bts): possibly error that this var is free
     Just closureType ->
       case reach closureType of
-        LocalReference ->
-          return var
-        ArgReference ->
-          return $ bump var
-        FreeReference envVarDepth -> do
-          let envVar = LocalVar $ LocalNamelessVar envVarDepth slot
-
-          envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
-
-          topEnv %= over esSize succ
-                  . over esInfos (`DL.snoc` dummyBI)
-                  . over esVars (`DL.snoc` envVar)
-
-          return $ LocalVar $ LocalNamelessVar letsPassed envSlot
+        LocalReference -> return var
+        ArgReference -> return $ bump var
+        FreeReference depthBeyondClosure -> closeOver depthBeyondClosure
 
   where
     depth = lnv ^. lnDepth
@@ -151,6 +140,18 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
 
     bump :: Variable -> Variable
     bump = localNameless.lnDepth %~ succ
+
+    closeOver :: Word32 -> ConversionM Variable
+    closeOver depthBeyondClosure = do
+      let envVar = LocalVar $ LocalNamelessVar depthBeyondClosure slot
+
+      envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
+
+      topEnv %= over esSize succ
+              . over esInfos (`DL.snoc` dummyBI)
+              . over esVars (`DL.snoc` envVar)
+
+      return $ LocalVar $ LocalNamelessVar letsPassed envSlot
 
 closureConvert :: Anf -> (AnfCC, SymbolRegistryCC)
 closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
