@@ -26,16 +26,15 @@ spec =
         v0_1 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 1
         v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
         v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
-        add = GlobalVarSym $ GlobalSymbol "add"
+        id_ = GlobalVarSym $ GlobalSymbol "id"
         ten = LInteger 10
         twenty = LInteger 20
         dummyBI = BinderInfoData Omega () Nothing
+        infos0 = V.empty
         infos1 = V.singleton dummyBI
         infos2 = V.replicate 2 dummyBI
         arity1 = CodeArity 1
-        -- arity2 = CodeArity 2
         emptyRegistry = SymbolRegistryCC Map.empty Map.empty Map.empty
-        -- prim0 = PrimopIdGeneral "test"
 
     it "handles closure-less let and return" $
       let anf = AnfLet infos1
@@ -151,7 +150,29 @@ spec =
       in closureConvert anf `shouldBe` (ccd, registry)
 
     it "only allocates an env var if a var is used in that closure" $
-      pending
+      let anf = AnfLet infos1
+                       (RhsAlloc $ AllocLit ten)
+                       (AnfLet infos1
+                               (RhsAlloc $
+                                 AllocThunk $
+                                   AnfTailCall $ AppFun id_ $ V.singleton id_)
+                               (AnfReturn $ V.singleton v0))
+          ccd = LetNFCC infos1
+                        (AllocRhsCC $ SharedLiteralCC ten)
+                        (LetNFCC infos1
+                                 (AllocRhsCC $
+                                   AllocateThunkCC (V.empty)
+                                                   (ThunkCodeId 0))
+                                 (ReturnCC $ V.singleton v0))
+          record = ThunkCodeRecordCC (EnvSize 0)
+                                     infos0
+                                     (TailCallCC $ FunAppCC id_
+                                                            (V.singleton id_))
+          registry = SymbolRegistryCC (Map.fromList [( ThunkCodeId 0
+                                                     , record)])
+                                      Map.empty
+                                      Map.empty
+      in closureConvert anf `shouldBe` (ccd, registry)
 
     it "converts nested closures and thunks" $
       pending
