@@ -13,8 +13,8 @@ import Hopper.Internal.Type.Relevance (Relevance(..))
 import Hopper.Utils.LocallyNameless
 
 import Control.Arrow (second)
-import Control.Lens (Lens', Traversal', (^.), (%~), (%=), (?=), _head,
-                     makeLenses, firstOf, over, use, at)
+import Control.Lens (Lens', Traversal', (^.), (%~), (%=), (?=), _head, at,
+                     firstOf, makeLenses, over, set, use)
 import Control.Monad.State.Class (MonadState, get)
 import Control.Monad.Trans.State.Strict (State, runState)
 import Data.Foldable (toList)
@@ -38,11 +38,16 @@ data Reach
 
 data EnvState
   = EnvState { _esVars  :: DL.DList Variable
-             -- ^ Environment vars seen so far
+             -- ^ Environment vars allocated so far, for this closure/thunk
              , _esInfos :: DL.DList BinderInfo
-             -- ^ Environment BinderInfos seen so far
+             -- ^ Environment BinderInfos so far
              , _esSize  :: EnvSize
              -- ^ Size of the environment so far, to avoid O(n) 'length' calls
+             , _esSlots :: Map.Map Variable BinderSlot
+             -- ^ Env vars mapped to their slot index, for sharing environment
+             -- slots when multiple variables in the same closure refer to the
+             -- same binder. Once translated to env vars, two different vars
+             -- referring to the same binder will be equal.
              , _esClosureType :: ClosureType
              -- ^ Whether we're building a closure or thunk. This is necessary
              -- to calculate whether variables are reaching outside of the
@@ -91,7 +96,7 @@ topEnvUse l = projectValue <$> get
 pushEmptyEnv :: ClosureType -> ConversionM ()
 pushEmptyEnv closureType = csEnvStack %= (emptyEnv:)
   where
-    emptyEnv = EnvState mempty mempty (EnvSize 0) closureType
+    emptyEnv = EnvState mempty mempty (EnvSize 0) Map.empty closureType
 
 popEnv :: ConversionM EnvState
 popEnv = do
@@ -147,15 +152,21 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
 
     closeOver :: Word32 -> ConversionM Variable
     closeOver depthBeyondClosure = do
-      envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
-
       let envVar = LocalVar $ LocalNamelessVar depthBeyondClosure slot
+      mSharedEnvSlot <- topEnvUse $ esSlots.at envVar
 
-      topEnv %= over esSize succ
-              . over esInfos (`DL.snoc` dummyBI)
-              . over esVars (`DL.snoc` envVar)
+      case mSharedEnvSlot of
+        Just sharedEnvSlot ->
+          return $ LocalVar $ LocalNamelessVar letsPassed sharedEnvSlot
+        Nothing -> do
+          envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
 
-      return $ LocalVar $ LocalNamelessVar letsPassed envSlot
+          topEnv %= over esSize              succ
+                  . over esInfos             (`DL.snoc` dummyBI)
+                  . set  (esSlots.at envVar) (Just envSlot)
+                  . over esVars              (`DL.snoc` envVar)
+
+          return $ LocalVar $ LocalNamelessVar letsPassed envSlot
 
 closureConvert :: Anf -> (AnfCC, SymbolRegistryCC)
 closureConvert anf0 = second _csRegistry $

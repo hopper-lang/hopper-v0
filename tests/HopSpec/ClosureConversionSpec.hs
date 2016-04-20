@@ -35,6 +35,7 @@ spec =
         infos0 = V.empty
         infos1 = V.singleton dummyBI
         infos2 = V.replicate 2 dummyBI
+        arity0 = CodeArity 0
         arity1 = CodeArity 1
         emptyRegistry = SymbolRegistryCC Map.empty Map.empty Map.empty
         prim0 = PrimopIdGeneral "test"
@@ -155,7 +156,7 @@ spec =
                                       Map.empty
       in closureConvert anf `shouldBe` (ccd, registry)
 
-    it "only allocates an env var if a var is used in that closure" $
+    it "only allocates an env var if an outside binder is referenced" $
       let anf = AnfLet infos1
                        (RhsAlloc $ AllocLit ten)
                        (AnfLet infos1
@@ -223,5 +224,27 @@ spec =
                                       (Map.fromList
                                         [ (ClosureCodeId 0, outerRec)
                                         , (ClosureCodeId 1, innerRec)])
+                                      Map.empty
+      in closureConvert anf `shouldBe` (ccd, registry)
+
+    it "re-uses env slots when multiple vars reference the same binder" $
+      let anf = AnfLet infos1
+                       (RhsAlloc $ AllocLit ten)
+                       (AnfLet infos1
+                               (RhsAlloc $ AllocLam infos0 $
+                                 AnfReturn $ V.fromList [v1, v1])
+                               (AnfReturn $ V.singleton v0))
+          ccd = LetNFCC infos1
+                  (AllocRhsCC $ SharedLiteralCC ten)
+                  (LetNFCC infos1
+                    (AllocRhsCC $
+                      AllocateClosureCC (V.fromList [v0])
+                                        arity0
+                                        (ClosureCodeId 0))
+                    (ReturnCC $ V.singleton v0))
+          record = ClosureCodeRecordCC (EnvSize 1) infos1 arity0 infos0 $
+                     ReturnCC $ V.fromList [v0_0, v0_0] -- both share env slot 0
+          registry = SymbolRegistryCC Map.empty
+                                      (Map.fromList [(ClosureCodeId 0, record)])
                                       Map.empty
       in closureConvert anf `shouldBe` (ccd, registry)
