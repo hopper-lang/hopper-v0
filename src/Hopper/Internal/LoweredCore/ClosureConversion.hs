@@ -118,7 +118,7 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
 
   case mClosureType of
     Nothing ->
-      return var -- TODO(bts): possibly error that this var is free
+      return var
     Just closureType ->
       case reach closureType of
         LocalReference -> return var
@@ -143,9 +143,9 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
 
     closeOver :: Word32 -> ConversionM Variable
     closeOver depthBeyondClosure = do
-      let envVar = LocalVar $ LocalNamelessVar depthBeyondClosure slot
-
       envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
+
+      let envVar = LocalVar $ LocalNamelessVar depthBeyondClosure slot
 
       topEnv %= over esSize succ
               . over esInfos (`DL.snoc` dummyBI)
@@ -174,7 +174,7 @@ closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
     ccAnf letsPassed (AnfTailCall app) = TailCallCC <$> ccApp letsPassed app
 
     ccRhs :: Word32 -> Rhs -> ConversionM RhsCC
-    ccRhs _letsPassed (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc alloc
+    ccRhs letsPassed (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc letsPassed alloc
 
     ccRhs letsPassed (RhsApp app) = NonTailCallAppCC <$> ccApp letsPassed app
 
@@ -190,35 +190,37 @@ closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
 
     ccApp letsPassed (AppThunk var) = EnterThunkCC <$> adjustVar letsPassed var
 
-    ccAlloc :: Alloc -> ConversionM AllocCC
-    ccAlloc (AllocLit lit) = return $ SharedLiteralCC lit
+    ccAlloc :: Word32 -> Alloc -> ConversionM AllocCC
+    ccAlloc _letsPassed (AllocLit lit) = return $ SharedLiteralCC lit
 
-    ccAlloc (AllocLam argInfos body) = do
+    ccAlloc letsPassed (AllocLam argInfos body) = do
       pushEmptyEnv Closure
       closureId <- allocClosureCodeId
       bodyCC <- ccAnf 0 body
       envState <- popEnv
       let arity = CodeArity $ fromIntegral $ V.length argInfos
-          record = ClosureCodeRecordCC (_esSize envState)
-                                       (V.fromList $ toList $ _esInfos envState)
-                                       arity
-                                       argInfos
-                                       bodyCC
-      csRegistry.symRegClosureMap.at closureId ?= record
+      csRegistry.symRegClosureMap.at closureId ?=
+        ClosureCodeRecordCC (_esSize envState)
+                            (V.fromList $ toList $ _esInfos envState)
+                            arity
+                            argInfos
+                            bodyCC
+      envVars <- V.fromList <$> traverse (adjustVar letsPassed)
+                                         (toList $ _esVars envState)
 
-      return $ AllocateClosureCC (V.fromList $ toList $ _esVars envState)
-                                 arity
-                                 closureId
+      return $ AllocateClosureCC envVars arity closureId
 
-    ccAlloc (AllocThunk body) = do
+    ccAlloc letsPassed (AllocThunk body) = do
       pushEmptyEnv Thunk
       thunkId <- allocThunkCodeId
       bodyCC <- ccAnf 0 body
       envState <- popEnv
-      let record = ThunkCodeRecordCC (_esSize envState)
-                                     (V.fromList $ toList $ _esInfos envState)
-                                     bodyCC
-      csRegistry.symRegThunkMap.at thunkId ?= record
+      csRegistry.symRegThunkMap.at thunkId ?=
+        ThunkCodeRecordCC (_esSize envState)
+                          (V.fromList $ toList $ _esInfos envState)
+                          bodyCC
 
-      return $ AllocateThunkCC (V.fromList $ toList $ _esVars envState)
-                               thunkId
+      envVars <- V.fromList <$> traverse (adjustVar letsPassed)
+                                         (toList $ _esVars envState)
+
+      return $ AllocateThunkCC envVars thunkId

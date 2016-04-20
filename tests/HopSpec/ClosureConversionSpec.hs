@@ -26,6 +26,8 @@ spec =
         v0_1 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 1
         v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
         v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
+        v2_0 = v2
+        v2_1 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 1
         id_ = GlobalVarSym $ GlobalSymbol "id"
         ten = LInteger 10
         twenty = LInteger 20
@@ -35,6 +37,7 @@ spec =
         infos2 = V.replicate 2 dummyBI
         arity1 = CodeArity 1
         emptyRegistry = SymbolRegistryCC Map.empty Map.empty Map.empty
+        prim0 = PrimopIdGeneral "test"
 
     it "handles closure-less let and return" $
       let anf = AnfLet infos1
@@ -60,7 +63,10 @@ spec =
                                  AllocLam infos1 $
                                    AnfLet infos1
                                           (RhsAlloc $ AllocLit twenty)
-                                          (AnfReturn $ V.fromList [v0, v1, v2]))
+                                          (AnfReturn $ V.fromList [ v0 -- local
+                                                                  , v1 -- arg
+                                                                  , v2 -- free
+                                                                  ]))
                                (AnfReturn $ V.singleton v0))
           ccd = LetNFCC infos1
                         (AllocRhsCC $ SharedLiteralCC ten)
@@ -174,5 +180,48 @@ spec =
                                       Map.empty
       in closureConvert anf `shouldBe` (ccd, registry)
 
-    it "converts nested closures and thunks" $
-      pending
+    it "converts nested closures" $
+      let anf = AnfLet infos2
+                  (RhsApp $ AppPrim prim0 V.empty)
+                  (AnfLet infos1
+                    (RhsAlloc $ AllocLam infos1 $
+                      AnfLet infos1
+                        (RhsAlloc $ AllocLam infos1
+                          (AnfReturn $ V.fromList [ v0   -- inner arg 0
+                                                  , v2_0 -- outermost let slot 0
+                                                  , v2_1 -- outermost let slot 1
+                                                  ]))
+                        (AnfTailCall $ AppFun v0                 -- inner lam
+                                              (V.singleton v1))) -- outer arg 0
+                    (AnfReturn $ V.singleton v0))
+          ccd = LetNFCC infos2
+                  (NonTailCallAppCC $ PrimAppCC prim0 V.empty)
+                  (LetNFCC infos1
+                    (AllocRhsCC $ AllocateClosureCC (V.fromList [ v0_0 -- let@0
+                                                                , v0_1 -- let@1
+                                                                ])
+                                                    arity1
+                                                    (ClosureCodeId 0))
+                    (ReturnCC $ V.singleton v0))
+          outerRec = ClosureCodeRecordCC (EnvSize 2) infos2 arity1 infos1 $
+                       LetNFCC infos1
+                        (AllocRhsCC $
+                          AllocateClosureCC (V.fromList [ v0_0 -- env slot 0
+                                                        , v0_1 -- env slot 1
+                                                        ])
+                                            arity1
+                                            (ClosureCodeId 1))
+                        (TailCallCC $ FunAppCC v0
+                                               -- bumped past env:
+                                               (V.singleton v2))
+          innerRec = ClosureCodeRecordCC (EnvSize 2) infos2 arity1 infos1 $
+                       ReturnCC $ V.fromList [ v1   -- arg0 bumped past env
+                                             , v0_0 -- env slot 0
+                                             , v0_1 -- env slot 1
+                                             ]
+          registry = SymbolRegistryCC Map.empty
+                                      (Map.fromList
+                                        [ (ClosureCodeId 0, outerRec)
+                                        , (ClosureCodeId 1, innerRec)])
+                                      Map.empty
+      in closureConvert anf `shouldBe` (ccd, registry)
