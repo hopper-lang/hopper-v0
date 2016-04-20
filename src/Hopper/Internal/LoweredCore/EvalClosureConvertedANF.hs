@@ -317,7 +317,7 @@ enterClosureCC symbolReg env stack (LocalVar localvar, args) = do
         -- / unpack. We need to document / codify this.
         --
         -- TODO(joel/carter): make this explicit.
-        (EnvConsCC (closureenv V.++ argRefs) env)
+        (EnvConsCC closureenv (EnvConsCC argRefs env))
         (UpdateHeapRefCC ref stack)
         bod
     badVal ->
