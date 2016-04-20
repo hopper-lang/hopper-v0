@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Hopper.Internal.LoweredCore.ClosureConversion
   ( closureConvert
@@ -14,7 +15,8 @@ import Hopper.Utils.LocallyNameless
 import Control.Arrow (second)
 import Control.Lens (Lens', Traversal', (^.), (%~), (%=), (?=), _head,
                      makeLenses, firstOf, over, use, at)
-import Control.Monad.Trans.State.Strict (State, runState, get)
+import Control.Monad.State.Class (MonadState, get)
+import Control.Monad.Trans.State.Strict (State, runState)
 import Data.Foldable (toList)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word32)
@@ -62,7 +64,9 @@ data ConversionState
 
 makeLenses ''ConversionState
 
-type ConversionM = State ConversionState
+newtype ConversionM a
+  = ConversionM { runConversion :: State ConversionState a }
+  deriving (Functor, Applicative, Monad, MonadState ConversionState)
 
 -- Some notes:
 --
@@ -154,7 +158,8 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
       return $ LocalVar $ LocalNamelessVar letsPassed envSlot
 
 closureConvert :: Anf -> (AnfCC, SymbolRegistryCC)
-closureConvert anf0 = second _csRegistry $ runState (ccAnf 0 anf0) state0
+closureConvert anf0 = second _csRegistry $
+                             runState (runConversion $ ccAnf 0 anf0) state0
   where
     state0 :: ConversionState
     state0 = ConversionState (SymbolRegistryCC Map.empty Map.empty Map.empty)
