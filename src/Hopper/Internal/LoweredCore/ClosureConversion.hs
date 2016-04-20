@@ -25,17 +25,33 @@ import qualified Data.DList as DL
 import qualified Data.Map.Strict as Map
 import qualified Data.Vector as V
 
+--------------------------
+-- Data Types
+--------------------------
+
+-- | For tracking in 'EnvState' whether we're building a closure or thunk. We
+-- need to differentiate to decide whether a variable we encounter reaches
+-- outside of the closure or thunk; closures have an extra binding level for
+-- explicit arguments to the function.
 data ClosureType
   = Thunk
   | Closure
   deriving (Eq, Show)
 
+-- | How far a variable within a closure or thunk "reaches"
 data Reach
   = LocalReference
+  -- ^ Variable refers to a local 'AnfLet' binding.
   | ArgReference
-  | FreeReference Word32 -- de Bruijn depth beyond the closure/thunk
+  -- ^ Variable (inside of a closure, not thunk) refers to a function argument.
+  | FreeReference Word32
+  -- ^ variable reaches beyond the closure/thunk, with the De Bruijn depth
+  -- of the binder relative to the closure/thunk boundary.
   deriving (Eq, Show)
 
+-- | The state for environment we're building up for the creation of a closure
+-- or thunk code record, and the accompanying 'AnfCC' closure/thunk allocation
+-- node which replaces the lambda/delay in the AST.
 data EnvState
   = EnvState { _esVars  :: DL.DList Variable
              -- ^ Environment vars allocated so far, for this closure/thunk
@@ -57,8 +73,12 @@ data EnvState
 
 makeLenses ''EnvState
 
+-- | As we walk through the AST, we maintain a stack of 'EnvState's to handle
+-- nested closures/thunks.
 type EnvStack = [EnvState]
 
+-- | The state in our 'ConversionM' monad. Contains bookkeeping for building our
+-- 'SymbolRegistryCC' of closure and thunk code records.
 data ConversionState
   = ConversionState { _csRegistry      :: SymbolRegistryCC
                     , _csNextThunkId   :: ThunkCodeId
@@ -69,57 +89,75 @@ data ConversionState
 
 makeLenses ''ConversionState
 
+-- | The monad in which our closure conversion runs.
 newtype ConversionM a
   = ConversionM { runConversion :: State ConversionState a }
   deriving (Functor, Applicative, Monad, MonadState ConversionState)
 
+--------------------------
+-- Algorithm
+--------------------------
+
 -- Some notes:
 --
--- - "letsPassed" refers to the number of lets passed since entering the closure
---   or thunk.
+-- - "letsPassed" refers to the number of lets passed since entering the most
+--   immediate closure or thunk.
 --
 -- - Our implicit ABI is currently such that explicit closure args and captured
 --   env vars live on two separate levels, with env vars as the inner binding
---   level. TODO(bts): update the evaluator to reflect this new ABI.
+--   level. This is temporary until we move to explicit unpacking/elaboration
+--   of our environment by introducing new let bindings.
 --
--- - In the future we should move to elaborating explicit lets for the env
+-- - We're currently populating our closure/thunk code records with dummy
+--   'BinderInfo's.
 
+-- | Traversal focusing on the top 'EnvState' in our 'EnvStack'.
 topEnv :: Traversal' ConversionState EnvState
 topEnv = csEnvStack._head
 
+-- | Utility analogous to 'use' in lens. This utility should only be used when
+-- we're guaranteed to have a non-empty 'EnvStack'.
 topEnvUse :: Lens' EnvState a -> ConversionM a
 topEnvUse l = projectValue <$> get
   where
     projectValue state = fromMaybe (error "impossible env stack underrun") $
       firstOf (topEnv.l) state
 
+-- | Pushes an empty 'EnvState' onto our 'EnvStack'.
 pushEmptyEnv :: ClosureType -> ConversionM ()
 pushEmptyEnv closureType = csEnvStack %= (emptyEnv:)
   where
     emptyEnv = EnvState mempty mempty (EnvSize 0) Map.empty closureType
 
+-- | Pops the top 'EnvState' off our our 'EnvStack'.
 popEnv :: ConversionM EnvState
 popEnv = do
   envState <- topEnvUse id
   csEnvStack %= tail
   return envState
 
+-- | Issues a closure code ID to add the next closure to the registry.
 allocClosureCodeId :: ConversionM ClosureCodeId
 allocClosureCodeId = do
   curr <- use csNextClosureId
   csNextClosureId %= succ
   return curr
 
+-- | Issues a thunk code ID to add the next thunk to the registry.
 allocThunkCodeId :: ConversionM ThunkCodeId
 allocThunkCodeId = do
   curr <- use csNextThunkId
   csNextThunkId %= succ
   return curr
 
--- TODO(bts): integrate real binder infos
+-- TODO(bts): populate code records with real 'BinderInfo's
 dummyBI :: BinderInfo
 dummyBI = BinderInfoData Omega () Nothing
 
+-- | Adjusts a variable as a function of the number of 'Let's we've passed since
+-- entering the most immediate closure or thunk. We see whether the variable
+-- reaches outside of the current closure/thunk, and adjust the depth of the
+-- variable accordingly.
 adjustVar :: Word32 -> Variable -> ConversionM Variable
 adjustVar _letsPassed var@(GlobalVarSym _) = return var
 adjustVar letsPassed  var@(LocalVar lnv) = do
@@ -168,6 +206,7 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
 
           return $ LocalVar $ LocalNamelessVar letsPassed envSlot
 
+-- | The main function and entrypoint for closure-converting an 'Anf' term.
 closureConvert :: Anf -> (AnfCC, SymbolRegistryCC)
 closureConvert anf0 = second _csRegistry $
                              runState (runConversion $ ccAnf 0 anf0) state0
