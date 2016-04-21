@@ -209,6 +209,79 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
 
           return $ LocalVar $ LocalNamelessVar letsPassed envSlot
 
+-- | Handles conversion of the 'Anf' syntax case. Note that this is not the main
+-- function for closure conversion. See 'closureConvert'.
+ccAnf :: Word32 -> Anf -> ConversionM AnfCC
+ccAnf letsPassed anf = case anf of
+  AnfReturn vars ->
+    ReturnCC <$> traverse (adjustVar letsPassed) vars
+
+  AnfLet infos rhs body -> do
+    rhsCC <- ccRhs letsPassed rhs
+    bodyCC <- ccAnf (succ letsPassed) body
+    return $ LetNFCC infos rhsCC bodyCC
+
+  AnfTailCall app ->
+    TailCallCC <$> ccApp letsPassed app
+
+-- | Handles conversion of the 'Rhs' syntax case.
+ccRhs :: Word32 -> Rhs -> ConversionM RhsCC
+ccRhs letsPassed (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc letsPassed alloc
+ccRhs letsPassed (RhsApp app) = NonTailCallAppCC <$> ccApp letsPassed app
+
+-- | Handles conversion of the 'App' syntax case.
+ccApp :: Word32 -> App -> ConversionM AppCC
+ccApp letsPassed app = case app of
+  AppFun fv avs -> do
+    ccFnVar <- adjustVar letsPassed fv
+    ccArgVars <- traverse (adjustVar letsPassed) avs
+    return $ FunAppCC ccFnVar ccArgVars
+
+  AppPrim primId avs -> do
+    ccArgVars <- traverse (adjustVar letsPassed) avs
+    return $ PrimAppCC primId ccArgVars
+
+  AppThunk var ->
+    EnterThunkCC <$> adjustVar letsPassed var
+
+-- | Handles conversion of the 'Alloc' syntax case.
+ccAlloc :: Word32 -> Alloc -> ConversionM AllocCC
+ccAlloc letsPassed alloc = case alloc of
+  AllocLit lit ->
+    return $ SharedLiteralCC lit
+
+  AllocLam argInfos body -> do
+    pushEmptyEnv Closure
+    closureId <- allocClosureCodeId
+    bodyCC <- ccAnf 0 body
+    envState <- popEnv
+    let arity = CodeArity $ fromIntegral $ V.length argInfos
+    csRegistry.symRegClosureMap.at closureId ?=
+      ClosureCodeRecordCC (_esSize envState)
+                          (V.fromList $ toList $ _esInfos envState)
+                          arity
+                          argInfos
+                          bodyCC
+    envVars <- V.fromList <$> traverse (adjustVar letsPassed)
+                                       (toList $ _esVars envState)
+
+    return $ AllocateClosureCC envVars arity closureId
+
+  AllocThunk body -> do
+    pushEmptyEnv Thunk
+    thunkId <- allocThunkCodeId
+    bodyCC <- ccAnf 0 body
+    envState <- popEnv
+    csRegistry.symRegThunkMap.at thunkId ?=
+      ThunkCodeRecordCC (_esSize envState)
+                        (V.fromList $ toList $ _esInfos envState)
+                        bodyCC
+
+    envVars <- V.fromList <$> traverse (adjustVar letsPassed)
+                                       (toList $ _esVars envState)
+
+    return $ AllocateThunkCC envVars thunkId
+
 -- | The main function and entrypoint for closure-converting an 'Anf' term.
 closureConvert :: Anf -> (AnfCC, SymbolRegistryCC)
 closureConvert anf0 = second _csRegistry $
@@ -219,66 +292,3 @@ closureConvert anf0 = second _csRegistry $
                              (ThunkCodeId 0)
                              (ClosureCodeId 0)
                              []
-
-    ccAnf :: Word32 -> Anf -> ConversionM AnfCC
-    ccAnf letsPassed (AnfReturn vars) =
-      ReturnCC <$> traverse (adjustVar letsPassed) vars
-
-    ccAnf letsPassed (AnfLet infos rhs body) = do
-      rhsCC <- ccRhs letsPassed rhs
-      bodyCC <- ccAnf (succ letsPassed) body
-      return $ LetNFCC infos rhsCC bodyCC
-
-    ccAnf letsPassed (AnfTailCall app) = TailCallCC <$> ccApp letsPassed app
-
-    ccRhs :: Word32 -> Rhs -> ConversionM RhsCC
-    ccRhs letsPassed (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc letsPassed alloc
-
-    ccRhs letsPassed (RhsApp app) = NonTailCallAppCC <$> ccApp letsPassed app
-
-    ccApp :: Word32 -> App -> ConversionM AppCC
-    ccApp letsPassed (AppFun fv avs) = do
-      ccFnVar <- adjustVar letsPassed fv
-      ccArgVars <- traverse (adjustVar letsPassed) avs
-      return $ FunAppCC ccFnVar ccArgVars
-
-    ccApp letsPassed (AppPrim primId avs) = do
-      ccArgVars <- traverse (adjustVar letsPassed) avs
-      return $ PrimAppCC primId ccArgVars
-
-    ccApp letsPassed (AppThunk var) = EnterThunkCC <$> adjustVar letsPassed var
-
-    ccAlloc :: Word32 -> Alloc -> ConversionM AllocCC
-    ccAlloc _letsPassed (AllocLit lit) = return $ SharedLiteralCC lit
-
-    ccAlloc letsPassed (AllocLam argInfos body) = do
-      pushEmptyEnv Closure
-      closureId <- allocClosureCodeId
-      bodyCC <- ccAnf 0 body
-      envState <- popEnv
-      let arity = CodeArity $ fromIntegral $ V.length argInfos
-      csRegistry.symRegClosureMap.at closureId ?=
-        ClosureCodeRecordCC (_esSize envState)
-                            (V.fromList $ toList $ _esInfos envState)
-                            arity
-                            argInfos
-                            bodyCC
-      envVars <- V.fromList <$> traverse (adjustVar letsPassed)
-                                         (toList $ _esVars envState)
-
-      return $ AllocateClosureCC envVars arity closureId
-
-    ccAlloc letsPassed (AllocThunk body) = do
-      pushEmptyEnv Thunk
-      thunkId <- allocThunkCodeId
-      bodyCC <- ccAnf 0 body
-      envState <- popEnv
-      csRegistry.symRegThunkMap.at thunkId ?=
-        ThunkCodeRecordCC (_esSize envState)
-                          (V.fromList $ toList $ _esInfos envState)
-                          bodyCC
-
-      envVars <- V.fromList <$> traverse (adjustVar letsPassed)
-                                         (toList $ _esVars envState)
-
-      return $ AllocateThunkCC envVars thunkId
