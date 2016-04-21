@@ -28,6 +28,7 @@ module Hopper.Internal.Reference.HOAS(
   ,ThunkValuation(..)
   -- these reexports are subject to change or delition
   ,MutVar
+  ,Proxy(..)
   ,SomeNatF(..)
   ,SimpleValue
   ,SizedTelescope(..)
@@ -165,21 +166,24 @@ data PiTel :: Nat -> Type -> Type  -> Type -> Type where
           PiTel m domainV domTy codomainV
 
 
-data SigmaTel :: Nat -> Type -> Type -> Type where
-  SigmaZ :: forall domainV domTy . SigmaTel 0 domainV domTy
+data SigmaTel :: Nat -> Type -> Type -> Type -> Type where
+  SigmaZ :: forall domainExp domainV domTy . SigmaTel 0 domainExp  domainV domTy
   -- ^ an empty sigma telescope is basically just the unit value
-  SigmaSucc :: forall domainV domTy m n . (m ~ (n GT.+ 1)) =>
+  SigmaSucc :: forall domainExp domainV  domTy m n . (m ~ (n GT.+ 1)) =>
             domTy ->
             -- ^ the type of the first element
-            domainV ->
-            -- ^ sigmas are pairs! so we have the "value" of the first element :)
+            domainExp ->
+            -- ^ sigmas are pairs! so we have the "value" / "expression"
+            -- of the first element. Which may or may not be evaluated yet!
             Relevance ->
             -- ^ the computational relevance for the associated value
             -- usage in type level expressions is deemed cost 0
-            (domainV -> SigmaTel n domainV domTy) ->
+            (domainV -> SigmaTel n domainExp domainV domTy) ->
             -- ^ second/rest of the telescope
-            -- (sigmas are, after a generalized pair)
-            SigmaTel m domainV domTy
+            -- (sigmas are, after a generalized pair), and in a CBV
+            -- evaluation order, Expressions should be normalized
+            -- (or at least neutralized of danger :p , before being passed on! )
+            SigmaTel m domainExp domainV domTy
 
 data SomeNatF :: (Nat -> Type) -> Type where
   SomeNatF ::  forall n f . GT.KnownNat n => f n -> SomeNatF f
@@ -195,12 +199,12 @@ and thus is not a Functor. The idea is
 
 [ note on Function spaces ]
 the notion of unboxed tuple telescopes,
-ie @ pi{ x_1 :r_1 t_1 .. } -> Sigma{ y_1 :g_1 h_1..}@
+i.e. @ pi{ x_1 :r_1 t_1 .. } -> Sigma{ y_1 :g_1 h_1..}@
 (where x_i and y_i are variables, r_i and g_i are relevance, and t_i and h_i are types/sorts )
 in both argument and result positions (surprisingly)
 results in an interesting unification of dependent sums and products
 which also lends itself to some pretty cool logical embeddings!
-Eg roughly @ Void === pi{a : Type}->sigma{res : a} @ which has zero
+E.g. roughly @ Void === pi {a : Type}->sigma {res : a} @ which has zero
 inhabitants,
 and likewise something like  @ Unit === pi{ a : Type, v : a}-> Sigma{}@
 or perhaps @  Unit == pi{}->sigma{} @, as either of those types
@@ -236,7 +240,7 @@ data Exp :: Type -> Type  where
       -- ^ result arity
 
       (PiTel piSize a (Exp a)
-        (SigmaTel sigSize a (Exp a))) ->
+        (SigmaTel sigSize (Exp a) a (Exp a))) ->
       -- ^ See note on Function spaces
       --
       -- TODO: figure out better note convention, Carter
@@ -266,7 +270,7 @@ data Exp :: Type -> Type  where
 {-
 queue
 
-first order -> hoas feasiblity sanity check
+first order -> has feasibility sanity check
 normal forms on types (values is bigger than we knew!)
 BIDIRECTIONAL CHECKING (syntax) guillaume allais etc
 make the Function space stuff not suck
@@ -280,11 +284,11 @@ make the Function space stuff not suck
 FunctionSpaceExp Proxy Proxy (PiZ (SigmaZ)) :: Exp a
 
 
->>> :t FunctionSpaceExp Proxy Proxy (PiSucc (Sorts (LubSort []) ) Omega  (\x -> PiZ (SigmaSucc (Sorts $ LubSort[]) x  Omega ((\ _y -> SigmaZ ) ) )))
+>>> :t FunctionSpaceExp Proxy Proxy (PiSucc (Sorts (LubSort []) ) Omega  (\x -> PiZ (SigmaSucc (Sorts $ LubSort[]) (Var x)  Omega ((\ _y -> SigmaZ ) ) )))
 FunctionSpaceExp Proxy Proxy
-  (PiSucc (Sorts (LubSort []) ) Omega
-      (\x -> PiZ
-        (SigmaSucc (Sorts $ LubSort[]) x  Omega ((\ _y -> SigmaZ ) ) )))
+    (PiSucc (Sorts (LubSort []) ) Omega
+    (\x -> PiZ
+      (SigmaSucc (Sorts $ LubSort[]) (Var x)  Omega ((\ _y -> SigmaZ ) ) )))
   :: Exp a
 -}
 
