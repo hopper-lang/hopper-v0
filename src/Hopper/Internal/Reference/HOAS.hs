@@ -38,7 +38,7 @@ import qualified GHC.TypeLits as GT
 import Data.Primitive.MutVar
 --import Control.Monad.Primitive
 import GHC.TypeLits (Nat,KnownNat)
-import GHC.Types (Constraint) -- this isn't 7.10 compatible but its sooo nice :)
+import GHC.Exts (Constraint)
 import Data.Text (Text)
 import Data.Void
 import Data.Proxy
