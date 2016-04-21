@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds, GADTs  #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE StrictData #-}
+-- {-# LANGUAGE StrictData #-} -- TODO: reneable once fully migrated to >=8.0
 {-# LANGUAGE ConstraintKinds   #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
@@ -13,7 +13,7 @@ module Hopper.Internal.Reference.HOAS(
   ,evalB -- TODO: implement this, Carter
   ,Sort(..)
   ,PrimType(..)
-  ,DataDesc --- this will be the data type DECL data type?
+  ,DataDesc --- this will be the data * DECL data type?
   ,Relevance(..)
   ,ValueNoThunk(..)
   ,Value(..)
@@ -38,7 +38,7 @@ import qualified GHC.TypeLits as GT
 import Data.Primitive.MutVar
 --import Control.Monad.Primitive
 import GHC.TypeLits (Nat,KnownNat)
-import GHC.Types (Type, Constraint) -- this isn't 7.10 compatible but its sooo nice :)
+import GHC.Types (Constraint) -- this isn't 7.10 compatible but its sooo nice :)
 import Data.Text (Text)
 import Data.Void
 import Data.Proxy
@@ -52,18 +52,18 @@ of metalanguage (haskell) lambdas/binders
 
 -}
 
-data SizedTelescope :: Nat -> (Type ) ->(Nat -> Type -> Type ) -> (Nat -> Constraint) -> Type where
+data SizedTelescope :: Nat -> ( * ) -> (Nat -> * -> * ) -> (Nat -> Constraint) -> * where
   STZ :: (constr 0)=> base  -> SizedTelescope 0 base induct constr
   STSucc :: (constr m , m~ (n GT.+ 1)) =>
           Proxy m -> induct m (SizedTelescope n base induct constr)
           -> SizedTelescope m base induct constr
 
 
-data ValFun :: Nat -> Type ->  Type where
+data ValFun :: Nat -> * ->  * where
   ZeroVF :: (() -> a) -> ValFun 0 a
   SucVF :: {-GT.KnownNat n =>-} (a -> ValFun n a ) -> ValFun (n GT.+ 1) a
 
-data SomeValFun :: Type ->  Type where
+data SomeValFun :: * ->  * where
   SomeValFun :: GT.KnownNat n => Proxy n -> ValFun n a -> SomeValFun a
 
 
@@ -71,14 +71,14 @@ data SomeValFun :: Type ->  Type where
 
 
 -- need to add relevance annotations to these
-data ExpFun :: Nat -> Type ->  Type where
+data ExpFun :: Nat -> * ->  * where
   Z :: (Exp a) -> ExpFun 0 a
   S :: (a -> ExpFun n a) -> ExpFun (n GT.+ 1) a
 
-data SomeExpFun :: Type -> Type where
+data SomeExpFun :: * -> * where
   SomeExpFun :: GT.KnownNat n => Proxy n -> ExpFun  n a -> SomeExpFun a
 
-data Literal :: Type  where --- this lives in a nother module, but leave empty for now
+data Literal :: *  where --- this lives in a nother module, but leave empty for now
  LInteger :: Integer -> Literal
 
 
@@ -86,7 +86,7 @@ data DataDesc
 
 
 -- This factorization is to require
-data ValueNoThunk :: Type -> (Type -> Type )  -> Type where
+data ValueNoThunk :: * -> ( * -> * )  -> * where
   VLit :: Literal ->  ValueNoThunk s neut
   VFunction :: (SomeValFun (Value s neut )) -> ValueNoThunk s neut
   VConstructor :: Text -> [Value s neut ] -> ValueNoThunk s  neut
@@ -99,22 +99,22 @@ TODO: add normalized types
 -}
 
 --- Values are either in Normal form, or Neutral, or a Thunk
-data Value :: Type -> (Type -> Type )  -> Type where
+data Value :: * -> ( * -> * )  -> * where
     VNormal :: ValueNoThunk s neut -> Value  s neut
     VThunk :: ThunkValue s neut -> Value s neut
 
 
-data ThunkValuation :: Type -> (Type -> Type ) -> Type where
+data ThunkValuation :: * -> ( * -> * ) -> * where
   ThunkValueResult :: (ValueNoThunk s neut) ->  ThunkValuation s neut
   ThunkComputation :: (Exp (Value s neut)) -> ThunkValuation s neut
   --- Q: should there be blackholes?
 
-data ThunkValue :: Type -> (Type -> Type ) -> Type where
+data ThunkValue :: * -> ( * -> * ) -> * where
   ThunkValue :: MutVar s (ThunkValuation s neut) -> ThunkValue s neut
 --- figure this out, or maybe values need to be ST branded?
 
 --- this isn't quite right yet
-{-data NeutralTerm :: Type -> Type where
+{-data NeutralTerm :: * -> * where
   NeutralFreeVariable :: gvar -> NeutralTerm gvar
   StuckCase :: NeutralTerm gv -> Maybe ()
             -> [(Text, SomeExpFun )]
@@ -124,19 +124,19 @@ data ThunkValue :: Type -> (Type -> Type ) -> Type where
 type SimpleValue = Value Void
 
 
-data Sort :: Type   where
+data Sort :: *   where
   LubSort :: [Sort ] -> Sort   -- following the agda convention,
                               --the base sort is modeled  as LubSort []
   LubSucc :: Sort  -> Sort
 
-data PrimType :: Type where
+data PrimType :: * where
   PTInteger :: PrimType
 
 --- this is in some sense
 {-
 --- revisit this to think about how this may or may not help
 clarify
-data Telescope :: (Nat -> Type ->  Type -> Type) -> Type -> Nat -> Type where
+data Telescope :: (Nat -> * ->  * -> Type) -> * -> Nat -> * where
   TZ :: f 0 t  t -> Telescope f  t 0
   TSucc :: forall t f  (n :: Nat) (m :: Nat) . (m ~ (n GT.+ 1)) =>
               (f m  t (Telescope f t n)) -> Telescope f t m-}
@@ -147,7 +147,7 @@ data Telescope :: (Nat -> Type ->  Type -> Type) -> Type -> Nat -> Type where
    ie
    Pi {x_1 : }
  -}
-data PiTel :: Nat -> Type -> Type  -> Type -> Type where
+data PiTel :: Nat -> * -> *  -> * -> * where
   PiZ :: forall domainV domTy codomainTy .
        codomainTy ->
        -- ^ a Zero arg function is logically just the bare expression,
@@ -157,27 +157,27 @@ data PiTel :: Nat -> Type -> Type  -> Type -> Type where
 
   PiSucc :: forall domainV domTy codomainV m n . (m ~ (n GT.+ 1)) =>
           domTy ->
-          -- ^ type of domain / current variable
+          -- ^ * of domain / current variable
           Relevance ->
           -- ^ variable usage annotation for the thusly typed function expression
-          -- usage in type level expressions is deemed cost 0
+          -- usage in * level expressions is deemed cost 0
           (domainV -> PiTel n domainV domTy codomainV ) ->
           -- ^ rest of the telescope
           PiTel m domainV domTy codomainV
 
 
-data SigmaTel :: Nat -> Type -> Type -> Type -> Type where
+data SigmaTel :: Nat -> * -> * -> * -> * where
   SigmaZ :: forall domainExp domainV domTy . SigmaTel 0 domainExp  domainV domTy
   -- ^ an empty sigma telescope is basically just the unit value
   SigmaSucc :: forall domainExp domainV  domTy m n . (m ~ (n GT.+ 1)) =>
             domTy ->
-            -- ^ the type of the first element
+            -- ^ the * of the first element
             domainExp ->
             -- ^ sigmas are pairs! so we have the "value" / "expression"
             -- of the first element. Which may or may not be evaluated yet!
             Relevance ->
             -- ^ the computational relevance for the associated value
-            -- usage in type level expressions is deemed cost 0
+            -- usage in * level expressions is deemed cost 0
             (domainV -> SigmaTel n domainExp domainV domTy) ->
             -- ^ second/rest of the telescope
             -- (sigmas are, after a generalized pair), and in a CBV
@@ -185,11 +185,11 @@ data SigmaTel :: Nat -> Type -> Type -> Type -> Type where
             -- (or at least neutralized of danger :p , before being passed on! )
             SigmaTel m domainExp domainV domTy
 
-data SomeNatF :: (Nat -> Type) -> Type where
+data SomeNatF :: (Nat -> * ) -> * where
   SomeNatF ::  forall n f . GT.KnownNat n => f n -> SomeNatF f
 
 
---data HoasType :: (Type -> Type ) where
+--data HoasType ::  * -> * ) where
 --   --FunctionSpace ::
 
 
@@ -211,15 +211,15 @@ or perhaps @  Unit == pi{}->sigma{} @, as either of those types
 have only one inhabitant!
 
 -}
-data Exp :: Type -> Type  where
+data Exp :: * -> *  where
 
   {-
-  our function type from unboxed tuples arity n>=0 to unboxed tuples arity m >=0
+  our function * from unboxed tuples arity n>=0 to unboxed tuples arity m >=0
   should model the following coinductive / inductive type
   forall*{x_1 :r_1 t_1 ... x_n :t_n  } -> exist*{y_1 :h_1 q_1 .. y_m :h_m q_m}
 
-  x_i,y_i are variables of type 'a'
-  r_i,h_i are values of type Relevance
+  x_i,y_i are variables of * 'a'
+  r_i,h_i are values of * Relevance
   t_i,q_i are expressions 'Exp a' that evaluate to valid sorts or types
 
   for all j such that j<i,  x_j is in the scope of t_i,
@@ -232,7 +232,7 @@ data Exp :: Type -> Type  where
   --- QUESTION: is this also the right binder rep
   -- for term level lambdas?! I think so ...
   -- on the flip side, that flies in the face of a bidirectional
-  -- curry style presentation of the type theory
+  -- curry style presentation of the * theory
   FunctionSpaceExp :: (KnownNat piSize, KnownNat sigSize) =>
       Proxy piSize ->
       -- ^ argument arity
@@ -259,11 +259,11 @@ data Exp :: Type -> Type  where
   LetExp :: Exp a -> (a -> Exp a) -> Exp a
   -- ^ Let IS monadic bind :)
    -- note that this doesn't quite line up the arities correctly... need to think about this more
-   -- roughly Let {y_1 ..y_m} = evaluate a thing of type {}->{y_1 : t_1 .. y_m : t_m}
+   -- roughly Let {y_1 ..y_m} = evaluate a thing of * {}->{y_1 : t_1 .. y_m : t_m}
    --                  in  expression
   Var :: a -> Exp a  --- values or names etc ???
   Case :: Exp a -- ^ the value being cased upon
-        -> Maybe (Exp a)  -- optional type annotation,
+        -> Maybe (Exp a)  -- optional * annotation,
                           -- also Joel thinks this is smelly, perhaps rightly
         -> [(Text, SomeExpFun a )] -- non-overlapping set of tags and continuations
         -> Exp a
@@ -279,7 +279,7 @@ make the Function space stuff not suck
 
 
 {-
--- it type checks!
+-- it * checks!
 >>> :t FunctionSpaceExp Proxy Proxy (PiZ (SigmaZ))
 FunctionSpaceExp Proxy Proxy (PiZ (SigmaZ)) :: Exp a
 
