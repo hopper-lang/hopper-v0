@@ -162,30 +162,51 @@ data SomeNatF :: (Nat -> Type) -> Type where
 --   --FunctionSpace ::
 
 
+{- | the @'Exp' a @ type!
+Notice that @a@ appears in both positive and negative recursively within 'Exp',
+and thus is not a Functor. The idea is
 
+[ note on Function spaces ]
+the notion of unboxed tuple telescopes,
+ie @ pi{ x_1 :r_1 t_1 .. } -> Sigma{ y_1 :g_1 h_1..}@
+(where x_i and y_i are variables, r_i and g_i are relevance, and t_i and h_i are types/sorts )
+in both argument and result positions (surprisingly)
+results in an interesting unification of dependent sums and products
+which also lends itself to some pretty cool logical embeddings!
+Eg roughly @ Void === pi{a : Type}->sigma{res : a} @ which has zero
+inhabitants,
+and likewise something like  @ Unit === pi{ a : Type, v : a}-> Sigma{}@
+or perhaps @  Unit == pi{}->sigma{} @, as either of those types
+have only one inhabitant!
+
+
+-}
 data Exp :: Type -> Type  where
 
   {-
-  our function type from unboxed tuples arity n to unboxed tuples arity m
+  our function type from unboxed tuples arity n>=0 to unboxed tuples arity m >=0
   should model the following coinductive / inductive type
-  forall*{x1  :t1 ... xn :tn  } -> exist*{r1: q1 .. rm : qm}
+  forall*{x_1 :r_1 t_1 ... x_n :t_n  } -> exist*{y_1 :h_1 q_1 .. y_m :h_m q_m}
 
-  sigma* {r1: q1 .. rm : qm} === forall {} -> exist*{r1: q1 .. rm : qm}
+  x_i,y_i are variables of type 'a'
+  r_i,h_i are values of type Relevance
+  t_i,q_i are expressions 'Exp a' that evaluate to valid sorts or types
+
+  for all j such that j<i,  x_j is in the scope of t_i,
+
+  all x_i are in scope for every q_1 .. q_m
+
+  for all j < i, y_j is in the scope of q_i
+
   -}
   FunctionSpaceExp :: (KnownNat piSize, KnownNat sigSize) =>
       Proxy piSize ->
       Proxy sigSize ->
       (PiTel piSize a (Exp a)
         (SigmaTel sigSize a (Exp a))) ->
-      -- ^ the notion of unboxed tuple telescopes
-      -- in both argument and result positions (surprisingly)
-      -- results in an interesting unification of dependent sums and products
-      -- which also lends itself to some pretty cool logical embeddings!
-      -- Eg roughly @ Void === pi{a : Type}->sigma{res : a} @ which has zero
-      -- inhabitants,
-      -- and likewise something like  @ Unit === pi{ a : Type, v : }-> Sigma{}@
-      -- or perhaps @  Unit == pi{}->sigma{} @, as either of those types
-      -- have only one inhabitant!
+      -- ^ See note on Function spaces
+      --
+      -- TODO: figure out better note convention, Carter
       Exp a
   BaseType :: PrimType -> Exp a
   --ExpType :: HoasType (Exp a) -> Exp a
