@@ -33,7 +33,7 @@ spec =
           twenty = LInteger 20
           dummyBI = BinderInfoData Omega () Nothing
           prim0 = PrimopIdGeneral "test"
-          arity1 = V.singleton $ BinderInfoData Omega () Nothing
+          infos1 = V.singleton $ BinderInfoData Omega () Nothing
 
       describe "simple tail cases" $ do
         it "converts variables" $
@@ -46,14 +46,14 @@ spec =
         it "converts literals" $
           let lit = LInteger 42
               term = ELit lit
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsAlloc $ AllocLit lit)
                            (AnfReturn $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
         it "converts returns" $
           let term = Return $ V.fromList [ELit ten, V v0]
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $ AllocLit ten)
                             (AnfReturn $ V.fromList [v0, v1])
            in toAnf term `shouldBe` anf
@@ -61,7 +61,7 @@ spec =
         it "converts delays" $
           let -- delay ((0) (0))
               term = Delay $ App (V v0) $ V.singleton (V v0)
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $
                               AllocThunk $
                                AnfTailCall $ AppFun v0 $ V.singleton v0)
@@ -73,9 +73,9 @@ spec =
               term = EnterThunk (Delay $ ELit ten)
               -- letA (delay (letA 10 in (0)))
               -- in   force (0)
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $
-                              AllocThunk (AnfLet arity1
+                              AllocThunk (AnfLet infos1
                                                  (RhsAlloc $ AllocLit ten)
                                                  (AnfReturn $ V.singleton v0)))
                             (AnfTailCall $ AppThunk v0)
@@ -93,7 +93,7 @@ spec =
 
         it "converts multi-arg tail calls" $
           let term = App (V v0) $ V.fromList [ELit ten, V v0]
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $ AllocLit ten)
                             (AnfTailCall $ AppFun v1
                                                   (V.fromList [v0, v1]))
@@ -101,7 +101,7 @@ spec =
 
         it "converts tail prim apps" $
           let term = PrimApp prim0 $ V.fromList [ELit ten, V v0]
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $ AllocLit ten)
                             (AnfTailCall $ AppPrim prim0
                                                    (V.fromList [v0, v1]))
@@ -110,8 +110,8 @@ spec =
         it "converts lambdas by introducing an allocation" $
           let term = Lam (V.singleton dummyBI)
                          (V v1)
-              anf = AnfLet arity1
-                           (RhsAlloc $ AllocLam arity1
+              anf = AnfLet infos1
+                           (RhsAlloc $ AllocLam infos1
                                                 (AnfReturn $ V.singleton v1))
                            (AnfReturn $ V.singleton v0)
           in toAnf term `shouldBe` anf
@@ -134,7 +134,7 @@ spec =
           let term = Let (V.singleton dummyBI)
                          (App (V abs) $ V.singleton $ V v0)
                          (App (V neg) $ V.singleton $ V v0)
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsApp $ AppFun abs $ V.singleton v0)
                            (AnfTailCall $ AppFun neg $ V.singleton v0)
           in toAnf term `shouldBe` anf
@@ -143,7 +143,7 @@ spec =
         it "converts variables bumped by a literal allocation" $
           let lit = LInteger 5
               term = App (V v0) $ V.singleton $ ELit lit
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsAlloc $ AllocLit lit)
                            (AnfTailCall $ AppFun v1 $ V.singleton v0)
           in toAnf term `shouldBe` anf
@@ -154,7 +154,7 @@ spec =
            let term = Let (V.replicate 2 dummyBI)
                           (Return $ V.fromList [ELit ten, V v0])
                           (Return $ V.fromList [V v0_1, V v0_0])
-               anf  = AnfLet arity1
+               anf  = AnfLet infos1
                              (RhsAlloc $ AllocLit ten)
                              (AnfReturn $ V.fromList [v1, v0])
            in toAnf term `shouldBe` anf
@@ -165,7 +165,7 @@ spec =
                          (V.singleton $
                            Delay $
                              App (V v0) $ V.singleton (V v0))
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $
                               AllocThunk $
                                AnfTailCall $ AppFun v0 $ V.singleton v0)
@@ -178,12 +178,12 @@ spec =
               term = App (EnterThunk (Delay $ V id_))
                          (V.singleton $ ELit ten)
               -- letA (delay id) in letA force (0) in letA 10 in letA (1) (0)
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $
                               AllocThunk $ AnfReturn $ V.singleton id_)
-                            (AnfLet arity1
+                            (AnfLet infos1
                                     (RhsApp $ AppThunk v0)
-                                    (AnfLet arity1
+                                    (AnfLet infos1
                                             (RhsAlloc $ AllocLit ten)
                                             (AnfTailCall $
                                               AppFun v1 $ V.singleton v0)))
@@ -193,7 +193,7 @@ spec =
           let term = App (V abs)
                          (V.singleton $ App (V v0)
                                             (V.fromList []))
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsApp $ AppFun v0 $ V.fromList [])
                             (AnfTailCall $ AppFun abs $ V.singleton v0)
           in toAnf term `shouldBe` anf
@@ -205,9 +205,9 @@ spec =
                          (V.singleton $ App (V neg)
                                             (V.singleton $ ELit lit))
               -- letA -10 in letA neg (0) in abs (0)
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsAlloc $ AllocLit lit)
-                           (AnfLet arity1
+                           (AnfLet infos1
                                    (RhsApp $ AppFun neg $ V.singleton v0)
                                    (AnfTailCall $ AppFun abs $ V.singleton v0))
           in toAnf term `shouldBe` anf
@@ -218,9 +218,9 @@ spec =
                          (V.singleton $ App (V v0)
                                             (V.fromList [ELit ten, V v0]))
               -- letA 10 in letA (1) (0) (1) in letA abs (0)
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $ AllocLit ten)
-                            (AnfLet arity1
+                            (AnfLet infos1
                                     (RhsApp $ AppFun v1 $ V.fromList [v0, v1])
                                     (AnfTailCall $ AppFun abs $ V.singleton v0))
           in toAnf term `shouldBe` anf
@@ -229,12 +229,12 @@ spec =
           let -- (prim0 10 (0)) 20
               term = App (PrimApp prim0 $ V.fromList [ELit ten, V v0])
                          (V.singleton $ ELit twenty)
-              anf  = AnfLet arity1
+              anf  = AnfLet infos1
                             (RhsAlloc $ AllocLit ten)
-                            (AnfLet arity1
+                            (AnfLet infos1
                                     (RhsApp $
                                       AppPrim prim0 (V.fromList [v0, v1]))
-                                    (AnfLet arity1
+                                    (AnfLet infos1
                                             (RhsAlloc $ AllocLit twenty)
                                             (AnfTailCall $
                                               AppFun v1 (V.singleton v0))))
@@ -248,10 +248,10 @@ spec =
                                                      (V.singleton $ V v0)))))
                          (V.singleton $ V v0)
               -- letA (λ. letA abs (0) in neg (0)) in (0) (1)
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsAlloc $
-                             AllocLam arity1
-                                      (AnfLet arity1
+                             AllocLam infos1
+                                      (AnfLet infos1
                                               (RhsApp $ AppFun abs $ V.singleton v0)
                                               (AnfTailCall $ AppFun neg $ V.singleton v0)))
                            (AnfTailCall $ AppFun v0 $ V.singleton v1)
@@ -268,13 +268,13 @@ spec =
                                         (V v1)))
                               (V.singleton $ V v0))
               -- letT 10 in letT 20 in letA (λ. (1)) in (0) (2)
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsAlloc $ AllocLit ten)
-                           (AnfLet arity1
+                           (AnfLet infos1
                                    (RhsAlloc $ AllocLit twenty)
-                                   (AnfLet arity1
+                                   (AnfLet infos1
                                            (RhsAlloc $
-                                             AllocLam arity1
+                                             AllocLam infos1
                                                       (AnfReturn $ V.singleton v1))
                                            (AnfTailCall $
                                              AppFun v0 $ V.singleton v2)))
@@ -288,7 +288,7 @@ spec =
                               (V v0))
                          (V.singleton $ ELit ten)
               -- letA 10 in add (0)
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsAlloc $ AllocLit ten)
                            (AnfTailCall $
                              AppFun add $ V.singleton v0)
@@ -304,11 +304,11 @@ spec =
                               (App (V id_) $ V.singleton $ V v0))
                          (App (V v0) $ V.singleton $ ELit ten)
               --  letT id abs in letT id (0) in letA 10 in (1) (0)
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsApp $ AppFun id_ $ V.singleton abs)
-                           (AnfLet arity1
+                           (AnfLet infos1
                                    (RhsApp $ AppFun id_ $ V.singleton v0)
-                                   (AnfLet arity1
+                                   (AnfLet infos1
                                            (RhsAlloc $ AllocLit ten)
                                            (AnfTailCall $ AppFun v1 $ V.singleton v0)))
           in toAnf term `shouldBe` anf
@@ -323,9 +323,9 @@ spec =
                               (V v1))
                          (App (V v0) $ V.singleton $ ELit ten)
               -- letT id abs in letA 10 in (2) (0)
-              anf = AnfLet arity1
+              anf = AnfLet infos1
                            (RhsApp $ AppFun id_ $ V.singleton abs)
-                           (AnfLet arity1
+                           (AnfLet infos1
                                    (RhsAlloc $ AllocLit ten)
                                    (AnfTailCall $ AppFun v2 $ V.singleton v0))
           in toAnf term `shouldBe` anf
