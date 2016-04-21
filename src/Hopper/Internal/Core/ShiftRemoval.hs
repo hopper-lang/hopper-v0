@@ -3,7 +3,7 @@ module Hopper.Internal.Core.ShiftRemoval
   ) where
 
 import Hopper.Internal.Core.Term (Term(..))
-import Hopper.Utils.LocallyNameless (localNameless, lnDepth)
+import Hopper.Utils.LocallyNameless (Variable, localNameless, lnDepth)
 
 import Control.Lens ((+~), (%~), (^?), ix)
 import Data.Function ((&))
@@ -22,13 +22,13 @@ import Data.Word (Word32)
 --   namely, the first @d+1@ @b@ values in 'BinderShifts'.
 type BinderShifts = [Word32]
 
--- | Removes binder shifts from a 'Term'
-removeBinderShifts :: Term -> Term
+-- | Removes binder shifts from a @'Term' 'Variable'@
+removeBinderShifts :: Term Variable -> Term Variable
 removeBinderShifts = go $ repeat 0 -- NB: [] only works for well-formed ASTs,
                                    --     where no locally-nameless variables
                                    --     are free.
   where
-    go :: BinderShifts -> Term -> Term
+    go :: BinderShifts -> Term Variable -> Term Variable
     go shifts (V var) = case var ^? localNameless.lnDepth of
       Just depth ->
         let adjustment = sum $ take (succ $ fromIntegral depth) shifts

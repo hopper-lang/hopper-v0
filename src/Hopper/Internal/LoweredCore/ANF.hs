@@ -100,9 +100,9 @@ instance Enum AnfRef where
   toEnum = AnfRef . toEnum
   fromEnum = fromEnum . _refId
 
--- | Bookkeeping structure that corresponds to a binder scope in the 'Term' AST.
--- Conversion to ANF begins with a single empty 'BindingLevel' (not an empty
--- 'BindingStack').
+-- | Bookkeeping structure that corresponds to a binder scope in the
+-- @'Term' 'Variable'@ AST. Conversion to ANF begins with a single empty
+-- 'BindingLevel' (not an empty 'BindingStack').
 --
 -- In converting the following (pseudo 'Term') program,
 --
@@ -170,8 +170,8 @@ emptyIndirectionLevel :: [Variable] -> BindingLevel
 emptyIndirectionLevel vars = BindingLevel Map.empty 0 (Just $ V.fromList vars)
 
 -- The bottom 'BindingLevel' of this stack does not necessarily correspond to a
--- 'Term' binding level (i.e. 'Let' or 'Lam') -- consider a toplevel 'Let' with
--- RHS global var applied to a global var. See 'toAnf'.
+-- @'Term' 'Variable'@ binding level (i.e. 'Let' or 'Lam') -- consider a
+-- toplevel 'Let' with RHS global var applied to a global var. See 'toAnf'.
 type BindingStack = [BindingLevel]
 
 newtype LoweringState
@@ -183,7 +183,7 @@ newtype LoweringState
 
 makeLenses ''LoweringState
 
--- | Monad transformer stack for lowering from 'Term' to 'Anf'.
+-- | Monad transformer stack for lowering from @'Term' 'Variable'@ to 'Anf'.
 --
 -- Instead of using Reader to thread 'BindingStack' state around, we could
 -- pass around explicit stacks through @convert*@ and continuations; but by
@@ -193,17 +193,18 @@ makeLenses ''LoweringState
 -- route.
 type LoweringM = ReaderT BindingStack (State LoweringState)
 
--- | Dispenses an 'AnfRef' to track the usage of a 'Term' or newly-introduced
--- ("anf") variable to let-name a subexpression.
+-- | Dispenses an 'AnfRef' to track the usage of a 'Term' variable, or
+-- newly-introduced ("anf") variable to let-name a subexpression.
 allocRef :: LoweringM AnfRef
 allocRef = do
   curr <- use nextRef
   nextRef.refId %= succ
   return curr
 
--- | In converting a 'Term' to ANF, specifies whether the allocated value or
--- result of (prim/fun/thunk) application should be bound to an 'AnfLet'
--- corresponding to an existing ('Let') 'TermBinding' or a new 'AnfBinding'.
+-- | In converting a @'Term' 'Variable'@ to ANF, specifies whether the allocated
+-- value or result of (prim/fun/thunk) application should be bound to an
+-- 'AnfLet' corresponding to an existing ('Let') 'TermBinding' or a new
+-- 'AnfBinding'.
 data Binding
   = TermBinding
   | AnfBinding [AnfRef] -- A list because we use unboxed tuples and 2D binders.
@@ -301,7 +302,7 @@ returnAllocated alloc = AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
 
 -- | A convenience function for converting a 'Lam'- or 'Delay'-guarded RHS of a
 -- 'AnfLet'.
-convertGuarded :: Term -> LoweringM Anf
+convertGuarded :: Term Variable -> LoweringM Anf
 convertGuarded t = local (emptyLevel:) $ convertTail t
 
 -- | The total number of binders in the levels of the first stack not shared by
@@ -350,7 +351,7 @@ withBinderIncreasesPer base extended =
 -- @
 --
 -- where 'synthesize' will provide the body of the inner-most continuation.
-convertToVars :: [Term]
+convertToVars :: [Term Variable]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
               -- function or thunk application, or returning multiple values.
               -> ([Variable] -> StackTransform -> LoweringM Anf)
@@ -384,9 +385,9 @@ convertToVars terms synthesize = do
 -- Form" (2002).
 ----------------------------------------------------------------------------
 
--- | Converts a 'Term' in tail position to ANF. This function corresponds to
--- Danvy's function "E".
-convertTail :: Term -> LoweringM Anf
+-- | Converts a @'Term' 'Variable'@ in tail position to ANF. This function
+-- corresponds to Danvy's function "E".
+convertTail :: Term Variable -> LoweringM Anf
 convertTail term = case term of
   V v -> do
     translatedVar <- reader $ translateTermVar v
@@ -430,9 +431,9 @@ convertTail term = case term of
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertTail body
 
--- | Converts a 'Term' in nontail position to ANF. This function corresponds to
--- Danvy's function "E_c".
-convertWithCont :: Term
+-- | Converts a @'Term' 'Variable'@ in nontail position to ANF. This function
+-- corresponds to Danvy's function "E_c".
+convertWithCont :: Term Variable
                 -- ^ The term to be lowered
                 -> Binding
                 -- ^ The binding to be used, with which future computation will
@@ -539,8 +540,8 @@ convertWithCont term binding k = case term of
         let rollback letStack = beforeStack `withBinderIncreasesPer` letStack
         in local rollback $ k trackBody
 
--- | Converts a 'Term' to Administrative Normal Form.
-toAnf :: Term -> Anf
+-- | Converts a @'Term' 'Variable'@ to Administrative Normal Form.
+toAnf :: Term Variable -> Anf
 toAnf term = evalState (runReaderT (convertTail term) emptyStack) initialState
   where
     -- We provide a initial bottom level of the 'BindingStack' that doesn't

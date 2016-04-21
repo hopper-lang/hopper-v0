@@ -11,40 +11,40 @@ import Data.Word (Word32)
 
 import qualified Data.Vector as V
 
-data Term =
-  V  Variable
-  | BinderLevelShiftUP Word32 Term  --
+data Term v =
+  V v
+  | BinderLevelShiftUP !Word32 !(Term v)  --
   | ELit !Literal
-  | Return !(V.Vector Term)  -- explicit multiple return values
+  | Return !(V.Vector (Term v))  -- explicit multiple return values
                       -- should V x be replaced by Return [x] ?
                       --  once we lower to ANF
                       -- NOTE: for valid expressions,
-  | EnterThunk !(Term) -- because we're in a strict IR rep,
+  | EnterThunk !(Term v) -- because we're in a strict IR rep,
                         -- we dont need to provide a seq like operation
                           -- seq a b === let _ := enterThunk a in b
 
-  | Delay !(Term )  --- Delay is a Noop on Thunked values, otherwise creates a Thunked
+  | Delay !(Term v)  --- Delay is a Noop on Thunked values, otherwise creates a Thunked
                     --- note: may need to change their semantics later?!
                     --- Q: is it valid to thunk a thunked value? (no?)
-  | App !(Term  )  !(V.Vector Term  )   --this is not curried :)
+  | App !(Term v)  !(V.Vector (Term v))   --this is not curried :)
   | PrimApp  !PrimOpId --
-             !(V.Vector Term  ) -- not sure if this is needed, but lets go with it for now
+             !(V.Vector (Term v)) -- not sure if this is needed, but lets go with it for now
 
   | Lam !(V.Vector BinderInfo)
         -- TODO: to properly translate to ANF, we need return arity info
-        !Term
+        !(Term v)
   | Let !(V.Vector BinderInfo)
-        !Term --- RHS
-        !Term --- BODY
+        !(Term v) --- RHS
+        !(Term v) --- BODY
   deriving ({-Show1,Read1,Ord1,Eq1,-}Ord,Eq,Show,Read{-,Functor,Foldable-},Typeable{-,Traversable-})
 
 
 --- NOTE: USE STE MONAD ONCE WE MIGRATE TO HSUM DESIGN
 --- this is kinda only for "inlining" on debruijin variables for now
-substitute :: Word32 -> (BinderSlot  -> Maybe Term) -> Term -> Either (String,Word32) Term
+substitute :: Word32 -> (BinderSlot  -> Maybe (Term Variable)) -> (Term Variable) -> Either (String,Word32) (Term Variable)
 substitute baseLevel initMapper initTerm = goSub 0 initMapper initTerm
   where
-    goSub :: Word32 -> (BinderSlot  -> Maybe Term) -> Term -> Either (String,Word32) Term
+    goSub :: Word32 -> (BinderSlot  -> Maybe (Term Variable)) -> (Term Variable) -> Either (String,Word32) (Term Variable)
     goSub shift mapper  var@(V (LocalVar (LocalNamelessVar lnLvl bslt@(BinderSlot slot))))
                 |  lnLvl == (shift + baseLevel) =
                         maybe (Left ("bad slot", slot))
