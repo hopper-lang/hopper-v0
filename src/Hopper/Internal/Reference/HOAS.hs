@@ -8,7 +8,30 @@
 --
 -- {-# LANGUAGE TypeInType #-}
 -- {-# LANGUAGE DuplicateRecordFields #-}
-module Hopper.Internal.Reference.HOAS where
+module Hopper.Internal.Reference.HOAS(
+  Exp(..)
+  ,evalB -- TODO: implement this, Carter
+  ,Sort(..)
+  ,PrimType(..)
+  ,DataDesc --- this will be the data type DECL data type?
+  ,Relevance(..)
+  ,ValueNoThunk(..)
+  ,Value(..)
+  ,Literal(..)
+  ,ValFun(..)
+  ,ThunkValue(..)
+  ,ExpFun(..)
+  ,SomeValFun(..)
+  ,SomeExpFun(..)
+  ,PiTel(..)
+  ,SigmaTel(..)
+  ,ThunkValuation(..)
+  -- these reexports are subject to change or delition
+  ,MutVar
+  ,SomeNatF(..)
+  ,SimpleValue
+  ,SizedTelescope(..)
+  ) where
 
 import qualified GHC.TypeLits as GT
 import Data.Primitive.MutVar
@@ -67,6 +90,7 @@ data ValueNoThunk :: Type -> (Type -> Type )  -> Type where
   VFunction :: (SomeValFun (Value s neut )) -> ValueNoThunk s neut
   VConstructor :: Text -> [Value s neut ] -> ValueNoThunk s  neut
   VNeutral :: neut s -> ValueNoThunk s neut
+  VPseudoUnboxedTuple :: [Value s neut] -> ValueNoThunk s neut
 
 {-
 TODO: add normalized types
@@ -76,7 +100,7 @@ TODO: add normalized types
 --- Values are either in Normal form, or Neutral, or a Thunk
 data Value :: Type -> (Type -> Type )  -> Type where
     VNormal :: ValueNoThunk s neut -> Value  s neut
-    VThunk :: Thunk s neut -> Value s neut
+    VThunk :: ThunkValue s neut -> Value s neut
 
 
 data ThunkValuation :: Type -> (Type -> Type ) -> Type where
@@ -84,8 +108,8 @@ data ThunkValuation :: Type -> (Type -> Type ) -> Type where
   ThunkComputation :: (Exp (Value s neut)) -> ThunkValuation s neut
   --- Q: should there be blackholes?
 
-data Thunk :: Type -> (Type -> Type ) -> Type where
-  Thunk :: MutVar s (ThunkValuation s neut) -> Thunk s neut
+data ThunkValue :: Type -> (Type -> Type ) -> Type where
+  ThunkValue :: MutVar s (ThunkValuation s neut) -> ThunkValue s neut
 --- figure this out, or maybe values need to be ST branded?
 
 --- this isn't quite right yet
@@ -108,10 +132,13 @@ data PrimType :: Type where
   PTInteger :: PrimType
 
 --- this is in some sense
+{-
+--- revisit this to think about how this may or may not help
+clarify
 data Telescope :: (Nat -> Type ->  Type -> Type) -> Type -> Nat -> Type where
   TZ :: f 0 t  t -> Telescope f  t 0
   TSucc :: forall t f  (n :: Nat) (m :: Nat) . (m ~ (n GT.+ 1)) =>
-              (f m  t (Telescope f t n)) -> Telescope f t m
+              (f m  t (Telescope f t n)) -> Telescope f t m-}
 
 {- is this a profunctor? or something nuts? or both :))
    its like some sort of categorical thingy
@@ -198,6 +225,10 @@ data Exp :: Type -> Type  where
   for all j < i, y_j is in the scope of q_i
 
   -}
+  --- QUESTION: is this also the right binder rep
+  -- for term level lambdas?! I think so ...
+  -- on the flip side, that flies in the face of a bidirectional
+  -- curry style presentation of the type theory
   FunctionSpaceExp :: (KnownNat piSize, KnownNat sigSize) =>
       Proxy piSize ->
       -- ^ argument arity
@@ -212,12 +243,20 @@ data Exp :: Type -> Type  where
       Exp a
   BaseType :: PrimType -> Exp a
   --ExpType :: HoasType (Exp a) -> Exp a
+  --FancyAbs ::
   Sorts :: Sort  -> Exp a
   Abs :: SomeExpFun a -> Exp a
   App :: Exp a -> Exp a -> Exp a
   EReturn :: [Exp a] -> Exp a
   HasType :: Exp a -> Exp a -> Exp a  --- aka CUT
   {- TODO ADD LET -}
+  Delay :: Exp a -> Exp a
+  Force :: Exp a -> Exp a
+  LetExp :: Exp a -> (a -> Exp a) -> Exp a
+  -- ^ Let IS monadic bind :)
+   -- note that this doesn't quite line up the arities correctly... need to think about this more
+   -- roughly Let {y_1 ..y_m} = evaluate a thing of type {}->{y_1 : t_1 .. y_m : t_m}
+   --                  in  expression
   Var :: a -> Exp a  --- values or names etc ???
   Case :: Exp a -- ^ the value being cased upon
         -> Maybe (Exp a)  -- optional type annotation,
