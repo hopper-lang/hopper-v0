@@ -54,9 +54,12 @@ data Reach
 -- node which replaces the lambda/delay in the AST.
 data EnvState
   = EnvState { _esVars  :: DL.DList Variable
-             -- ^ Environment vars allocated so far, for this closure/thunk
+             -- ^ Environment vars allocated so far, for this closure/thunk. We
+             -- use a DList so we can get O(1) 'snoc' (as opposed to building up
+             -- a list in reverse.)
              , _esInfos :: DL.DList BinderInfo
-             -- ^ Environment BinderInfos so far
+             -- ^ Environment BinderInfos so far. Similarly we use a DList here
+             -- for O(1) 'snoc'.
              , _esSize  :: EnvSize
              -- ^ Size of the environment so far, to avoid O(n) 'length' calls
              , _esSlots :: Map.Map Variable BinderSlot
