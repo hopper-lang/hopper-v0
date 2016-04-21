@@ -179,7 +179,6 @@ and likewise something like  @ Unit === pi{ a : Type, v : a}-> Sigma{}@
 or perhaps @  Unit == pi{}->sigma{} @, as either of those types
 have only one inhabitant!
 
-
 -}
 data Exp :: Type -> Type  where
 
@@ -201,7 +200,10 @@ data Exp :: Type -> Type  where
   -}
   FunctionSpaceExp :: (KnownNat piSize, KnownNat sigSize) =>
       Proxy piSize ->
+      -- ^ argument arity
       Proxy sigSize ->
+      -- ^ result arity
+
       (PiTel piSize a (Exp a)
         (SigmaTel sigSize a (Exp a))) ->
       -- ^ See note on Function spaces
@@ -232,6 +234,20 @@ make the Function space stuff not suck
 
 -}
 
+
+{-
+-- it type checks!
+>>> :t FunctionSpaceExp Proxy Proxy (PiZ (SigmaZ))
+FunctionSpaceExp Proxy Proxy (PiZ (SigmaZ)) :: Exp a
+
+
+>>> :t FunctionSpaceExp Proxy Proxy (PiSucc (Sorts (LubSort []) ) Omega  (\x -> PiZ (SigmaSucc (Sorts $ LubSort[]) x  Omega ((\ _y -> SigmaZ ) ) )))
+FunctionSpaceExp Proxy Proxy
+  (PiSucc (Sorts (LubSort []) ) Omega
+      (\x -> PiZ
+        (SigmaSucc (Sorts $ LubSort[]) x  Omega ((\ _y -> SigmaZ ) ) )))
+  :: Exp a
+-}
 
 evalB :: Exp a -> a
 evalB  _ = undefined
