@@ -159,7 +159,7 @@ instance CodeRecord ClosureCodeRecordCC where
   {-# INLINE codeEnvBinderInfos #-}
 
 data AnfCC  =
-    ReturnCC !(V.Vector Variable)
+    ReturnCC !(V.Vector Bound)
     | LetNFCC
           {- TODO: src loc info -}
           !(V.Vector BinderInfo)  -- TODO FIXME, replace with CCAnfBinderInfo
@@ -174,9 +174,9 @@ data AnfCC  =
 
 
 data AppCC  =
-    EnterThunkCC !Variable -- if a is neutral term OR a free variable, this becomes neutral
-    | FunAppCC !Variable !(V.Vector Variable) --- if function position of FunApp is neutral, its neutral
-    | PrimAppCC !PrimOpId !(V.Vector Variable) -- if any arg of a primop is neutral, its neutral
+    EnterThunkCC !Bound -- if a is neutral term OR a free variable, this becomes neutral
+    | FunAppCC !Bound !(V.Vector Bound) --- if function position of FunApp is neutral, its neutral
+    | PrimAppCC !PrimOpId !(V.Vector Bound) -- if any arg of a primop is neutral, its neutral
       --- case / eliminators will also be in this data type later
      {- | CaseCc
         --- desugared case, not perfect, but good enough for sum data types,
@@ -211,12 +211,12 @@ data RhsCC
 data AllocCC
   = SharedLiteralCC !Literal
   | ConstrAppCC {-# UNPACK #-}  !ConstrId
-                !(V.Vector Variable)
+                !(V.Vector Bound)
   | AllocateThunkCC
-        !(V.Vector Variable) -- the set of local variables captured in the thunk environment, in this order
+        !(V.Vector Bound) -- the set of local variables captured in the thunk environment, in this order
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
   | AllocateClosureCC
-        !(V.Vector Variable) -- set of local variables captured in the thunk environment, in this order
+        !(V.Vector Bound) -- set of local variables captured in the thunk environment, in this order
         !CodeArity --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)

@@ -10,11 +10,11 @@ import Hopper.Internal.LoweredCore.ANF
 import Hopper.Internal.LoweredCore.ClosureConvertedANF
 import Hopper.Internal.Type.BinderInfo (BinderInfo(..))
 import Hopper.Internal.Type.Relevance (Relevance(..))
-import Hopper.Utils.LocallyNameless
+import Hopper.Utils.LocallyNameless (Bound(..), localDepth, BinderSlot(..))
 
 import Control.Arrow (second)
-import Control.Lens (Lens', Traversal', (^.), (%~), (%=), (?=), _head, at,
-                     firstOf, makeLenses, over, set, use)
+import Control.Lens (Lens', Traversal', (%~), (%=), (?=), _head, at, firstOf,
+                     makeLenses, over, set, use)
 import Control.Monad.State.Class (MonadState, get)
 import Control.Monad.Trans.State.Strict (State, runState)
 import Data.Foldable (toList)
@@ -41,11 +41,12 @@ data ClosureType
 -- | How far a variable within a closure or thunk "reaches"
 data Reach
   = LocalReference
-  -- ^ Variable refers to a local 'AnfLet' binding.
+  -- ^ The variable refers to a local 'AnfLet' binding.
   | ArgReference
-  -- ^ Variable (inside of a closure, not thunk) refers to a function argument.
+  -- ^ The variable (inside of a closure, not thunk) refers to a function
+  -- argument.
   | FreeReference Word32
-  -- ^ variable reaches beyond the closure/thunk, with the De Bruijn depth
+  -- ^ The variable reaches beyond the closure/thunk, with the de Bruijn depth
   -- of the binder relative to the closure/thunk boundary.
   deriving (Eq, Show)
 
@@ -53,7 +54,7 @@ data Reach
 -- or thunk code record, and the accompanying 'AnfCC' closure/thunk allocation
 -- node which replaces the lambda/delay in the AST.
 data EnvState
-  = EnvState { _esVars  :: DL.DList Variable
+  = EnvState { _esVars  :: DL.DList Bound
              -- ^ Environment vars allocated so far, for this closure/thunk. We
              -- use a DList so we can get O(1) 'snoc' (as opposed to building up
              -- a list in reverse.)
@@ -62,7 +63,7 @@ data EnvState
              -- for O(1) 'snoc'.
              , _esSize  :: EnvSize
              -- ^ Size of the environment so far, to avoid O(n) 'length' calls
-             , _esSlots :: Map.Map Variable BinderSlot
+             , _esSlots :: Map.Map Bound BinderSlot
              -- ^ Env vars mapped to their slot index, for sharing environment
              -- slots when multiple variables in the same closure refer to the
              -- same binder. Once translated to env vars, two different vars
@@ -161,9 +162,9 @@ dummyBI = BinderInfoData Omega () Nothing
 -- entering the most immediate closure or thunk. We see whether the variable
 -- reaches outside of the current closure/thunk, and adjust the depth of the
 -- variable accordingly.
-adjustVar :: Word32 -> Variable -> ConversionM Variable
-adjustVar _letsPassed var@(GlobalVarSym _) = return var
-adjustVar letsPassed  var@(LocalVar lnv) = do
+adjustVar :: Word32 -> Bound -> ConversionM Bound
+adjustVar _letsPassed var@(Global _) = return var
+adjustVar letsPassed  var@(Local depth slot) = do
   mClosureType <- firstOf (topEnv.esClosureType) <$> get
 
   case mClosureType of
@@ -176,9 +177,6 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
         FreeReference depthBeyondClosure -> closeOver depthBeyondClosure
 
   where
-    depth = lnv ^. lnDepth
-    slot = lnv ^. lnSlot
-
     reach :: ClosureType -> Reach
     reach Thunk
       | depth >= letsPassed = FreeReference $ depth - letsPassed
@@ -188,17 +186,17 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
       | depth == letsPassed = ArgReference
       | otherwise           = LocalReference
 
-    bump :: Variable -> Variable
-    bump = localNameless.lnDepth %~ succ
+    bump :: Bound -> Bound
+    bump = localDepth %~ succ
 
-    closeOver :: Word32 -> ConversionM Variable
+    closeOver :: Word32 -> ConversionM Bound
     closeOver depthBeyondClosure = do
-      let envVar = LocalVar $ LocalNamelessVar depthBeyondClosure slot
+      let envVar = Local depthBeyondClosure slot
       mSharedEnvSlot <- topEnvUse $ esSlots.at envVar
 
       case mSharedEnvSlot of
         Just sharedEnvSlot ->
-          return $ LocalVar $ LocalNamelessVar letsPassed sharedEnvSlot
+          return $ Local letsPassed sharedEnvSlot
         Nothing -> do
           envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
 
@@ -207,7 +205,7 @@ adjustVar letsPassed  var@(LocalVar lnv) = do
                   . set  (esSlots.at envVar) (Just envSlot)
                   . over esVars              (`DL.snoc` envVar)
 
-          return $ LocalVar $ LocalNamelessVar letsPassed envSlot
+          return $ Local letsPassed envSlot
 
 -- | Handles conversion of the 'Anf' syntax case. Note that this is not the main
 -- function for closure conversion. See 'closureConvert'.

@@ -4,7 +4,7 @@ module  Hopper.Internal.Core.Term where
 
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
-import Hopper.Utils.LocallyNameless
+import Hopper.Utils.LocallyNameless (Bound(..), BinderSlot(..))
 
 import Data.Data
 import Data.Word (Word32)
@@ -41,17 +41,17 @@ data Term v =
 
 --- NOTE: USE STE MONAD ONCE WE MIGRATE TO HSUM DESIGN
 --- this is kinda only for "inlining" on debruijin variables for now
-substitute :: Word32 -> (BinderSlot  -> Maybe (Term Variable)) -> (Term Variable) -> Either (String,Word32) (Term Variable)
+substitute :: Word32 -> (BinderSlot  -> Maybe (Term Bound)) -> Term Bound -> Either (String,Word32) (Term Bound)
 substitute baseLevel initMapper initTerm = goSub 0 initMapper initTerm
   where
-    goSub :: Word32 -> (BinderSlot  -> Maybe (Term Variable)) -> (Term Variable) -> Either (String,Word32) (Term Variable)
-    goSub shift mapper  var@(V (LocalVar (LocalNamelessVar lnLvl bslt@(BinderSlot slot))))
+    goSub :: Word32 -> (BinderSlot  -> Maybe (Term Bound)) -> Term Bound -> Either (String,Word32) (Term Bound)
+    goSub shift mapper  var@(V (Local lnLvl bslt@(BinderSlot slot)))
                 |  lnLvl == (shift + baseLevel) =
                         maybe (Left ("bad slot", slot))
                               (Right . BinderLevelShiftUP shift )
                              $ mapper bslt
                 | otherwise =  Right var
-    goSub _l _m var@(V (GlobalVarSym _ )) = Right var
+    goSub _l _m var@(V (Global _)) = Right var
     goSub shift mapper (Return ls) =  fmap Return $  mapM (goSub shift mapper ) ls
     goSub shift mapper (App fun args) =
           do   funNew <- goSub shift mapper fun

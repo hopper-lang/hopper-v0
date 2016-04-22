@@ -19,16 +19,16 @@ spec :: Spec
 spec =
   describe "ANF" $
     describe "toAnf" $ do
-      let v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
+      let v0 = Local 0 $ BinderSlot 0
           v0_0 = v0
-          v0_1 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 1
-          v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
-          v1_1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 1
-          v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
-          add = GlobalVarSym $ GlobalSymbol "add"
-          abs = GlobalVarSym $ GlobalSymbol "abs"
-          neg = GlobalVarSym $ GlobalSymbol "neg"
-          id_ = GlobalVarSym $ GlobalSymbol "id"
+          v0_1 = Local 0 $ BinderSlot 1
+          v1 = Local 1 $ BinderSlot 0
+          v1_1 = Local 1 $ BinderSlot 1
+          v2 = Local 2 $ BinderSlot 0
+          add = Global $ GlobalSymbol "add"
+          abs = Global $ GlobalSymbol "abs"
+          neg = Global $ GlobalSymbol "neg"
+          id_ = Global $ GlobalSymbol "id"
           ten = LInteger 10
           twenty = LInteger 20
           dummyBI = BinderInfoData Omega () Nothing

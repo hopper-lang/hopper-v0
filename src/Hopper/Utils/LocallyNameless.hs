@@ -5,20 +5,22 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-
+-- | An adaptation of the locally nameless representation (See Charguéraud's
+-- "The Locally Nameless Representation" for more information) allowing bound
+-- global variables in addition to bound de Bruijn variables.
 
 module Hopper.Utils.LocallyNameless
   ( BinderSlot(..),slotIndex
   , GlobalSymbol(..),gsText
-  , LocalNamelessVar(..),lnDepth,lnSlot
-  , Variable(..),localNameless,globalSymbol
+  , Bound(..),localDepth,localSlot,globalSymbol
   ) where
 
 import Control.Lens
 import Data.Word
 import Data.Data
 import GHC.Generics
-import qualified Data.Text as T (Text )
+
+import qualified Data.Text as T
 
 --- | GlobalSymbol should correspond to the fully qualified name
 --- of a reachable value that is induced UNIQUELY by a module's name and
@@ -26,7 +28,7 @@ import qualified Data.Text as T (Text )
 --- NB: this might be more subtle in the presence of linearity, but let's table
 --- that for now
 ---
---- this may or may not actually need to just be a functory parametery in the
+--- this may or may not actually need to just be a functory parameter in the
 --- AST but let's keep it simple for now
 newtype GlobalSymbol
   = GlobalSymbol { _gsText :: T.Text }
@@ -34,29 +36,27 @@ newtype GlobalSymbol
 
 makeLenses ''GlobalSymbol
 
+-- TODO: rename to Slot
 newtype BinderSlot
   = BinderSlot { _slotIndex :: Word32 }
   deriving (Eq,Show,Data,Ord,Read,Typeable,Generic)
 
 makeLenses ''BinderSlot
 
--- instance Enum BinderSlot where
---   toEnum = BinderSlot . toEnum
---   fromEnum = fromEnum . unBinderSlot
-
-data LocalNamelessVar
-  = LocalNamelessVar { _lnDepth :: {-# UNPACK #-} !Word32
-                     , _lnSlot  :: {-# UNPACK #-} !BinderSlot }
+-- | 'Bound' is either a local env variable or a globally fixed symbol (think:
+-- linkers and object code).
+data Bound
+  = Local  { _localDepth   :: {-# UNPACK #-} !Word32
+           -- ^ TODO: this Word32 should be newtype-wrapped. Our Arity and
+           -- BinderSlot reps are newtype-wrapped, but this isn't.
+           , _localSlot    :: {-# UNPACK #-} !BinderSlot }
+  | Global { _globalSymbol :: {-# UNPACK #-} !GlobalSymbol }
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-makeLenses ''LocalNamelessVar
+makeLenses ''Bound
 
--- | VariableCC is either a local env variable or a globally fixed symbol (think like linkers and object code)
--- TODO: later lowering passes will induce register / stack placements and
--- veer into forcing specification of caller/callee saving conventions on code control tranfers
-data Variable
-  = LocalVar     { _localNameless :: {-# UNPACK #-} !LocalNamelessVar }
-  | GlobalVarSym { _globalSymbol  :: {-# UNPACK #-} !GlobalSymbol }
-  deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
-
-makeLenses ''Variable
+-- -- | A locally nameless variable, which is either a bound variable, or a named
+-- -- free variable.
+-- data Variable
+--   = Bound { _boundVar :: Bound }
+--   | Atom  { _freeName :: T.Text }
