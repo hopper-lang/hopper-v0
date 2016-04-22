@@ -7,7 +7,7 @@
 
 -- | An adaptation of the locally nameless representation (See Charguéraud's
 -- "The Locally Nameless Representation" for more information) allowing bound
--- global variables in addition to bound de Bruijn variables.
+-- global variables in addition to bound 2D de Bruijn variables.
 
 module Hopper.Utils.LocallyNameless
   ( BinderSlot(..),slotIndex
