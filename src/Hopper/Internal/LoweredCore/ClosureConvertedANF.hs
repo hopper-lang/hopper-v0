@@ -12,10 +12,6 @@
 
 module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   AnfCC(..)
-  ,LocalNamelessVar(..)
-  ,Variable(..)
-  ,BinderSlot(..)
-  ,GlobalSymbol(..)
   ,AllocCC(..)
   ,AppCC(..)
   ,RhsCC(..)
