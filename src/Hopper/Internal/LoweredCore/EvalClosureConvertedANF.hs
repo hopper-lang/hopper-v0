@@ -82,11 +82,16 @@ data EnvStackCC =
     | EnvEmptyCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
-instance ToJSON EnvStackCC where
+envStackToList :: EnvStackCC -> [V.Vector Ref]
+envStackToList (EnvConsCC x xs) = x:(envStackToList xs)
+envStackToList EnvEmptyCC = []
 
 envStackFromList :: [V.Vector Ref] -> EnvStackCC
 envStackFromList (x:xs) = EnvConsCC x (envStackFromList xs)
 envStackFromList [] = EnvEmptyCC
+
+instance ToJSON EnvStackCC where
+  toJSON = toJSON . envStackToList
 
 data ControlStackCC  =
       LetBinderCC !(V.Vector BinderInfo)
@@ -101,7 +106,38 @@ data ControlStackCC  =
             !ControlStackCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
+-- | One frame in the control stack.
+--
+-- This data structure is derived from CotnrolStackCC and is only used to
+-- linearize that data structure for its @ToJSON@ instance.
+data ControlStackFrame
+  = LetBinderPoint !(V.Vector BinderInfo) !EnvStackCC !AnfCC
+  | UpdateHeapRefPoint !Ref
+  deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
+
+instance ToJSON ControlStackFrame where
+  toJSON (LetBinderPoint binders envStack anf) = object
+    [ "binders" .= binders
+    , "envStack" .= envStack
+    , "anf" .= anf
+    ]
+  toJSON (UpdateHeapRefPoint ref) = object
+    [ "updateHeapRef" .= ref ]
+
+controlStackCCToList :: ControlStackCC -> [ControlStackFrame]
+controlStackCCToList stack = case stack of
+  LetBinderCC binders () envStack body ret ->
+    let point = LetBinderPoint binders envStack body
+        points = controlStackCCToList ret
+    in point:points
+  ControlStackEmptyCC -> []
+  UpdateHeapRefCC ref ret ->
+    let point = UpdateHeapRefPoint ref
+        points = controlStackCCToList ret
+    in point:points
+
 instance ToJSON ControlStackCC where
+  toJSON = toJSON . controlStackCCToList
 
 newtype InterpreterStepCC = InterpreterStepCC { unInterpreterStep :: Natural } deriving (Eq, Read,Show,Ord,Typeable,Generic,Data)
 
@@ -160,9 +196,17 @@ data DumpState = DumpState
   , _dumpEnvStack :: EnvStackCC
   , _dumpControlStack :: ControlStackCC
   }
-  deriving (Show, Generic, Typeable, ToJSON)
+  deriving (Show, Generic, Typeable)
 
 instance HopperException DumpState where
+
+instance ToJSON DumpState where
+  toJSON (DumpState heap envStack controlStack) =
+    object [
+      "heap" .= heap,
+      "envStack" .= envStack,
+      "controlStack" .= controlStack
+    ]
 
 _DumpState :: Prism' SomeHopperException DumpState
 _DumpState = prism' toHopperException fromHopperException
