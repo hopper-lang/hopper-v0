@@ -13,6 +13,7 @@ module Hopper.Utils.LocallyNameless
   ( BinderSlot(..),slotIndex
   , GlobalSymbol(..),gsText
   , Bound(..),localDepth,localSlot,globalSymbol
+  , Variable(..)
   ) where
 
 import Control.Lens
@@ -55,8 +56,8 @@ data Bound
 
 makeLenses ''Bound
 
--- -- | A locally nameless variable, which is either a bound variable, or a named
--- -- free variable.
--- data Variable
---   = Bound { _boundVar :: Bound }
---   | Atom  { _freeName :: T.Text }
+-- | A locally nameless variable, which is either a bound variable, or a named
+-- free variable.
+data Variable
+  = Bound { _boundVar :: Bound }
+  | Atom  { _freeName :: T.Text }
