@@ -23,6 +23,11 @@ import GHC.Generics
 
 import qualified Data.Text as T
 
+-- NOTE: it could make sense to look into using bidirection pattern synonyms for
+--       variables
+
+-- TODO: add smart constructors, add least for creating a local var
+
 --- | GlobalSymbol should correspond to the fully qualified name
 --- of a reachable value that is induced UNIQUELY by a module's name and
 --- set of dependencies and how it was built.
