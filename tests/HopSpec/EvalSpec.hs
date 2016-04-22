@@ -38,8 +38,8 @@ spec = describe "Evaluation Spec" $ do
       stack = ControlStackEmptyCC
       envStack = Eval.envStackFromList [V.singleton (Ref 0), V.singleton (Ref 1)]
       addVars = V.fromList
-        [ Local 0 (BinderSlot 0)
-        , Local 1 (BinderSlot 0)
+        [ Local 0 (Slot 0)
+        , Local 1 (Slot 0)
         ]
       tm = TailCallCC (PrimAppCC (TotalMathOpGmp IntAddOpId) addVars)
       calculation = evalCCAnf emptySymbolReg envStack stack tm
@@ -59,7 +59,7 @@ spec = describe "Evaluation Spec" $ do
     let startHeap = Heap (Ref 1) Map.empty $ Map.singleton (Ref 0) (makeInt 1)
         stack = ControlStackEmptyCC
         envStack = Eval.envStackFromList [V.singleton (Ref 0)]
-        addVars = V.singleton (Local 0 (BinderSlot 0))
+        addVars = V.singleton (Local 0 (Slot 0))
         tm = TailCallCC (PrimAppCC (TotalMathOpGmp IntAddOpId) addVars)
         calculation = evalCCAnf emptySymbolReg envStack stack tm
         handler :: Either SomeHopperException
@@ -93,7 +93,7 @@ spec = describe "Evaluation Spec" $ do
 
         -- let id be bound in the enclosing scope and x in the innermost scope
         deBruijn :: Word32 -> Bound
-        deBruijn n = Local n (BinderSlot 0)
+        deBruijn n = Local n (Slot 0)
         idCodeId = ClosureCodeId 0
         idCodeRecord = ClosureCodeRecordCC
           (EnvSize 0)

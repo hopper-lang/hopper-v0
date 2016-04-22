@@ -10,7 +10,7 @@
 -- global variables in addition to bound 2D de Bruijn variables.
 
 module Hopper.Utils.LocallyNameless
-  ( BinderSlot(..),slotIndex
+  ( Slot(..),slotIndex
   , GlobalSymbol(..),gsText
   , Bound(..),localDepth,localSlot,globalSymbol
   , Variable(..)
@@ -42,20 +42,20 @@ newtype GlobalSymbol
 
 makeLenses ''GlobalSymbol
 
--- TODO: rename to Slot
-newtype BinderSlot
-  = BinderSlot { _slotIndex :: Word32 }
+-- | A binder slot in our 2D de Bruijn scheme
+newtype Slot
+  = Slot { _slotIndex :: Word32 }
   deriving (Eq,Show,Data,Ord,Read,Typeable,Generic)
 
-makeLenses ''BinderSlot
+makeLenses ''Slot
 
 -- | 'Bound' is either a local env variable or a globally fixed symbol (think:
 -- linkers and object code).
 data Bound
   = Local  { _localDepth   :: {-# UNPACK #-} !Word32
-           -- ^ TODO: this Word32 should be newtype-wrapped. Our Arity and
-           -- BinderSlot reps are newtype-wrapped, but this isn't.
-           , _localSlot    :: {-# UNPACK #-} !BinderSlot }
+           -- ^ TODO: this Word32 should be newtype-wrapped. Our Arity and Slot
+           -- reps are newtype-wrapped, but this isn't.
+           , _localSlot    :: {-# UNPACK #-} !Slot }
   | Global { _globalSymbol :: {-# UNPACK #-} !GlobalSymbol }
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 

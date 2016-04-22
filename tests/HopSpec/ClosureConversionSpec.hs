@@ -21,13 +21,13 @@ import qualified Data.Map as Map
 spec :: Spec
 spec =
   describe "Closure conversion" $ do
-    let v0 = Local 0 $ BinderSlot 0
+    let v0 = Local 0 $ Slot 0
         v0_0 = v0
-        v0_1 = Local 0 $ BinderSlot 1
-        v1 = Local 1 $ BinderSlot 0
-        v2 = Local 2 $ BinderSlot 0
+        v0_1 = Local 0 $ Slot 1
+        v1 = Local 1 $ Slot 0
+        v2 = Local 2 $ Slot 0
         v2_0 = v2
-        v2_1 = Local 2 $ BinderSlot 1
+        v2_1 = Local 2 $ Slot 1
         id_ = Global $ GlobalSymbol "id"
         ten = LInteger 10
         twenty = LInteger 20

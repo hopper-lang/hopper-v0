@@ -25,7 +25,7 @@ module Hopper.Internal.LoweredCore.ANF
   , toAnf
   ) where
 
-import Hopper.Utils.LocallyNameless (Bound(..), localDepth, BinderSlot(..))
+import Hopper.Utils.LocallyNameless (Bound(..), localDepth, Slot(..))
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 import Hopper.Internal.Type.BinderInfo
@@ -85,7 +85,7 @@ data Rhs
 
 -- | The first slot in the most recent binder
 v0 :: Bound
-v0 = Local 0 $ BinderSlot 0
+v0 = Local 0 $ Slot 0
 
 -- | A linear (single-use) reference to a(n existing/term or new/anf) binder. If
 -- two source variables refer to the same binder, they are tracked via separate
@@ -213,7 +213,7 @@ data Binding
 -- have been introduced since the source binder this variable points to.
 translateTermVar :: Bound -> BindingStack -> Bound
 translateTermVar var@(Global _) _ = var
-translateTermVar var@(Local depth (BinderSlot slot)) stack =
+translateTermVar var@(Local depth (Slot slot)) stack =
   case mIndirections of
     Nothing ->
       var & localDepth +~ displacement

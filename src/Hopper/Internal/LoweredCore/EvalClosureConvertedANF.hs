@@ -29,7 +29,7 @@ import Hopper.Internal.Runtime.Heap (
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
-import Hopper.Utils.LocallyNameless (Bound(..), BinderSlot(..),
+import Hopper.Utils.LocallyNameless (Bound(..), Slot(..),
                                      GlobalSymbol(..))
 import Data.HopperException
 import Control.Lens.Prism
@@ -190,9 +190,9 @@ localEnvLookup
   :: EnvStackCC
   -> ControlStackCC
   -> Word32 -- binder depth
-  -> BinderSlot
+  -> Slot
   -> EvalCC s Ref
-localEnvLookup env controlStack depth slot@(BinderSlot slotIdx) = go env depth
+localEnvLookup env controlStack depth slot@(Slot slotIdx) = go env depth
   where
     go :: EnvStackCC -> Word32 -> EvalCC s Ref
     go EnvEmptyCC _n = throwEvalError $ \step ->

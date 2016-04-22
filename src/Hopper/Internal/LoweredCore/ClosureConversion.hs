@@ -10,7 +10,7 @@ import Hopper.Internal.LoweredCore.ANF
 import Hopper.Internal.LoweredCore.ClosureConvertedANF
 import Hopper.Internal.Type.BinderInfo (BinderInfo(..))
 import Hopper.Internal.Type.Relevance (Relevance(..))
-import Hopper.Utils.LocallyNameless (Bound(..), localDepth, BinderSlot(..))
+import Hopper.Utils.LocallyNameless (Bound(..), localDepth, Slot(..))
 
 import Control.Arrow (second)
 import Control.Lens (Lens', Traversal', (%~), (%=), (?=), _head, at, firstOf,
@@ -63,7 +63,7 @@ data EnvState
              -- for O(1) 'snoc'.
              , _esSize  :: EnvSize
              -- ^ Size of the environment so far, to avoid O(n) 'length' calls
-             , _esSlots :: Map.Map Bound BinderSlot
+             , _esSlots :: Map.Map Bound Slot
              -- ^ Env vars mapped to their slot index, for sharing environment
              -- slots when multiple variables in the same closure refer to the
              -- same binder. Once translated to env vars, two different vars
@@ -198,7 +198,7 @@ adjustVar letsPassed  var@(Local depth slot) = do
         Just sharedEnvSlot ->
           return $ Local letsPassed sharedEnvSlot
         Nothing -> do
-          envSlot <- BinderSlot <$> topEnvUse (esSize.envSize)
+          envSlot <- Slot <$> topEnvUse (esSize.envSize)
 
           topEnv %= over esSize              succ
                   . over esInfos             (`DL.snoc` dummyBI)
