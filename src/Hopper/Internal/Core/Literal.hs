@@ -36,6 +36,7 @@ module Hopper.Internal.Core.Literal
   ,integerLimbSize
   ) where
 
+import Data.Aeson
 import Data.Data
 import Data.Word
 import Data.Text (Text)
@@ -55,6 +56,11 @@ data Literal
   | LText !Text
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
+instance ToJSON Literal where
+
+instance ToJSON Natural where
+  toJSON = undefined
+
 -- | ConstrId is the tag name for data type constructors, we dont have those yet
 -- likewise, if we want to contemplate type directed name resolution,
 -- we will need to do enriched name spacing!
@@ -62,12 +68,16 @@ newtype ConstrId
   = ConstrId { unConstrId :: Text }
   deriving (Eq,Show,Typeable,Ord,Read,Data,Generic)
 
+instance ToJSON ConstrId where
+
 -- Primops for a language have names
 data PrimOpId =
     PrimopIdGeneral  !Text
     | TotalMathOpGmp !GmpMathOpId
 
   deriving (Eq,Show,Typeable,Ord,Read,Data,Generic)
+
+instance ToJSON PrimOpId where
 
 data GmpMathOpId =
     IntAddOpId
@@ -86,6 +96,7 @@ data GmpMathOpId =
   | NatPowModOpId
   deriving (Eq,Ord,Show,Read,Data,Typeable,Generic )
 
+instance ToJSON GmpMathOpId where
 
 
 hoistTotalMathLiteralOp :: GmpMathOpId -> [Literal] -> Either String LiteralOp

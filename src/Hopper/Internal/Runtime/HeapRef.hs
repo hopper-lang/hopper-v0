@@ -15,6 +15,7 @@ module Hopper.Internal.Runtime.HeapRef(
       )
 where
 
+import Data.Aeson
 import Data.Word
 import Data.Data
 import GHC.Generics
@@ -25,6 +26,7 @@ import GHC.Generics
 -- probably change
 newtype Ref = Ref {refPointer :: Word64} deriving  (Eq,Read,Show,Ord,Typeable,Data,Generic)
 
+instance ToJSON Ref where
 
 instance Bounded Ref where
    minBound = Ref minBound

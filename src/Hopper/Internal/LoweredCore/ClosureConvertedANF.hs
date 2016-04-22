@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 
 module Hopper.Internal.LoweredCore.ClosureConvertedANF(
@@ -33,6 +34,7 @@ module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   ,lookupClosureCodeId
   ) where
 
+import Data.Aeson
 import Data.Word
 import Data.Data
 import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
@@ -68,15 +70,29 @@ maybe
 newtype ThunkCodeId =
     ThunkCodeId { unThunkCodeId :: Word64 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON ThunkCodeId where
+
+
 newtype ClosureCodeId =
     ClosureCodeId { unClosureCodeId :: Word64 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON ClosureCodeId where
+
+
 newtype EnvSize =
     EnvSize { getEnvSize :: Word64 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON EnvSize where
+
+
 newtype CodeArity =
     CodeArity { getCodeArity :: Word64 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON CodeArity where
 
 -- whether the binder position is a variable, wild card,
 -- live/dead, type/runtime rep info?
@@ -109,6 +125,8 @@ data ValueRepCC ref =
               | IndirectionCC !(V.Vector ref)
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
+instance ToJSON ref => ToJSON (ValueRepCC ref) where
+
 class CodeRecord a where
   envSize :: a -> Word64
   envBindersInfo :: a -> V.Vector BinderInfo
@@ -123,6 +141,8 @@ data ThunkCodeRecordCC =
     -- | the code
     !AnfCC
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON ThunkCodeRecordCC where
 
 instance CodeRecord ThunkCodeRecordCC where
   envSize (ThunkCodeRecordCC size _ _) = getEnvSize size
@@ -149,6 +169,8 @@ data ClosureCodeRecordCC =
                       !AnfCC
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
+instance ToJSON ClosureCodeRecordCC where
+
 instance CodeRecord ClosureCodeRecordCC where
   envSize (ClosureCodeRecordCC size _ _ _ _) = getEnvSize size
   {-# INLINE envSize #-}
@@ -168,6 +190,8 @@ data AnfCC  =
           !(AnfCC) -- body of the let
     | TailCallCC !(AppCC)
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON AnfCC where
 
 
 data AppCC  =
@@ -200,10 +224,14 @@ data AppCC  =
                -}
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
+instance ToJSON AppCC where
+
 data RhsCC
   = AllocRhsCC !AllocCC
   | NonTailCallAppCC !AppCC
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON RhsCC where
 
 data AllocCC
   = SharedLiteralCC !Literal
@@ -217,6 +245,8 @@ data AllocCC
         !Word64 --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON AllocCC where
 
 {- | SymbolRegistryCC is roughly a representatation of static read only data in _symRegValueMap
 that is part of the "linkers" name space, though currently unused ... but that will change
@@ -232,6 +262,14 @@ data SymbolRegistryCC =
                     --- value map is currently unused, but that will change
                                         }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON SymbolRegistryCC where
+  toJSON (SymbolRegistryCC symRegThunkMap symRegClosureMap symRegValueMap) =
+    object [
+      "symRegThunkMap" .= Map.toList symRegThunkMap,
+      "symRegClosureMap" .= Map.toList symRegClosureMap,
+      "symRegValueMap" .= Map.toList symRegValueMap
+    ]
 
 
 lookupClosureCodeId :: SymbolRegistryCC -> ClosureCodeId-> Either String ClosureCodeRecordCC

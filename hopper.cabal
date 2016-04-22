@@ -77,7 +77,8 @@ library
                     Hopper.Internal.LoweredCore.EvalClosureConvertedANF
 
   -- Modules included in this library but not exported.
-  -- other-modules:
+  other-modules:
+    Hopper.Internal.Playground
 
   -- LANGUAGE extensions used by modules in this package.
   -- other-extensions:
@@ -105,6 +106,8 @@ library
                       ,lens >= 4.12 && < 4.14
                      --  ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
                       ,integer-gmp >= 1.0 && < 1.1
+                      ,aeson >= 0.9.0.1 && < 0.10
+                      ,bytestring >= 0.10.6.0 && < 0.11
 
 
   -- Directories containing source files.
@@ -140,4 +143,6 @@ test-suite hspec
       vector >= 0.11 && < 0.12,
       hopper,
       lens >= 4.12 && < 4.14,
-      text >= 1.2 && < 1.3
+      text >= 1.2 && < 1.3,
+      aeson >= 0.9.0.1 && < 0.10,
+      bytestring >= 0.10.6.0 && < 0.11

@@ -8,6 +8,8 @@ import Control.Exception
 import Control.Lens
 import Control.Monad.STE
 import Control.Monad.State
+import Data.Aeson (encode)
+import qualified Data.ByteString as BS
 import Data.HopperException
 import qualified Data.Map as Map
 import Data.Word
@@ -145,4 +147,5 @@ handleSTEErr she
           ]
       _ -> show err
   | Just err <- she^?_HeapError = show err
+  | Just err <- she^?_DumpHeap = "<state dumped>"
   | otherwise = "boom boom boom"

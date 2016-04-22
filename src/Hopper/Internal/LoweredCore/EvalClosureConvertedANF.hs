@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Hopper.Internal.LoweredCore.EvalClosureConvertedANF where
 
@@ -33,6 +34,7 @@ import Data.HopperException
 import Control.Lens.Prism
 import Control.Monad.Reader
 import Control.Monad.STE
+import Data.Aeson
 import Data.Data
 import qualified Data.Map as Map
 import Data.Word(Word32)
@@ -80,6 +82,8 @@ data EnvStackCC =
     | EnvEmptyCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
+instance ToJSON EnvStackCC where
+
 envStackFromList :: [V.Vector Ref] -> EnvStackCC
 envStackFromList (x:xs) = EnvConsCC x (envStackFromList xs)
 envStackFromList [] = EnvEmptyCC
@@ -96,6 +100,8 @@ data ControlStackCC  =
             !Ref
             !ControlStackCC
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
+
+instance ToJSON ControlStackCC where
 
 newtype InterpreterStepCC = InterpreterStepCC { unInterpreterStep :: Natural } deriving (Eq, Read,Show,Ord,Typeable,Generic,Data)
 
@@ -148,6 +154,18 @@ _EvalErrorCC = prism' toHopperException fromHopperException
 -- Make sure this only takes one line so it doesn't throw off line numbers
 #define PanicMessageConstructor(constack,stepAdjust,reductionStep,msg) (HardFaultImpossiblePanicError (constack) (stepAdjust) (reductionStep) (msg) __FILE__ __LINE__)
 
+
+data DumpState = DumpState
+  { _dumpHeap :: Heap (ValueRepCC Ref)
+  , _dumpEnvStack :: EnvStackCC
+  , _dumpControlStack :: ControlStackCC
+  }
+  deriving (Show, Generic, Typeable, ToJSON)
+
+instance HopperException DumpState where
+
+_DumpState :: Prism' SomeHopperException DumpState
+_DumpState = prism' toHopperException fromHopperException
 
 {-
 NB: the use of the words enter, apply etc shouldn't be taken to mean push/enter vs eval/apply
@@ -480,6 +498,16 @@ but cosmic radiation, a bug in GHC, or a bug in the hopper infrastructure (the m
 result in a mismatch between reality and our expectations, so never hurts to check.
 -}
 
+-- | Special primop to dump the current heap.
+--
+-- Suggested handler:
+--
+--     \state -> BS.writeFile "statedump.json" (encode state)
+dumpState :: EnvStackCC -> ControlStackCC -> forall s a. EvalCC s a
+dumpState envstack stack = do
+  heap <- _extractHeapCAH <$> getHSCM
+  lift $ throwSTE $! toHopperException (DumpState heap envstack stack)
+
 -- | Enter a primop.
 --
 -- Currently limited to total math primops and local variables (no globals!).
@@ -495,6 +523,8 @@ enterPrimAppCC symreg envstack stack (opId, args)
        case opId of
          (TotalMathOpGmp mathOpId) ->
            enterTotalMathPrimopSimple stack (mathOpId, nextVect)
+         PrimopIdGeneral "dump state" -> do
+           dumpState envstack stack
          PrimopIdGeneral name ->
            let errMsg = "Unsupported opcode referenced: `" ++ show name ++ "`."
                err step = PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg)

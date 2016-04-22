@@ -7,6 +7,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeFamilies, TypeOperators #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Hopper.Internal.Runtime.Heap(
    CounterAndHeap(..)
@@ -32,6 +33,8 @@ module Hopper.Internal.Runtime.Heap(
 
     where
 
+import Data.Monoid
+import Data.Aeson
 import qualified Data.Map as Map
 import GHC.Generics
 import Numeric.Natural
@@ -67,6 +70,15 @@ data Heap val = Heap
   , _symbolLookup :: !(Map.Map GlobalSymbol Ref)
   , _theHeap :: ! (Map.Map Ref val)
   } deriving (Typeable, Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data)
+
+instance ToJSON val => ToJSON (Heap val) where
+  toJSON (Heap minMaxFreshRef symbolLookup theHeap) =
+    object [
+      "minMaxFreshRef" .= minMaxFreshRef,
+      "symbolLookup" .= Map.toList symbolLookup,
+      "theHeap" .= Map.toList theHeap
+    ]
+
 
 -- | HeapError is currently flawed because we dont provide a stack trace
 data HeapError

@@ -15,6 +15,7 @@ module Hopper.Utils.LocallyNameless
   ) where
 
 import Control.Lens
+import Data.Aeson
 import Data.Word
 import Data.Data
 import GHC.Generics
@@ -33,12 +34,14 @@ newtype GlobalSymbol
   deriving (Eq,Ord,Read,Show,Data,Typeable,Generic)
 
 makeLenses ''GlobalSymbol
+instance ToJSON GlobalSymbol where
 
 newtype BinderSlot
   = BinderSlot { _slotIndex :: Word32 }
   deriving (Eq,Show,Data,Ord,Read,Typeable,Generic)
 
 makeLenses ''BinderSlot
+instance ToJSON BinderSlot where
 
 -- instance Enum BinderSlot where
 --   toEnum = BinderSlot . toEnum
@@ -50,6 +53,7 @@ data LocalNamelessVar
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 makeLenses ''LocalNamelessVar
+instance ToJSON LocalNamelessVar where
 
 -- | VariableCC is either a local env variable or a globally fixed symbol (think like linkers and object code)
 -- TODO: later lowering passes will induce register / stack placements and
@@ -60,3 +64,4 @@ data Variable
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 makeLenses ''Variable
+instance ToJSON Variable where

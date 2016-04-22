@@ -8,6 +8,7 @@ module Hopper.Internal.Type.BinderInfo
 
 import Hopper.Internal.Type.Relevance (Relevance)
 
+import Data.Aeson
 import Data.Data (Data)
 import Data.Text (Text)
 import Data.Typeable (Typeable)
@@ -33,3 +34,5 @@ data BinderInfo =
                  -- ^ TODO: flesh this out
                  }
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+instance ToJSON BinderInfo where

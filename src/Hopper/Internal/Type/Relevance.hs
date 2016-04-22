@@ -30,6 +30,7 @@ import Prelude (Eq(..), Maybe(..),Bool(..),Ord,Num,Show,Read,($),not,(&&), (||))
 import Numeric.Natural
 import GHC.Integer.GMP.Internals (gcdInteger)
 import GHC.Generics
+import Data.Aeson
 import Data.Data
 import Algebra.PartialOrd
 import Algebra.Lattice
@@ -77,6 +78,9 @@ data Relevance =
     | Omega -- normal / any usage between 0 and \infty!
   deriving(Eq,Ord,Show,Read,Data,Typeable,Generic)
   -- i define vanilla ord
+
+instance ToJSON Relevance where
+
 instance Rig Relevance where
   one = One
   zero = Zero
