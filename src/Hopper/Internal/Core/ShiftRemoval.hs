@@ -3,7 +3,7 @@ module Hopper.Internal.Core.ShiftRemoval
   ) where
 
 import Hopper.Internal.Core.Term (Term(..))
-import Hopper.Utils.LocallyNameless (Bound(..), localDepth)
+import Hopper.Utils.LocallyNameless (Bound(..), localDepth, depthLevel)
 
 import Control.Lens ((+~), (%~), (^?), ix)
 import Data.Function ((&))
@@ -28,10 +28,10 @@ removeBinderShifts = go $ repeat 0 -- NB: [] only works for well-formed ASTs,
                                    --     where no de Bruijn variables are free.
   where
     go :: BinderShifts -> Term Bound -> Term Bound
-    go shifts (V var) = case var ^? localDepth of
+    go shifts (V var) = case var ^? localDepth.depthLevel of
       Just depth ->
         let adjustment = sum $ take (succ $ fromIntegral depth) shifts
-        in V $ var & localDepth +~ adjustment
+        in V $ var & localDepth.depthLevel +~ adjustment
       Nothing ->
         V var
 

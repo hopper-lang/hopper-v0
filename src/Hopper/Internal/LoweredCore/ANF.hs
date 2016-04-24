@@ -25,7 +25,8 @@ module Hopper.Internal.LoweredCore.ANF
   , toAnf
   ) where
 
-import Hopper.Utils.LocallyNameless (Bound(..), localDepth, Slot(..))
+import Hopper.Utils.LocallyNameless (Bound(..), localDepth, Depth(..),
+                                     depthLevel, Slot(..))
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 import Hopper.Internal.Type.BinderInfo
@@ -85,7 +86,7 @@ data Rhs
 
 -- | The first slot in the most recent binder
 v0 :: Bound
-v0 = Local 0 $ Slot 0
+v0 = Local (Depth 0) (Slot 0)
 
 -- | A linear (single-use) reference to a(n existing/term or new/anf) binder. If
 -- two source variables refer to the same binder, they are tracked via separate
@@ -213,13 +214,13 @@ data Binding
 -- have been introduced since the source binder this variable points to.
 translateTermVar :: Bound -> BindingStack -> Bound
 translateTermVar var@(Global _) _ = var
-translateTermVar var@(Local depth (Slot slot)) stack =
+translateTermVar var@(Local (Depth depth) (Slot slot)) stack =
   case mIndirections of
     Nothing ->
-      var & localDepth +~ displacement
+      var & localDepth.depthLevel +~ displacement
     Just indirections ->
       let indirection = indirections V.! fromIntegral slot
-      in indirection & localDepth +~ displacement + depth
+      in indirection & localDepth.depthLevel +~ displacement + depth
 
   where
     levels :: [BindingLevel]
@@ -251,9 +252,9 @@ trackVariables TermBinding vars stack =
 trackBinding :: Binding -> BindingStack -> BindingStack
 trackBinding (AnfBinding refs) stack = stack & _head %~ updateLevel
   where
-    updateLevel = (levelRefs                   %~ addRefs)
-                . (levelRefs.mapped.localDepth +~ 1)
-                . (levelIntros                 +~ 1)
+    updateLevel = (levelRefs                              %~ addRefs)
+                . (levelRefs.mapped.localDepth.depthLevel +~ 1)
+                . (levelIntros                            +~ 1)
     addRefs = Map.union $ Map.fromList $ zip refs $ repeat v0
 trackBinding TermBinding stack = emptyLevel:stack
 
@@ -318,8 +319,8 @@ bindersAddedSince extended base = sum $ height <$> extended `levelsSince` base
 -- 'BindingLevel's.
 withBinderIncreasesPer :: BindingStack -> BindingStack -> BindingStack
 withBinderIncreasesPer base extended =
-  base & _head.levelIntros                 +~ numBinders
-       & _head.levelRefs.mapped.localDepth +~ numBinders
+  base & _head.levelIntros                            +~ numBinders
+       & _head.levelRefs.mapped.localDepth.depthLevel +~ numBinders
   where
     numBinders = extended `bindersAddedSince` base
 

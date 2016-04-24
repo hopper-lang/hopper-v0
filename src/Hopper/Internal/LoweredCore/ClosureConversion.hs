@@ -10,7 +10,7 @@ import Hopper.Internal.LoweredCore.ANF
 import Hopper.Internal.LoweredCore.ClosureConvertedANF
 import Hopper.Internal.Type.BinderInfo (BinderInfo(..))
 import Hopper.Internal.Type.Relevance (Relevance(..))
-import Hopper.Utils.LocallyNameless (Bound(..), localDepth, Slot(..))
+import Hopper.Utils.LocallyNameless (Bound(..), localDepth, Slot(..), Depth(..))
 
 import Control.Arrow (second)
 import Control.Lens (Lens', Traversal', (%~), (%=), (?=), _head, at, firstOf,
@@ -19,7 +19,6 @@ import Control.Monad.State.Class (MonadState, get)
 import Control.Monad.Trans.State.Strict (State, runState)
 import Data.Foldable (toList)
 import Data.Maybe (fromMaybe)
-import Data.Word (Word32)
 
 import qualified Data.DList as DL
 import qualified Data.Map.Strict as Map
@@ -45,7 +44,7 @@ data Reach
   | ArgReference
   -- ^ The variable (inside of a closure, not thunk) refers to a function
   -- argument.
-  | FreeReference Word32
+  | FreeReference Depth
   -- ^ The variable reaches beyond the closure/thunk, with the de Bruijn depth
   -- of the binder relative to the closure/thunk boundary.
   deriving (Eq, Show)
@@ -162,7 +161,7 @@ dummyBI = BinderInfoData Omega () Nothing
 -- entering the most immediate closure or thunk. We see whether the variable
 -- reaches outside of the current closure/thunk, and adjust the depth of the
 -- variable accordingly.
-adjustVar :: Word32 -> Bound -> ConversionM Bound
+adjustVar :: Depth -> Bound -> ConversionM Bound
 adjustVar _letsPassed var@(Global _) = return var
 adjustVar letsPassed  var@(Local depth slot) = do
   mClosureType <- firstOf (topEnv.esClosureType) <$> get
@@ -177,19 +176,22 @@ adjustVar letsPassed  var@(Local depth slot) = do
         FreeReference depthBeyondClosure -> closeOver depthBeyondClosure
 
   where
+    minus :: Depth -> Depth -> Depth
+    (Depth d1) `minus` (Depth d2) = Depth $ d1 - d2
+
     reach :: ClosureType -> Reach
     reach Thunk
-      | depth >= letsPassed = FreeReference $ depth - letsPassed
+      | depth >= letsPassed = FreeReference $ depth `minus` letsPassed
       | otherwise           = LocalReference
     reach Closure
-      | depth >  letsPassed = FreeReference $ depth - (letsPassed + 1)
+      | depth >  letsPassed = FreeReference $ depth `minus` (succ letsPassed)
       | depth == letsPassed = ArgReference
       | otherwise           = LocalReference
 
     bump :: Bound -> Bound
     bump = localDepth %~ succ
 
-    closeOver :: Word32 -> ConversionM Bound
+    closeOver :: Depth -> ConversionM Bound
     closeOver depthBeyondClosure = do
       let envVar = Local depthBeyondClosure slot
       mSharedEnvSlot <- topEnvUse $ esSlots.at envVar
@@ -209,7 +211,7 @@ adjustVar letsPassed  var@(Local depth slot) = do
 
 -- | Handles conversion of the 'Anf' syntax case. Note that this is not the main
 -- function for closure conversion. See 'closureConvert'.
-ccAnf :: Word32 -> Anf -> ConversionM AnfCC
+ccAnf :: Depth -> Anf -> ConversionM AnfCC
 ccAnf letsPassed anf = case anf of
   AnfReturn vars ->
     ReturnCC <$> traverse (adjustVar letsPassed) vars
@@ -223,12 +225,12 @@ ccAnf letsPassed anf = case anf of
     TailCallCC <$> ccApp letsPassed app
 
 -- | Handles conversion of the 'Rhs' syntax case.
-ccRhs :: Word32 -> Rhs -> ConversionM RhsCC
+ccRhs :: Depth -> Rhs -> ConversionM RhsCC
 ccRhs letsPassed (RhsAlloc alloc) = AllocRhsCC <$> ccAlloc letsPassed alloc
 ccRhs letsPassed (RhsApp app) = NonTailCallAppCC <$> ccApp letsPassed app
 
 -- | Handles conversion of the 'App' syntax case.
-ccApp :: Word32 -> App -> ConversionM AppCC
+ccApp :: Depth -> App -> ConversionM AppCC
 ccApp letsPassed app = case app of
   AppFun fv avs -> do
     ccFnVar <- adjustVar letsPassed fv
@@ -243,7 +245,7 @@ ccApp letsPassed app = case app of
     EnterThunkCC <$> adjustVar letsPassed var
 
 -- | Handles conversion of the 'Alloc' syntax case.
-ccAlloc :: Word32 -> Alloc -> ConversionM AllocCC
+ccAlloc :: Depth -> Alloc -> ConversionM AllocCC
 ccAlloc letsPassed alloc = case alloc of
   AllocLit lit ->
     return $ SharedLiteralCC lit
@@ -251,7 +253,7 @@ ccAlloc letsPassed alloc = case alloc of
   AllocLam argInfos body -> do
     pushEmptyEnv Closure
     closureId <- allocClosureCodeId
-    bodyCC <- ccAnf 0 body
+    bodyCC <- ccAnf (Depth 0) body
     envState <- popEnv
     let arity = CodeArity $ fromIntegral $ V.length argInfos
     csRegistry.symRegClosureMap.at closureId ?=
@@ -268,7 +270,7 @@ ccAlloc letsPassed alloc = case alloc of
   AllocThunk body -> do
     pushEmptyEnv Thunk
     thunkId <- allocThunkCodeId
-    bodyCC <- ccAnf 0 body
+    bodyCC <- ccAnf (Depth 0) body
     envState <- popEnv
     csRegistry.symRegThunkMap.at thunkId ?=
       ThunkCodeRecordCC (_esSize envState)
@@ -282,9 +284,13 @@ ccAlloc letsPassed alloc = case alloc of
 
 -- | The main function and entrypoint for closure-converting an 'Anf' term.
 closureConvert :: Anf -> (AnfCC, SymbolRegistryCC)
-closureConvert anf0 = second _csRegistry $
-                             runState (runConversion $ ccAnf 0 anf0) state0
+closureConvert anf = second _csRegistry $
+                            runState (runConversion conversion) state0
+
   where
+    conversion :: ConversionM AnfCC
+    conversion = ccAnf (Depth 0) anf
+
     state0 :: ConversionState
     state0 = ConversionState (SymbolRegistryCC Map.empty Map.empty Map.empty)
                              (ThunkCodeId 0)

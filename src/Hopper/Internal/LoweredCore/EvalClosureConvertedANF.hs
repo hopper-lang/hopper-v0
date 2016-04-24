@@ -29,7 +29,7 @@ import Hopper.Internal.Runtime.Heap (
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
-import Hopper.Utils.LocallyNameless (Bound(..), Slot(..),
+import Hopper.Utils.LocallyNameless (Bound(..), Depth(..), Slot(..),
                                      GlobalSymbol(..))
 import Data.HopperException
 import Control.Lens.Prism
@@ -37,7 +37,6 @@ import Control.Monad.Reader
 import Control.Monad.STE
 import Data.Data
 import qualified Data.Map as Map
-import Data.Word(Word32)
 import GHC.Generics
 import Numeric.Natural
 import qualified Data.Vector as V
@@ -189,19 +188,19 @@ envLookup registry _env _control (Global global) =
 localEnvLookup
   :: EnvStackCC
   -> ControlStackCC
-  -> Word32 -- binder depth
+  -> Depth
   -> Slot
   -> EvalCC s Ref
-localEnvLookup env controlStack depth slot@(Slot slotIdx) = go env depth
+localEnvLookup env control depth0 slot@(Slot slotIdx) = go env depth0
   where
-    go :: EnvStackCC -> Word32 -> EvalCC s Ref
+    go :: EnvStackCC -> Depth -> EvalCC s Ref
     go EnvEmptyCC _n = throwEvalError $ \step ->
-      BadVariableCC (Local depth slot) controlStack (InterpreterStepCC step)
-    go (EnvConsCC refs _) 0
+      BadVariableCC (Local depth0 slot) control (InterpreterStepCC step)
+    go (EnvConsCC refs _) (Depth 0)
       | Just val <- refs V.!? fromIntegral slotIdx = return val
       | otherwise = throwEvalError $ \step ->
-          BadVariableCC (Local depth slot) controlStack (InterpreterStepCC step)
-    go (EnvConsCC _ rest) w = go rest (w - 1)
+          BadVariableCC (Local depth0 slot) control (InterpreterStepCC step)
+    go (EnvConsCC _ rest) depth = go rest (pred depth)
 
 
 -- | Evaluate a some term with the given environment and stack

@@ -18,10 +18,10 @@ import qualified Data.Vector as V
 spec :: Spec
 spec =
   describe "Binder shift removal" $ do
-    let v0 = V $ Local 0 $ Slot 0
-        v1 = V $ Local 1 $ Slot 0
-        v2 = V $ Local 2 $ Slot 0
-        v3 = V $ Local 3 $ Slot 0
+    let v0 = V $ Local (Depth 0) $ Slot 0
+        v1 = V $ Local (Depth 1) $ Slot 0
+        v2 = V $ Local (Depth 2) $ Slot 0
+        v3 = V $ Local (Depth 3) $ Slot 0
         lit = ELit $ LInteger 42
         prim0 = PrimopIdGeneral "test"
         dummyBIs = V.replicate 2 $ BinderInfoData Omega () Nothing
@@ -39,8 +39,8 @@ spec =
 
     it "preserves binder slots when bumping variables" $
       let slot = Slot 3
-          term  = shift 1 $ V $ Local 1 slot
-          term' = V $ Local 2 slot
+          term  = shift 1 $ V $ Local (Depth 1) slot
+          term' = V $ Local (Depth 2) slot
       in removeBinderShifts term `shouldBe` term'
 
     it "does not succ shift levels as it moves through a Return" $

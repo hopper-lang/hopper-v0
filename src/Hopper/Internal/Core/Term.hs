@@ -4,7 +4,7 @@ module  Hopper.Internal.Core.Term where
 
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
-import Hopper.Utils.LocallyNameless (Bound(..), Slot(..))
+import Hopper.Utils.LocallyNameless (Bound(..), Depth(..), Slot(..))
 
 import Data.Data
 import Data.Word (Word32)
@@ -45,8 +45,8 @@ substitute :: Word32 -> (Slot  -> Maybe (Term Bound)) -> Term Bound -> Either (S
 substitute baseLevel initMapper initTerm = goSub 0 initMapper initTerm
   where
     goSub :: Word32 -> (Slot  -> Maybe (Term Bound)) -> Term Bound -> Either (String,Word32) (Term Bound)
-    goSub shift mapper  var@(V (Local lnLvl bslt@(Slot slot)))
-                |  lnLvl == (shift + baseLevel) =
+    goSub shift mapper  var@(V (Local (Depth level) bslt@(Slot slot)))
+                | level == (shift + baseLevel) =
                         maybe (Left ("bad slot", slot))
                               (Right . BinderLevelShiftUP shift )
                              $ mapper bslt

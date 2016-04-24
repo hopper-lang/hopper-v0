@@ -4,13 +4,15 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | An adaptation of the locally nameless representation (See Charguéraud's
 -- "The Locally Nameless Representation" for more information) allowing bound
 -- global variables in addition to bound 2D de Bruijn variables.
 
 module Hopper.Utils.LocallyNameless
-  ( Slot(..),slotIndex
+  ( Depth(..),depthLevel
+  , Slot(..),slotIndex
   , GlobalSymbol(..),gsText
   , Bound(..),localDepth,localSlot,globalSymbol
   , Variable(..)
@@ -42,7 +44,15 @@ newtype GlobalSymbol
 
 makeLenses ''GlobalSymbol
 
--- | A binder slot in our 2D de Bruijn scheme
+-- | The distance in binding levels between a variable and its binder. The
+-- "first dimension" in our 2D de Bruijn scheme.
+newtype Depth
+  = Depth { _depthLevel :: Word32 }
+  deriving (Eq,Show,Enum,Data,Ord,Read,Typeable,Generic)
+
+makeLenses ''Depth
+
+-- | A binder slot. The second dimension in our 2D de Bruijn scheme.
 newtype Slot
   = Slot { _slotIndex :: Word32 }
   deriving (Eq,Show,Data,Ord,Read,Typeable,Generic)
@@ -52,9 +62,7 @@ makeLenses ''Slot
 -- | 'Bound' is either a local env variable or a globally fixed symbol (think:
 -- linkers and object code).
 data Bound
-  = Local  { _localDepth   :: {-# UNPACK #-} !Word32
-           -- ^ TODO: this Word32 should be newtype-wrapped. Our Arity and Slot
-           -- reps are newtype-wrapped, but this isn't.
+  = Local  { _localDepth   :: {-# UNPACK #-} !Depth
            , _localSlot    :: {-# UNPACK #-} !Slot }
   | Global { _globalSymbol :: {-# UNPACK #-} !GlobalSymbol }
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)

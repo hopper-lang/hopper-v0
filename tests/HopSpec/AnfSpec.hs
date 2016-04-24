@@ -19,12 +19,12 @@ spec :: Spec
 spec =
   describe "ANF" $
     describe "toAnf" $ do
-      let v0 = Local 0 $ Slot 0
+      let v0 = Local (Depth 0) $ Slot 0
           v0_0 = v0
-          v0_1 = Local 0 $ Slot 1
-          v1 = Local 1 $ Slot 0
-          v1_1 = Local 1 $ Slot 1
-          v2 = Local 2 $ Slot 0
+          v0_1 = Local (Depth 0) $ Slot 1
+          v1 = Local (Depth 1) $ Slot 0
+          v1_1 = Local (Depth 1) $ Slot 1
+          v2 = Local (Depth 2) $ Slot 0
           add = Global $ GlobalSymbol "add"
           abs = Global $ GlobalSymbol "abs"
           neg = Global $ GlobalSymbol "neg"
