@@ -36,7 +36,7 @@ maintainer:          carter.schonwald@gmail.com
 
 category:            Language
 
-tested-with:  GHC==7.10.3, GHC==8.0.1
+tested-with:  GHC==8.0.1,  GHC==8.1.* , GHC==7.10.3
 
 build-type:          Simple
 
@@ -103,7 +103,7 @@ library
                       ,text >= 1.2 && < 1.3
                       ,bifunctors >= 4.2 &&  < 5.4
                       --- this may need to be tightened later
-                      ,lens >= 4.12 && < 4.14
+                      ,lens >= 4.12 && < 4.15
                       ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
                       ,integer-gmp >= 1.0 && < 1.1
 
@@ -132,13 +132,13 @@ test-suite hspec
   if flag(fullprofiling)
     ghc-prof-options: -fprof-auto -fprof-auto-calls -fprof-cafs
   build-depends:
-      base,
-      containers >= 0.5 && < 0.6,
-      hspec >= 2.1 && < 2.3 ,
-      HUnit,
-      mtl >= 2.2 && < 2.4,
-      hspec-expectations >= 0.7.2 && < 0.8,
-      vector >= 0.11 && < 0.12,
-      hopper,
-      lens >= 4.12 && < 4.14,
-      text >= 1.2 && < 1.3
+      base
+      ,containers
+      ,hspec >= 2.1 && < 2.3
+      ,HUnit
+      ,mtl
+      ,hspec-expectations >= 0.7.2 && < 0.8
+      ,vector
+      ,hopper
+      ,lens
+      ,text
