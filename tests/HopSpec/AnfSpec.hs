@@ -41,7 +41,10 @@ spec =
               anf = AnfReturn $ V.singleton v0
           in toAnf term `shouldBe` anf
 
-        -- TODO(bts): add test for throwing errors upon binder shifts
+        it "handles binder shifts" $
+          let term = BinderLevelShiftUP 1 $ V v1
+              anf = AnfReturn $ V.singleton v2
+          in toAnf term `shouldBe` anf
 
         it "converts literals" $
           let lit = LInteger 42
@@ -148,7 +151,13 @@ spec =
                            (AnfTailCall $ AppFun v1 $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
-        -- TODO(bts): add test for throwing errors upon binder shifts
+        it "handles binder shifts" $
+          let lit = LInteger 5
+              term = App (BinderLevelShiftUP 1 $ V v0) $ V.singleton $ ELit lit
+              anf = AnfLet infos1
+                           (RhsAlloc $ AllocLit lit)
+                           (AnfTailCall $ AppFun v1 $ V.singleton v0)
+          in toAnf term `shouldBe` anf
 
         it "converts returns on the RHS of a let" $
            let term = Let (V.replicate 2 dummyBI)

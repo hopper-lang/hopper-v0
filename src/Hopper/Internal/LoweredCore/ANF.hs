@@ -389,8 +389,7 @@ convertTail term = case term of
     return $ AnfReturn $ V.singleton translatedVar
 
   BinderLevelShiftUP _ _ ->
-    -- TODO(bts): expose this using proper error machinery
-    error "unexpected binder shift in convertTail during ANF conversion"
+    convertTail $ removeBinderShifts term
 
   ELit lit ->
     return $ returnAllocated $ AllocLit lit
@@ -444,8 +443,7 @@ convertWithCont term binding k = case term of
     k $ trackVariables binding [translatedVar]
 
   BinderLevelShiftUP _ _ ->
-    -- TODO(bts): expose this using proper error machinery
-    error "unexpected binder shift in convertWithCont during ANF conversion"
+    convertWithCont (removeBinderShifts term) binding k
 
   ELit l -> do
     body <- k $ trackBinding binding
