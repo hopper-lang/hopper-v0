@@ -136,6 +136,7 @@ test-suite hspec
       base
       ,containers
       ,hspec >= 2.1 && < 2.3
+      ,hspec-discover
       ,HUnit
       ,mtl
       ,hspec-expectations >= 0.7.2 && < 0.8
