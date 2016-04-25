@@ -72,7 +72,6 @@ library
                     Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Literal
                     Hopper.Internal.LoweredCore.ANF
-                    Hopper.Internal.Core.ShiftRemoval
                     Hopper.Internal.LoweredCore.ClosureConversion
                     Hopper.Internal.LoweredCore.ClosureConvertedANF
                     Hopper.Internal.LoweredCore.EvalClosureConvertedANF
