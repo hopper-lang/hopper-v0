@@ -5,7 +5,7 @@ module  Hopper.Internal.Core.Term where
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
 import Hopper.Utils.LocallyNameless (Bound(..), Slot(..), Depth(..), localDepth,
-                                     depthLevel)
+                                     depthLevel, HasBound(..))
 
 import Control.Lens ((+~), (%~), (^?), ix)
 import Data.Data
@@ -41,8 +41,8 @@ data Term v =
         !(Term v) --- BODY
   deriving ({-Show1,Read1,Ord1,Eq1,-}Ord,Eq,Show,Read{-,Functor,Foldable-},Typeable{-,Traversable-})
 
--- | Removes binder shifts from a @'Term' 'Bound'@
-removeBinderShifts :: Term Bound -> Term Bound
+-- | Removes binder shifts from a 'Term'
+removeBinderShifts :: HasBound v => Term v -> Term v
 removeBinderShifts = go $ repeat 0 -- NB: [] only works for well-formed ASTs,
                                    --     where no de Bruijn variables are free.
   where
@@ -59,11 +59,11 @@ removeBinderShifts = go $ repeat 0 -- NB: [] only works for well-formed ASTs,
     -- When we encounter a variable of depth @d@, we bump the variable by the
     -- sum of the @b@ amounts for all of the shifts the variable is affected by
     -- -- namely, the first @d+1@ @b@ values in the list of shifts.
-    go :: [Word32] -> Term Bound -> Term Bound
-    go shifts (V var) = case var ^? localDepth.depthLevel of
+    go :: HasBound v => [Word32] -> Term v -> Term v
+    go shifts (V var) = case var ^? bound.localDepth.depthLevel of
       Just depth ->
         let adjustment = sum $ take (succ $ fromIntegral depth) shifts
-        in V $ var & localDepth.depthLevel +~ adjustment
+        in V $ var & bound.localDepth.depthLevel +~ adjustment
       Nothing ->
         V var
 

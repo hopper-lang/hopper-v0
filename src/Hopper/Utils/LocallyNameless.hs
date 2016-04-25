@@ -15,8 +15,10 @@ module Hopper.Utils.LocallyNameless
   , Slot(..),slotIndex
   , GlobalSymbol(..),gsText
   , Bound(..),localDepth,localSlot,globalSymbol
-  , Variable(..)
-  ) where
+  , Variable(..),boundVar,freeName
+  , HasBound(..)
+  )
+  where
 
 import Control.Lens
 import Data.Word
@@ -74,3 +76,12 @@ makeLenses ''Bound
 data Variable
   = Bound { _boundVar :: Bound }
   | Atom  { _freeName :: T.Text }
+  deriving (Eq,Ord,Show)
+
+makeLenses ''Variable
+
+class HasBound v where
+  bound :: Traversal' v Bound
+
+instance HasBound Bound    where bound = ($)
+instance HasBound Variable where bound = boundVar
