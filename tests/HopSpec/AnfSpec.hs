@@ -160,13 +160,13 @@ spec =
           in toAnf term `shouldBe` anf
 
         it "converts returns on the RHS of a let" $
-           let term = Let (V.replicate 2 dummyBI)
-                          (Return $ V.fromList [ELit ten, V v0])
-                          (Return $ V.fromList [V v0_1, V v0_0])
-               anf  = AnfLet infos1
-                             (RhsAlloc $ AllocLit ten)
-                             (AnfReturn $ V.fromList [v1, v0])
-           in toAnf term `shouldBe` anf
+          let term = Let (V.replicate 2 dummyBI)
+                         (Return $ V.fromList [ELit ten, V v0])
+                         (Return $ V.fromList [V v0_1, V v0_0])
+              anf  = AnfLet infos1
+                            (RhsAlloc $ AllocLit ten)
+                            (AnfReturn $ V.fromList [v1, v0])
+          in toAnf term `shouldBe` anf
 
         it "converts delays" $
           let -- (1) (delay ((0) (0)))
