@@ -50,7 +50,6 @@ install:
 script:
  - if [ -f configure.ac ]; then autoreconf -i; fi
  # this builds all libraries and executables (including tests/benchmarks)
- - cabal install hspec-discover
  - cabal new-build ${TEST} ${BENCH} -v2  # -v2 provides useful information for debugging
 
  # there's no 'cabal new-test' yet, so let's emulate for now
