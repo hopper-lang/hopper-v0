@@ -75,6 +75,7 @@ import Data.Void
 import Data.Proxy
 import Hopper.Internal.Type.Relevance
 import Control.Monad.STE
+import Numeric.Natural
 
 {- A Higher Order  abstract syntax model of the term AST
 There will be a few infelicities to simplify / leverage the use
@@ -125,7 +126,7 @@ data ValueNoThunk :: * -> ( * -> * )  -> * where
   VFunk :: (RawFunction n m a (Exp (Value s neut))) -> ValueNoThunk s neut
   --VFunction :: (SomeArityValFun resultArity (Value  s neut )) -> ValueNoThunk s neut
   VConstructor :: Text -> [Value s neut ] -> ValueNoThunk s  neut
-  VNeutral :: Neutral s  -> ValueNoThunk s neut
+  VNeutral :: neut s  -> ValueNoThunk s neut
   --VPseudoUnboxedTuple :: [Value s neut] -> ValueNoThunk s neut
   -- unboxed tuples never exist as heap values, but may be the result of
  -- some computation
@@ -142,6 +143,16 @@ data Neutral :: *  -> * where
   NeutCase :: (Neutral s ) ->
               Map Text (SomeArityExpFun n (Value s Neutral )) ->
               Neutral s
+  NeutApp :: (KnownNat from, KnownNat to )=>
+        Neutral s ->
+        Proxy from ->
+        Proxy to ->
+        SizedList to (Value s Neutral)  ->
+        Neutral s
+  NeutForce :: KnownNat to =>
+        Neutral s ->
+        Proxy to ->
+        Neutral s
 
 
 
@@ -173,9 +184,9 @@ type SimpleValue = Value Void
 
 
 data Sort :: *   where
-  LubSort :: [Sort ] -> Sort   -- following the agda convention,
-                              --the base sort is modeled  as LubSort []
-  LubSucc :: Sort  -> Sort
+  LubSort :: [Sort ] -> Sort  -- max of a list of sorts
+  SuccSort :: Sort -> Sort -- 1 up the other sorts!
+  BaseSort :: Natural  -> Sort
 
 data PrimType :: * where
   PTInteger :: PrimType
@@ -203,24 +214,24 @@ data PiTel :: Nat -> * -> *  -> * -> * where
        -- a unit value argument function  @ ()-> codomain @
        PiTel 0 domainV domTy codomainTy
 
-  PiSucc :: forall domainV domTy codomainV m n . (m ~ (n GT.+ 1)) =>
+  PiSucc :: forall domainV domTy codomainTy m n . (m ~ (n GT.+ 1)) =>
           domTy ->
           -- ^ * of domain / current variable
           Relevance ->
           -- ^ variable usage annotation for the thusly typed function expression
           -- usage in * level expressions is deemed cost 0
-          (domainV -> PiTel n domainV domTy codomainV ) ->
+          (domainV -> PiTel n domainV domTy codomainTy ) ->
           -- ^ rest of the telescope
-          PiTel m domainV domTy codomainV
+          PiTel m domainV domTy codomainTy
 
 -- | @SigmaTel n sort ty val@ can be thought of as eg
   -- SigmaSigma  (Ty1 :_rel1 Sort1) (f : (val1 : Ty1 )-> Ty2 val1)
   -- yiels a pair (x : Ty1 , y : f x )
-data SigmaTel :: Nat -> * -> * -> * -> * where
-  SigmaZ :: forall domainExp domainV domTy . SigmaTel 0 domainExp  domainV domTy
+data SigmaTel :: Nat -> * -> * -> * where
+  SigmaZ :: forall {-domainExp-} domainV domTy . SigmaTel 0 {-domainExp-}  domainV domTy
   -- ^ an empty sigma telescope is basically just the unit value
-  SigmaSucc :: forall domainTy domainV  domainSort m n . (m ~ (n GT.+ 1)) =>
-            domainSort ->
+  SigmaSucc :: forall domainTy domainV  {-domainSort-} m n . (m ~ (n GT.+ 1)) =>
+            {-domainSort ->-}
             -- ^ the type/sort of the first element
             domainTy ->
             -- ^ sigmas are pairs! so we have the "value" / "expression"
@@ -229,22 +240,51 @@ data SigmaTel :: Nat -> * -> * -> * -> * where
             Relevance ->
             -- ^ the computational relevance for the associated value
             -- usage in * level expressions is deemed cost 0
-            (domainV -> SigmaTel n domainSort domainV domainTy) ->
+            (domainV -> SigmaTel n {-domainSort-} domainV domainTy) ->
             -- ^ second/rest of the telescope
             -- (sigmas are, after a generalized pair), and in a CBV
             -- evaluation order, Expressions should be normalized
             -- (or at least neutralized of danger :p , before being passed on! )
-            SigmaTel m domainSort domainV domainTy
+            SigmaTel m {-domainSort-} domainV domainTy
 
 data SomeNatF :: (Nat -> * ) -> * where
   SomeNatF ::  forall n f . GT.KnownNat n => f n -> SomeNatF f
 
+{-
+indexed descriptions are a good strawman
+datatype/type model
+
+data IDesc {l : Level}(I : Set (suc l)) : Set (suc l) where
+  var : I -> IDesc I
+  const : Set l -> IDesc I
+  prod : IDesc I -> IDesc I -> IDesc I
+  sigma : (S : Set l) -> (S -> IDesc I) -> IDesc I
+  pi : (S : Set l) -> (S -> IDesc I) -> IDesc I
+
+
+-}
+
+
+
 infixr 5 :*  -- this choice 5 is adhoc and subject to change
+
 
 
 data SizedList ::  Nat -> * -> * where
   SLNil :: SizedList 0 a
   (:*) :: a -> SizedList n a -> SizedList (n GT.+ 1) a
+sizedFmap :: forall n a b . (a -> b) -> SizedList n a -> SizedList n b
+sizedFmap f SLNil = SLNil
+sizedFmap f (a :* as) = f a :* (sizedFmap f as )
+
+sizedMapM :: forall n a b m . Monad m  => (a -> m b) -> SizedList n a ->  m (SizedList n b)
+sizedMapM f SLNil = return SLNil
+sizedMapM f (a :* as) = do tl <- (sizedMapM f as ) ; hd <- f a ; return (hd :* tl)
+
+
+
+
+
 
 --data HoasType ::  * -> * ) where
 --   --FunctionSpace ::
@@ -297,7 +337,7 @@ data Exp :: * -> Nat  -> *  where
       -- ^ result arity
 
       (PiTel piSize a (Exp  a 1)
-        (SigmaTel sigSize (Exp  a 1) a (Exp  a 1))) ->
+        (SigmaTel sigSize {-(Exp  a 1) -}a (Exp  a 1))) ->
       -- ^ See note on Function spaces
       -- \pi x_1 ... \pi x_piSize -> Exists y_1 ... Exists y_sigmaSize
       --
@@ -307,7 +347,7 @@ data Exp :: * -> Nat  -> *  where
       --
   DelayType :: (KnownNat sigSize) =>
       Proxy sigSize ->
-      SigmaTel sigSize (Exp  a 1) a (Exp  a 1) ->
+      SigmaTel sigSize {-(Exp  a 1) -} a (Exp  a 1) ->
       Exp a 1
 
   BaseType :: PrimType -> Exp  a 1
@@ -327,9 +367,9 @@ data Exp :: * -> Nat  -> *  where
       -- which needs to be checked by the evaluator
       Exp a from  ->
       Exp a to
-
-  Return :: SizedList n a -> Exp  a n
-  HasType :: Exp  a n -> Exp  a 1 -> Exp  a n  --- aka CUT
+  Pure :: a -> Exp a 1
+  Return :: SizedList n (Exp a 1) -> Exp  a n
+  HasType :: KnownNat n => Exp  a n-> Proxy n -> Exp  a 1 -> Exp  a n  --- aka CUT
   Delay :: KnownNat n => Proxy n -> Exp  a n -> Exp  a 1
   Force :: KnownNat n => Exp  a 1 -> Proxy n    -> Exp  a n
   -- ^ Not sure if `Force` and `Delay` should have this variable arity,
@@ -337,6 +377,8 @@ data Exp :: * -> Nat  -> *  where
   LetExp :: Exp  a m -> (RawFunction m h a (Exp a)) -> Exp  a h
   --- ^ this is another strawman for arity of functions
   --- both LetExpExp and LetExp are essentially the same thing
+  --- Let is also existential unpack for unboxed tuples, which
+  -- can otherwise only be deconstructed  by calling a function
   --LetExp :: Exp  a m   -> (SizedList m a   -> Exp  a h) -> Exp   a h
 
   -- ^ Let IS monadic bind :)
@@ -383,7 +425,38 @@ FunctionSpaceExp Proxy Proxy
   :: Exp a
 -}
 
-evalB :: Exp  a n -> STE err  s (SizedList n a)
-evalB  _ = undefined
+evalB ::   Exp  (Value s Neutral) n -> STE String  s (SizedList n (Value s Neutral))
+evalB  (App parg pres funExp argExp) = undefined
+evalB  (FunctionSpaceTypeExp _ _ _) = undefined
+evalB (DelayType _ _) = undefined
+evalB (BaseType _) = undefined
+evalB (Sorts _) = undefined
+evalB (Pure val) = return $ val :* SLNil
+evalB (Abs f) = return $ ( VNormal $! VFunk f ) :* SLNil
+evalB  (Return ls) = sizedMapM evalSingle ls
+evalB (HasType x prox  _) = evalB x
+evalB (Delay _resArity resExp ) =  undefined
+evalB (Force _proxyRes _resExp ) = undefined
+evalB (LetExp argExp (RawFunk parg pres funk)) = do args <- evalB argExp ; evalB (funk args)
+evalB (Case scrutinee _resTy casesMap) = undefined
 
 
+evalSingle ::   Exp  (Value s Neutral) 1 -> STE String  s  (Value s Neutral)
+evalSingle  (App parg pres funExp argExp) = undefined
+evalSingle  (FunctionSpaceTypeExp _ _ _) = undefined
+evalSingle (DelayType _ _) = undefined
+evalSingle (BaseType _) = undefined
+evalSingle (Sorts _) = undefined
+evalSingle (Pure v) = return v
+evalSingle (Abs f) = return $ (VNormal $! VFunk f )
+evalSingle (Return (x :* SLNil)) = evalSingle x
+evalSingle (Return (x :* _ )) = throwSTE "error"
+--evalSingle  (Return ls) = sizedMapM (\ x -> do  (y :* SLNil) <- evalB (x :* SLNil); return y ) ls
+evalSingle (HasType x prox _)  =  do res <- evalB x ;
+                                     case res of
+                                        (v :* SLNil) -> return v ;
+                                        (_ :* _) -> throwSTE "bad bad arity"
+evalSingle (Delay resArity resExp ) =  undefined
+evalSingle (Force proxyRes resExp ) = undefined
+evalSingle (LetExp argExp bodyBind) = undefined
+evalSingle (Case scrutinee _resTy casesMap) = undefined
