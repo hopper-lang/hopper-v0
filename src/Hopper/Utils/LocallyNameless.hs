@@ -76,6 +76,7 @@ makeLenses ''Bound
 data Variable
   = Bound { _boundVar :: Bound }
   | Atom  { _freeName :: T.Text }
+  -- ^ The name "atom" for a free variable is per Charguéraud
   deriving (Eq,Ord,Show)
 
 makeLenses ''Variable
