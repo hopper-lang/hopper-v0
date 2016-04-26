@@ -63,6 +63,7 @@ library
                     Hopper.Utils.Closed
                     Hopper.Utils.BigMath
                     Hopper.Utils.LocallyNameless
+                    Hopper.Parsing.Term
                     Hopper.Internal.Runtime.Heap
                     Hopper.Internal.Runtime.HeapRef
                     Hopper.Internal.Runtime.TaggedValueSelector
@@ -107,6 +108,7 @@ library
                      --  ,ghc-typelits-natnormalise >= 0.4.1 && < 0.5
                       ,integer-gmp >= 1.0 && < 1.1
                       ,dlist >= 0.7.1 && < 0.8
+                      ,parsec
 
 
   -- Directories containing source files.
