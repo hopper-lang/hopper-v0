@@ -1,13 +1,28 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DataKinds, GADTs  #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE KindSignatures #-}
--- {-# LANGUAGE StrictData #-} -- TODO: reneable once fully migrated to >=8.0
+{-# LANGUAGE PolyKinds #-}
+
+#if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
+{-# LANGUAGE StrictData #-}
+{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+#endif
+
 {-# LANGUAGE ConstraintKinds   #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+
+
+--- all downstream clients of this module might need this plugin too?
 {-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 --
 -- {-# LANGUAGE TypeInType #-}
--- {-# LANGUAGE DuplicateRecordFields #-}
+
 module Hopper.Internal.Reference.HOAS(
   Exp(..)
   ,evalB -- TODO: implement this, Carter
@@ -17,32 +32,49 @@ module Hopper.Internal.Reference.HOAS(
   ,Relevance(..)
   ,ValueNoThunk(..)
   ,Value(..)
+  ,Neutral(..)
   ,Literal(..)
-  ,ValFun(..)
+  --,ValFun(..)
   ,ThunkValue(..)
-  ,ExpFun(..)
-  ,SomeValFun(..)
-  ,SomeExpFun(..)
+  --,ExpFun(..)
+  ,SomeArityValFun(..)
+  ,SomeArityExpFun(..)
+  ,RawFunction(..)
+  ,SizedList(..)
   ,PiTel(..)
   ,SigmaTel(..)
   ,ThunkValuation(..)
+  --,TwoFlipF(..)
   -- these reexports are subject to change or delition
   ,MutVar
   ,Proxy(..)
   ,SomeNatF(..)
   ,SimpleValue
-  ,SizedTelescope(..)
+  --,SizedTelescope(..)
   ) where
 
 import qualified GHC.TypeLits as GT
 import Data.Primitive.MutVar
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 --import Control.Monad.Primitive
 import GHC.TypeLits (Nat,KnownNat)
+#if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
+--import GHC.Exts (Constraint, Type )
+import Data.Kind (type (*))
+-- TypeInType forces this latter import
+-- and * = Type as a magic synonym for compat
+-- and Type = TYPE LiftedPointer rep
+#elif MIN_VERSION_GLASGOW_HASKELL(7,10,3,0)
 import GHC.Exts (Constraint)
+#else
+#error "unsupported GHC version thats less than 7.10.3"
+#endif
 import Data.Text (Text)
 import Data.Void
 import Data.Proxy
 import Hopper.Internal.Type.Relevance
+import Control.Monad.STE
 
 {- A Higher Order  abstract syntax model of the term AST
 There will be a few infelicities to simplify / leverage the use
@@ -52,31 +84,31 @@ of metalanguage (haskell) lambdas/binders
 
 -}
 
-data SizedTelescope :: Nat -> ( * ) -> (Nat -> * -> * ) -> (Nat -> Constraint) -> * where
-  STZ :: (constr 0)=> base  -> SizedTelescope 0 base induct constr
-  STSucc :: (constr m , m~ (n GT.+ 1)) =>
-          Proxy m -> induct m (SizedTelescope n base induct constr)
-          -> SizedTelescope m base induct constr
 
 
-data ValFun :: Nat -> * ->  * where
-  ZeroVF :: (() -> a) -> ValFun 0 a
-  SucVF :: {-GT.KnownNat n =>-} (a -> ValFun n a ) -> ValFun (n GT.+ 1) a
 
-data SomeValFun :: * ->  * where
-  SomeValFun :: GT.KnownNat n => Proxy n -> ValFun n a -> SomeValFun a
+data SomeArityValFun :: Nat -> * ->  * where
+  SomeValFun :: GT.KnownNat n => Proxy n -> RawFunction n m a (Exp a) -> SomeArityValFun m a
+
+-- for the underlying HOAS for terms, this is probably better
+-- than
+data RawFunction :: Nat -> Nat -> * -> (Nat ->  *) -> * where
+  RawFunk :: (KnownNat domSize, KnownNat codSize ) =>
+              Proxy domSize ->
+              Proxy codSize ->
+              (SizedList domSize domain ->  codomainF codSize) ->
+              RawFunction domSize codSize domain codomainF
+            -- ^ This has a nice profuntor / category / semigroupid instance!
+            -- but does that matter?
 
 
---data ValFun :: Nat  One (Value -> [Value ])
 
-
--- need to add relevance annotations to these
-data ExpFun :: Nat -> * ->  * where
-  Z :: (Exp a) -> ExpFun 0 a
-  S :: (a -> ExpFun n a) -> ExpFun (n GT.+ 1) a
-
-data SomeExpFun :: * -> * where
-  SomeExpFun :: GT.KnownNat n => Proxy n -> ExpFun  n a -> SomeExpFun a
+data SomeArityExpFun :: Nat -> * -> * where
+  SomeArityExpFun :: (GT.KnownNat n , GT.KnownNat m)=>
+                     Proxy n ->
+                     Proxy m  ->
+                     (RawFunction n m a (Exp a)) ->
+                     SomeArityExpFun m a
 
 data Literal :: *  where --- this lives in a nother module, but leave empty for now
  LInteger :: Integer -> Literal
@@ -85,32 +117,48 @@ data Literal :: *  where --- this lives in a nother module, but leave empty for 
 data DataDesc
 
 
+
 -- This factorization is to require
 data ValueNoThunk :: * -> ( * -> * )  -> * where
   VLit :: Literal ->  ValueNoThunk s neut
-  VFunction :: (SomeValFun (Value s neut )) -> ValueNoThunk s neut
+
+  VFunk :: (RawFunction n m a (Exp (Value s neut))) -> ValueNoThunk s neut
+  --VFunction :: (SomeArityValFun resultArity (Value  s neut )) -> ValueNoThunk s neut
   VConstructor :: Text -> [Value s neut ] -> ValueNoThunk s  neut
-  VNeutral :: neut s -> ValueNoThunk s neut
-  VPseudoUnboxedTuple :: [Value s neut] -> ValueNoThunk s neut
+  VNeutral :: Neutral s  -> ValueNoThunk s neut
+  --VPseudoUnboxedTuple :: [Value s neut] -> ValueNoThunk s neut
+  -- unboxed tuples never exist as heap values, but may be the result of
+ -- some computation
 
 {-
 TODO: add normalized types
 
 -}
 
+data Neutral :: *  -> * where
+  NeutVariable :: Text {- this isn't quite right -} ->
+                  --- ^ todo fix up this detail, Carter
+                  Neutral s
+  NeutCase :: (Neutral s ) ->
+              Map Text (SomeArityExpFun n (Value s Neutral )) ->
+              Neutral s
+
+
+
 --- Values are either in Normal form, or Neutral, or a Thunk
+---
 data Value :: * -> ( * -> * )  -> * where
     VNormal :: ValueNoThunk s neut -> Value  s neut
     VThunk :: ThunkValue s neut -> Value s neut
 
 
-data ThunkValuation :: * -> ( * -> * ) -> * where
-  ThunkValueResult :: (ValueNoThunk s neut) ->  ThunkValuation s neut
-  ThunkComputation :: (Exp (Value s neut)) -> ThunkValuation s neut
+data ThunkValuation :: * -> Nat -> ( * -> * ) -> * where
+  ThunkValueResult :: SizedList n (ValueNoThunk s neut)  ->  ThunkValuation s  n neut
+  ThunkComputation :: (Exp  (Value s neut) n ) -> ThunkValuation s n neut
   --- Q: should there be blackholes?
 
 data ThunkValue :: * -> ( * -> * ) -> * where
-  ThunkValue :: MutVar s (ThunkValuation s neut) -> ThunkValue s neut
+  ThunkValue ::KnownNat n => Proxy n -> MutVar s (ThunkValuation s n neut ) -> ThunkValue s neut
 --- figure this out, or maybe values need to be ST branded?
 
 --- this isn't quite right yet
@@ -165,29 +213,38 @@ data PiTel :: Nat -> * -> *  -> * -> * where
           -- ^ rest of the telescope
           PiTel m domainV domTy codomainV
 
-
+-- | @SigmaTel n sort ty val@ can be thought of as eg
+  -- SigmaSigma  (Ty1 :_rel1 Sort1) (f : (val1 : Ty1 )-> Ty2 val1)
+  -- yiels a pair (x : Ty1 , y : f x )
 data SigmaTel :: Nat -> * -> * -> * -> * where
   SigmaZ :: forall domainExp domainV domTy . SigmaTel 0 domainExp  domainV domTy
   -- ^ an empty sigma telescope is basically just the unit value
-  SigmaSucc :: forall domainExp domainV  domTy m n . (m ~ (n GT.+ 1)) =>
-            domTy ->
-            -- ^ the * of the first element
-            domainExp ->
+  SigmaSucc :: forall domainTy domainV  domainSort m n . (m ~ (n GT.+ 1)) =>
+            domainSort ->
+            -- ^ the type/sort of the first element
+            domainTy ->
             -- ^ sigmas are pairs! so we have the "value" / "expression"
-            -- of the first element. Which may or may not be evaluated yet!
+            -- of the first element, which has type domSort.
+            -- Which may or may not be evaluated yet!
             Relevance ->
             -- ^ the computational relevance for the associated value
             -- usage in * level expressions is deemed cost 0
-            (domainV -> SigmaTel n domainExp domainV domTy) ->
+            (domainV -> SigmaTel n domainSort domainV domainTy) ->
             -- ^ second/rest of the telescope
             -- (sigmas are, after a generalized pair), and in a CBV
             -- evaluation order, Expressions should be normalized
             -- (or at least neutralized of danger :p , before being passed on! )
-            SigmaTel m domainExp domainV domTy
+            SigmaTel m domainSort domainV domainTy
 
 data SomeNatF :: (Nat -> * ) -> * where
   SomeNatF ::  forall n f . GT.KnownNat n => f n -> SomeNatF f
 
+infixr 5 :*  -- this choice 5 is adhoc and subject to change
+
+
+data SizedList ::  Nat -> * -> * where
+  SLNil :: SizedList 0 a
+  (:*) :: a -> SizedList n a -> SizedList (n GT.+ 1) a
 
 --data HoasType ::  * -> * ) where
 --   --FunctionSpace ::
@@ -211,7 +268,7 @@ or perhaps @  Unit == pi{}->sigma{} @, as either of those types
 have only one inhabitant!
 
 -}
-data Exp :: * -> *  where
+data Exp :: * -> Nat  -> *  where
 
   {-
   our function * from unboxed tuples arity n>=0 to unboxed tuples arity m >=0
@@ -233,40 +290,74 @@ data Exp :: * -> *  where
   -- for term level lambdas?! I think so ...
   -- on the flip side, that flies in the face of a bidirectional
   -- curry style presentation of the * theory
-  FunctionSpaceExp :: (KnownNat piSize, KnownNat sigSize) =>
+  FunctionSpaceTypeExp :: (KnownNat piSize, KnownNat sigSize) =>
       Proxy piSize ->
       -- ^ argument arity
       Proxy sigSize ->
       -- ^ result arity
 
-      (PiTel piSize a (Exp a)
-        (SigmaTel sigSize (Exp a) a (Exp a))) ->
+      (PiTel piSize a (Exp  a 1)
+        (SigmaTel sigSize (Exp  a 1) a (Exp  a 1))) ->
       -- ^ See note on Function spaces
+      -- \pi x_1 ... \pi x_piSize -> Exists y_1 ... Exists y_sigmaSize
       --
       -- TODO: figure out better note convention, Carter
-      Exp a
-  BaseType :: PrimType -> Exp a
+      Exp  a 1
+      -- ^ Functions / Types  are a single value!
+      --
+  DelayType :: (KnownNat sigSize) =>
+      Proxy sigSize ->
+      SigmaTel sigSize (Exp  a 1) a (Exp  a 1) ->
+      Exp a 1
+
+  BaseType :: PrimType -> Exp  a 1
   --ExpType :: HoasType (Exp a) -> Exp a
   --FancyAbs ::
-  Sorts :: Sort  -> Exp a
-  Abs :: SomeExpFun a -> Exp a
-  App :: Exp a -> Exp a -> Exp a
-  EReturn :: [Exp a] -> Exp a
-  HasType :: Exp a -> Exp a -> Exp a  --- aka CUT
-  {- TODO ADD LET -}
-  Delay :: Exp a -> Exp a
-  Force :: Exp a -> Exp a
-  LetExp :: Exp a -> (a -> Exp a) -> Exp a
+  Sorts :: Sort  -> Exp a 1
+  Abs :: (RawFunction n m a (Exp a)) -> Exp a 1
+  --Abs :: SomeArityExpFun m a -> Exp  a 1
+  --App :: Exp 1 a -> Exp n a -> Exp a
+  App :: (KnownNat from , KnownNat to) =>
+    -- We always need to check
+      Proxy from ->
+      Proxy to  ->
+      Exp a 1 {-  from -> to, always need to chek -} ->
+      -- ^ the function position, it should evaluate to a function
+      -- that has input arity @from@ and result arity @to@
+      -- which needs to be checked by the evaluator
+      Exp a from  ->
+      Exp a to
+
+  Return :: SizedList n a -> Exp  a n
+  HasType :: Exp  a n -> Exp  a 1 -> Exp  a n  --- aka CUT
+  Delay :: KnownNat n => Proxy n -> Exp  a n -> Exp  a 1
+  Force :: KnownNat n => Exp  a 1 -> Proxy n    -> Exp  a n
+  -- ^ Not sure if `Force` and `Delay` should have this variable arity,
+  -- But lets run with it for now
+  LetExp :: Exp  a m -> (RawFunction m h a (Exp a)) -> Exp  a h
+  --- ^ this is another strawman for arity of functions
+  --- both LetExpExp and LetExp are essentially the same thing
+  --LetExp :: Exp  a m   -> (SizedList m a   -> Exp  a h) -> Exp   a h
+
   -- ^ Let IS monadic bind :)
    -- note that this doesn't quite line up the arities correctly... need to think about this more
    -- roughly Let {y_1 ..y_m} = evaluate a thing of * {}->{y_1 : t_1 .. y_m : t_m}
    --                  in  expression
-  Var :: a -> Exp a  --- values or names etc ???
-  Case :: Exp a -- ^ the value being cased upon
-        -> Maybe (Exp a)  -- optional * annotation,
-                          -- also Joel thinks this is smelly, perhaps rightly
-        -> [(Text, SomeExpFun a )] -- non-overlapping set of tags and continuations
-        -> Exp a
+
+  -- | one issue that happens with case when semantics are given *pre*
+  -- CPS transform is that despite
+  Case :: Exp  a 1 -- ^ the value being cased upon
+        -> Maybe (Exp  a 1)  -- optional type annotation,
+                          -- that should be a function from the
+                          -- scrutinee to a generalization of the cases
+        -> Map Text (SomeArityExpFun m a )
+        -- ^ non-overlapping set of tags and continuations
+        -- but all cases invoke the same continuation,
+        -- and thus must have the same result arity
+
+        -- TODO, look at sequent calc version
+        -> Exp   a m
+
 {-
 queue
 
@@ -292,7 +383,7 @@ FunctionSpaceExp Proxy Proxy
   :: Exp a
 -}
 
-evalB :: Exp a -> a
+evalB :: Exp  a n -> STE err  s (SizedList n a)
 evalB  _ = undefined
 
 
