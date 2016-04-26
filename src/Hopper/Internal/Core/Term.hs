@@ -5,7 +5,7 @@ module  Hopper.Internal.Core.Term where
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
 import Hopper.Utils.LocallyNameless (Bound(..), Slot(..), Depth(..), localDepth,
-                                     depthLevel, HasBound(..))
+                                     depthLevel, HasBound(..), Variable(..))
 
 import Control.Lens ((+~), (%~), (^?), ix)
 import Data.Data
@@ -13,6 +13,7 @@ import Data.Function ((&))
 import Data.Word (Word32)
 
 import qualified Data.Vector as V
+import qualified Data.Text as T
 
 data Term v =
   V v
@@ -88,6 +89,27 @@ removeBinderShifts = go $ repeat 0 -- NB: [] only works for well-formed ASTs,
 
     go shifts (Let infos rhs bod) = Let infos (go shifts rhs)
                                               (go (0 : shifts) bod)
+
+-- | Open the term, using the name indexed at slot# in @names@ as the free
+-- variable name when we come across a bound variable.
+instantiate :: V.Vector T.Text -> Term Variable -> Term Variable
+instantiate names = go $ Depth 0
+  where
+    go :: Depth -> Term Variable -> Term Variable
+    go k t = case t of
+      V (Bound (Local i (Slot idx)))
+        | k == i
+        -> V $ Atom $ names V.! fromIntegral idx
+      V v -> V v
+      BinderLevelShiftUP _ _ -> go k $ removeBinderShifts t
+      ELit _ -> t
+      Return ts -> Return $ V.map (go k) ts
+      EnterThunk t' -> EnterThunk $ go k t'
+      Delay t' -> Delay $ go k t'
+      App ft ats -> App (go k ft) (go k <$> ats)
+      PrimApp primId ts -> PrimApp primId $ go k <$> ts
+      Lam infos body -> Lam infos $ go (succ k) body
+      Let infos rhs body -> Let infos (go k rhs) $ go (succ k) body
 
 --- NOTE: USE STE MONAD ONCE WE MIGRATE TO HSUM DESIGN
 --- this is kinda only for "inlining" on debruijin variables for now

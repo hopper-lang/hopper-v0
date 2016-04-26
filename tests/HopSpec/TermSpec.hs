@@ -16,8 +16,8 @@ import qualified Data.Vector as V
 
 spec :: Spec
 spec =
-  describe "Term" $
-    describe "Binder shift removal" $ do
+  describe "Term" $ do
+    describe "removeBinderShifts" $ do
       let v0 = V $ Local (Depth 0) $ Slot 0
           v1 = V $ Local (Depth 1) $ Slot 0
           v2 = V $ Local (Depth 2) $ Slot 0
@@ -79,3 +79,37 @@ spec =
             term' = Let dummyBIs (Return $ V.fromList [v0, v2, v3])
                                  (Return $ V.fromList [v0, v1, v3])
         in removeBinderShifts term `shouldBe` term'
+
+    describe "instantiate" $ do
+      let add = V $ Bound $ Global $ GlobalSymbol "add"
+          v0 = V $ Bound $ Local (Depth 0) (Slot 0)
+          v0_0 = v0
+          v0_1 = V $ Bound $ Local (Depth 0) (Slot 1)
+          v1_0 = V $ Bound $ Local (Depth 1) (Slot 0)
+          lit = ELit $ LInteger 42
+          infos n = V.replicate n $ BinderInfoData Omega () Nothing
+
+      it "replaces vars bound to toplevel binders with given free names" $
+        let term  = App add
+                        (V.fromList
+                          [ v0_1
+                          , v0_0
+                          , Let (infos 1)
+                                lit
+                                (Return $ V.fromList [ v0
+                                                     , v1_0])
+                          , Lam (infos 1)
+                                (Return $ V.fromList [ v0
+                                                     , v1_0])])
+            term' = App add
+                        (V.fromList
+                          [ V $ Atom "y"
+                          , V $ Atom "x"
+                          , Let (infos 1)
+                                lit
+                                (Return $ V.fromList [ v0
+                                                     , V $ Atom "x"])
+                          , Lam (infos 1)
+                                (Return $ V.fromList [ v0
+                                                     , V $ Atom "x"])])
+        in instantiate (V.fromList ["x", "y"]) term `shouldBe` term'
