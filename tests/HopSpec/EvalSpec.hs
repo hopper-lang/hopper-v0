@@ -86,7 +86,7 @@ spec = describe "Evaluation Spec" $ do
     --   <empty> (halt when the tail call returns)
     --
     -- environment stack:
-    --   1
+    --   1  <- top
     --   id
     let idRef = Ref 0
         numRef = Ref 1

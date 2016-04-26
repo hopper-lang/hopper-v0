@@ -7,7 +7,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric, LambdaCase,TypeOperators #-}
-
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   AnfCC(..)
@@ -20,7 +21,7 @@ module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   ,RhsCC(..)
   ,ClosureCodeId(..)
   ,ThunkCodeId(..)
-  ,EnvSize(..) --- not sure if this is needed
+  ,EnvSize(..),envSize --- not sure if this is needed
   ,CodeArity(..) -- not sure if this is needed
    -- ,TypeCC(..) --- this shouldn't need to exist
   ,TransitiveLookup(..) -- this is a class reexport
@@ -28,11 +29,12 @@ module Hopper.Internal.LoweredCore.ClosureConvertedANF(
   ,ValueRepCC(..)
   ,ClosureCodeRecordCC(..)
   ,ThunkCodeRecordCC(..)
-  ,SymbolRegistryCC(..)
+  ,SymbolRegistryCC(..),symRegThunkMap,symRegClosureMap,symRegValueMap
   ,lookupThunkCodeId
   ,lookupClosureCodeId
   ) where
 
+import Control.Lens (makeLenses)
 import Data.Word
 import Data.Data
 import qualified Data.Map as Map-- FIXME, use IntMap or WordMap
@@ -66,16 +68,21 @@ maybe
 -}
 
 newtype ThunkCodeId =
-    ThunkCodeId { unThunkCodeId :: Word64 }
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+    ThunkCodeId { _thunkCodeId :: Word64 }
+  deriving(Enum,Eq,Ord,Read,Show,Typeable,Data,Generic)
+
 newtype ClosureCodeId =
-    ClosureCodeId { unClosureCodeId :: Word64 }
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+    ClosureCodeId { _closureCodeId :: Word64 }
+  deriving(Enum,Eq,Ord,Read,Show,Typeable,Data,Generic)
+
 newtype EnvSize =
-    EnvSize { getEnvSize :: Word64 }
-  deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
+    EnvSize { _envSize :: Word32 }
+  deriving(Enum,Eq,Ord,Read,Show,Typeable,Data,Generic)
+
+makeLenses ''EnvSize
+
 newtype CodeArity =
-    CodeArity { getCodeArity :: Word64 }
+    CodeArity { getCodeArity :: Word32 }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 -- whether the binder position is a variable, wild card,
@@ -110,8 +117,8 @@ data ValueRepCC ref =
   deriving (Eq,Ord,Show,Read,Typeable,Data,Generic)
 
 class CodeRecord a where
-  envSize :: a -> Word64
-  envBindersInfo :: a -> V.Vector BinderInfo
+  codeEnvSize :: a -> Word32
+  codeEnvBinderInfos :: a -> V.Vector BinderInfo
 
 data ThunkCodeRecordCC =
   ThunkCodeRecordCC
@@ -125,10 +132,10 @@ data ThunkCodeRecordCC =
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 instance CodeRecord ThunkCodeRecordCC where
-  envSize (ThunkCodeRecordCC size _ _) = getEnvSize size
-  {-# INLINE envSize #-}
-  envBindersInfo (ThunkCodeRecordCC _ bs _) = bs
-  {-# INLINE envBindersInfo #-}
+  codeEnvSize (ThunkCodeRecordCC size _ _) = _envSize size
+  {-# INLINE codeEnvSize #-}
+  codeEnvBinderInfos (ThunkCodeRecordCC _ bs _) = bs
+  {-# INLINE codeEnvBinderInfos #-}
 
 {- |
 for now we pass all function args as references to boxed heap values,
@@ -150,10 +157,10 @@ data ClosureCodeRecordCC =
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
 instance CodeRecord ClosureCodeRecordCC where
-  envSize (ClosureCodeRecordCC size _ _ _ _) = getEnvSize size
-  {-# INLINE envSize #-}
-  envBindersInfo (ClosureCodeRecordCC _ bs _ _ _) = bs
-  {-# INLINE envBindersInfo #-}
+  codeEnvSize (ClosureCodeRecordCC size _ _ _ _) = _envSize size
+  {-# INLINE codeEnvSize #-}
+  codeEnvBinderInfos (ClosureCodeRecordCC _ bs _ _ _) = bs
+  {-# INLINE codeEnvBinderInfos #-}
 
 data AnfCC  =
     ReturnCC !(V.Vector Variable)
@@ -214,7 +221,7 @@ data AllocCC
         !ThunkCodeId -- thunk id for "code pointer" part of a closure
   | AllocateClosureCC
         !(V.Vector Variable) -- set of local variables captured in the thunk environment, in this order
-        !Word64 --- arity of closure (need that even be here?) TODO
+        !CodeArity --- arity of closure (need that even be here?) TODO
         !ClosureCodeId -- the code id for the "code pointer" of a closure
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
@@ -233,6 +240,7 @@ data SymbolRegistryCC =
                                         }
   deriving(Eq,Ord,Read,Show,Typeable,Data,Generic)
 
+makeLenses ''SymbolRegistryCC
 
 lookupClosureCodeId :: SymbolRegistryCC -> ClosureCodeId-> Either String ClosureCodeRecordCC
 lookupClosureCodeId (SymbolRegistryCC _thk closMap _vals) codeid =

@@ -16,8 +16,7 @@
 module Hopper.Internal.LoweredCore.ANF
   (
   -- * Data Types
-    Arity(..)
-  , Anf(..)
+    Anf(..)
   , App(..)
   , Alloc(..)
   , Rhs(..)
@@ -30,6 +29,7 @@ import Hopper.Utils.LocallyNameless
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 import Hopper.Internal.Type.BinderInfo
+import Hopper.Internal.Type.Relevance (Relevance(Omega))
 
 import Data.Foldable (foldl')
 import Data.Maybe (fromMaybe, isJust)
@@ -51,12 +51,9 @@ import qualified Data.Map.Strict as Map
 -- We should possibly allow more "atomic" expression types (besides variables)
 -- once we have some unboxed values.
 
--- TODO(bts): switch back away from this
-newtype Arity = Arity Word32 deriving (Eq,Ord,Read,Show)
-
 data Anf
   = AnfReturn !(V.Vector Variable) -- indices into the current env stack
-  | AnfLet !Arity -- TODO(bts): switch back to !(V.Vector BinderInfo)
+  | AnfLet !(V.Vector BinderInfo)
            -- !(Maybe SourcePos)
            !Rhs
            !Anf
@@ -72,7 +69,7 @@ data App
 
 data Alloc
   = AllocLit !Literal
-  | AllocLam !Arity -- TODO(bts): switch back to !(V.Vector BinderInfo)
+  | AllocLam !(V.Vector BinderInfo)
              !Anf
   | AllocThunk !Anf
   deriving (Eq,Ord,Read,Show)
@@ -89,11 +86,6 @@ data Rhs
 -- | The first slot in the most recent binder
 v0 :: Variable
 v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
-
--- | A temporary function to produce an 'Arity' for our ANF binding forms until
--- we switch to using 'BinderInfo's in 'Anf' as well.
-arity :: V.Vector BinderInfo -> Arity
-arity binderInfos = Arity $ fromIntegral $ V.length binderInfos
 
 -- | A linear (single-use) reference to a(n existing/term or new/anf) binder. If
 -- two source variables refer to the same binder, they are tracked via separate
@@ -298,7 +290,12 @@ type StackTransform = BindingStack -> BindingStack
 -- | A convenience function for placing a tail 'Alloc'ation on the RHS of a new
 -- 'AnfLet' and 'AnfReturn'ing that value.
 returnAllocated :: Alloc -> Anf
-returnAllocated alloc = AnfLet (Arity 1)
+returnAllocated alloc = AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
+                               -- ^ TODO(bts): use real BinderInfo. probably
+                               -- make this linear. Leaving as Omega for now
+                               -- because we need to overhaul binder info
+                               -- population anyhow, and Omega everywhere
+                               -- simplifies testing.
                                (RhsAlloc alloc)
                                (AnfReturn $ V.singleton v0)
 
@@ -426,7 +423,7 @@ convertTail term = case term of
 
   Lam binderInfos t -> do
     body <- convertGuarded t
-    return $ returnAllocated $ AllocLam (arity binderInfos) body
+    return $ returnAllocated $ AllocLam binderInfos body
 
   Let _binderInfos rhs body ->
     -- TODO(bts): use binderInfos when we moved to type-directed
@@ -456,7 +453,8 @@ convertWithCont term binding k = case term of
 
   ELit l -> do
     body <- k $ trackBinding binding
-    return $ AnfLet (Arity 1)
+    return $ AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
+                    -- ^ TODO: use real BinderInfo
                     (RhsAlloc $ AllocLit l)
                     body
 
@@ -472,14 +470,16 @@ convertWithCont term binding k = case term of
   EnterThunk t ->
     convertToVars [t] $ \[var] cleanupRef -> do
       body <- k $ trackBinding binding . cleanupRef
-      return $ AnfLet (Arity 1) -- TODO(bts): support tupled return
+      return $ AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
+                      -- ^ TODO(bts): support tupled return
                       (RhsApp $ AppThunk var)
                       body
 
   Delay t -> do
     thunkBody <- convertGuarded t
     letBody <- k $ trackBinding binding
-    return $ AnfLet (Arity 1)
+    return $ AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
+                    -- ^ TODO(bts): use real BinderInfo
                     (RhsAlloc $ AllocThunk thunkBody)
                     letBody
 
@@ -487,7 +487,8 @@ convertWithCont term binding k = case term of
     let terms = ft : V.toList ats
     convertToVars terms $ \vars cleanupRefs -> do
       body <- k $ trackBinding binding . cleanupRefs
-      return $ AnfLet (Arity 1) -- TODO(bts): support tupled return
+      return $ AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
+                      -- ^ TODO(bts): support tupled return
                       (RhsApp $ AppFun (head vars)
                                        (V.fromList $ tail vars))
                       body
@@ -495,15 +496,17 @@ convertWithCont term binding k = case term of
   PrimApp primId terms ->
     convertToVars (V.toList terms) $ \vars cleanupRefs -> do
       body <- k $ trackBinding binding . cleanupRefs
-      return $ AnfLet (Arity 1) -- TODO(bts): support tupled return
+      return $ AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
+                      -- ^ TODO(bts): support tupled return
                       (RhsApp $ AppPrim primId $ V.fromList vars)
                       body
 
   Lam binderInfos t -> do
     lamBody <- convertGuarded t
     letBody <- k $ trackBinding binding
-    return $ AnfLet (Arity 1)
-                    (RhsAlloc $ AllocLam (arity binderInfos)
+    return $ AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
+                     -- ^ TODO(bts): use real BinderInfo
+                    (RhsAlloc $ AllocLam binderInfos
                                          lamBody)
                     letBody
 

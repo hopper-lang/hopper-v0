@@ -317,7 +317,7 @@ enterClosureCC symbolReg env stack (LocalVar localvar, args) = do
         -- / unpack. We need to document / codify this.
         --
         -- TODO(joel/carter): make this explicit.
-        (EnvConsCC (closureenv V.++ argRefs) env)
+        (EnvConsCC closureenv (EnvConsCC argRefs env))
         (UpdateHeapRefCC ref stack)
         bod
     badVal ->
@@ -380,8 +380,8 @@ this will require analyzing core, and designing some sort of performance measure
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ClosureCodeRecordCC -> Bool #-}
 {-# SPECIALIZE compatibleEnv :: V.Vector a -> ThunkCodeRecordCC -> Bool #-}
 compatibleEnv :: CodeRecord r => V.Vector a -> r -> Bool
-compatibleEnv envRefs rec = refCount == V.length (envBindersInfo rec)
-                         && refCount == fromIntegral (envSize rec)
+compatibleEnv envRefs rec = refCount == V.length (codeEnvBinderInfos rec)
+                         && refCount == fromIntegral (codeEnvSize rec)
   where
     refCount = V.length envRefs
 
