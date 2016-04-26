@@ -10,10 +10,12 @@ import Hopper.Utils.LocallyNameless (Bound(..), Slot(..), Depth(..), localDepth,
 import Control.Lens ((+~), (%~), (^?), ix)
 import Data.Data
 import Data.Function ((&))
+import Data.Tuple (swap)
 import Data.Word (Word32)
 
 import qualified Data.Vector as V
 import qualified Data.Text as T
+import qualified Data.Map.Strict as Map
 
 data Term v =
   V v
@@ -100,6 +102,31 @@ instantiate names = go $ Depth 0
       V (Bound (Local i (Slot idx)))
         | k == i
         -> V $ Atom $ names V.! fromIntegral idx
+      V v -> V v
+      BinderLevelShiftUP _ _ -> go k $ removeBinderShifts t
+      ELit _ -> t
+      Return ts -> Return $ V.map (go k) ts
+      EnterThunk t' -> EnterThunk $ go k t'
+      Delay t' -> Delay $ go k t'
+      App ft ats -> App (go k ft) (go k <$> ats)
+      PrimApp primId ts -> PrimApp primId $ go k <$> ts
+      Lam infos body -> Lam infos $ go (succ k) body
+      Let infos rhs body -> Let infos (go k rhs) $ go (succ k) body
+
+-- | Close the term, converting a free variable whose name appears in @names@ to
+-- a variable bound to the slot with corresponding index.
+abstract :: V.Vector T.Text -> Term Variable -> Term Variable
+abstract names = go $ Depth 0
+  where
+    slots :: Map.Map T.Text Slot
+    slots = Map.fromList $ fmap (fmap (Slot . fromIntegral) . swap) $
+                                V.toList $ V.indexed names
+
+    go :: Depth -> Term Variable -> Term Variable
+    go k t = case t of
+      V (Atom x)
+        | Just slot <- Map.lookup x slots
+        -> V $ Bound $ Local k slot
       V v -> V v
       BinderLevelShiftUP _ _ -> go k $ removeBinderShifts t
       ELit _ -> t
