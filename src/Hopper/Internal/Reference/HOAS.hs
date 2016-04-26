@@ -56,7 +56,7 @@ module Hopper.Internal.Reference.HOAS(
 import qualified GHC.TypeLits as GT
 import Data.Primitive.MutVar
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+--import qualified Data.Map.Strict as Map
 --import Control.Monad.Primitive
 import GHC.TypeLits (Nat,KnownNat)
 #if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
@@ -102,7 +102,7 @@ data RawFunction :: Nat -> Nat -> * -> (Nat ->  *) -> * where
             -- ^ This has a nice profuntor / category / semigroupid instance!
             -- but does that matter?
 
-
+{--}
 
 data SomeArityExpFun :: Nat -> * -> * where
   SomeArityExpFun :: (GT.KnownNat n , GT.KnownNat m)=>
@@ -120,13 +120,13 @@ data DataDesc
 
 
 -- This factorization is to require
-data ValueNoThunk :: * -> ( * -> * )  -> * where
-  VLit :: Literal ->  ValueNoThunk s neut
+data ValueCanCase :: * -> ( * -> * )  -> * where
+  VLit :: Literal ->  ValueCanCase s neut
 
-  VFunk :: (RawFunction n m a (Exp (Value s neut))) -> ValueNoThunk s neut
+
   --VFunction :: (SomeArityValFun resultArity (Value  s neut )) -> ValueNoThunk s neut
-  VConstructor :: Text -> [Value s neut ] -> ValueNoThunk s  neut
-  VNeutral :: neut s  -> ValueNoThunk s neut
+  VConstructor :: Text -> [Value s neut ] -> ValueCanCase s  neut
+
   --VPseudoUnboxedTuple :: [Value s neut] -> ValueNoThunk s neut
   -- unboxed tuples never exist as heap values, but may be the result of
  -- some computation
@@ -141,6 +141,7 @@ data Neutral :: *  -> * where
                   --- ^ todo fix up this detail, Carter
                   Neutral s
   NeutCase :: (Neutral s ) ->
+              --( Maybe (Value?)  ) ->
               Map Text (SomeArityExpFun n (Value s Neutral )) ->
               Neutral s
   NeutApp :: (KnownNat from, KnownNat to )=>
@@ -154,17 +155,17 @@ data Neutral :: *  -> * where
         Proxy to ->
         Neutral s
 
-
-
 --- Values are either in Normal form, or Neutral, or a Thunk
 ---
 data Value :: * -> ( * -> * )  -> * where
-    VNormal :: ValueNoThunk s neut -> Value  s neut
+    VNormal :: ValueCanCase s neut -> Value  s neut
     VThunk :: ThunkValue s neut -> Value s neut
+    VFunk :: (RawFunction n m a (Exp (Value s neut))) -> Value s neut
+    VNeutral :: neut s  -> Value s neut
 
 
 data ThunkValuation :: * -> Nat -> ( * -> * ) -> * where
-  ThunkValueResult :: SizedList n (ValueNoThunk s neut)  ->  ThunkValuation s  n neut
+  ThunkValueResult :: SizedList n (Value s neut)  ->  ThunkValuation s  n neut
   ThunkComputation :: (Exp  (Value s neut) n ) -> ThunkValuation s n neut
   --- Q: should there be blackholes?
 
@@ -244,7 +245,7 @@ data SigmaTel :: Nat -> * -> * -> * where
             -- ^ second/rest of the telescope
             -- (sigmas are, after a generalized pair), and in a CBV
             -- evaluation order, Expressions should be normalized
-            -- (or at least neutralized of danger :p , before being passed on! )
+            -- (or at least neutral , before being supplied to the dependent term )
             SigmaTel m {-domainSort-} domainV domainTy
 
 data SomeNatF :: (Nat -> * ) -> * where
@@ -386,9 +387,8 @@ data Exp :: * -> Nat  -> *  where
    -- roughly Let {y_1 ..y_m} = evaluate a thing of * {}->{y_1 : t_1 .. y_m : t_m}
    --                  in  expression
 
-  -- | one issue that happens with case when semantics are given *pre*
-  -- CPS transform is that despite
-  Case :: Exp  a 1 -- ^ the value being cased upon
+  -- | 'CaseCon' is only
+  CaseCon :: Exp  a 1 -- ^ the value being cased upon
         -> Maybe (Exp  a 1)  -- optional type annotation,
                           -- that should be a function from the
                           -- scrutinee to a generalization of the cases
@@ -430,33 +430,44 @@ evalB  (App parg pres funExp argExp) = undefined
 evalB  (FunctionSpaceTypeExp _ _ _) = undefined
 evalB (DelayType _ _) = undefined
 evalB (BaseType _) = undefined
-evalB (Sorts _) = undefined
+evalB (Sorts s) = undefined
 evalB (Pure val) = return $ val :* SLNil
-evalB (Abs f) = return $ ( VNormal $! VFunk f ) :* SLNil
+evalB (Abs f) = return $ (  VFunk f ) :* SLNil
 evalB  (Return ls) = sizedMapM evalSingle ls
 evalB (HasType x prox  _) = evalB x
 evalB (Delay _resArity resExp ) =  undefined
 evalB (Force _proxyRes _resExp ) = undefined
 evalB (LetExp argExp (RawFunk parg pres funk)) = do args <- evalB argExp ; evalB (funk args)
-evalB (Case scrutinee _resTy casesMap) = undefined
+evalB (CaseCon scrutinee _resTy casesMap) = do
+  valScrutinee <- evalSingle scrutinee
+  case valScrutinee of
+    (VThunk _v) -> throwSTE "error :  case analysis of thunk/closures isn't allowed"
+    (VFunk _v) -> throwSTE "error : case analysis of function values/closures isn't allowed"
+    (VNeutral neut) -> return $ ( VNeutral $!  NeutCase neut {- _resTy here? -} casesMap) :* SLNil
+                        ---- WOAH, this is a mismatch in arity wrt normalization ... gah
+
+
 
 
 evalSingle ::   Exp  (Value s Neutral) 1 -> STE String  s  (Value s Neutral)
 evalSingle  (App parg pres funExp argExp) = undefined
-evalSingle  (FunctionSpaceTypeExp _ _ _) = undefined
-evalSingle (DelayType _ _) = undefined
-evalSingle (BaseType _) = undefined
-evalSingle (Sorts _) = undefined
+evalSingle  (FunctionSpaceTypeExp _ _ _) = undefined ---
+evalSingle (DelayType _ _) = undefined --- see BaseType and FunctionSpace
+evalSingle (BaseType _) = undefined --- need normalized type expressions
+evalSingle (Sorts s) = undefined --- need normalized type expressions
 evalSingle (Pure v) = return v
 evalSingle (Abs f) = return $ (VNormal $! VFunk f )
 evalSingle (Return (x :* SLNil)) = evalSingle x
-evalSingle (Return (x :* _ )) = throwSTE "error"
+evalSingle (Return (_ :* _ )) = throwSTE "error: impossible branch for evalSingle of Return"
+                      ---  This second case shouldnt be needed
+                      --- if the type nat solver also helped the coverage checker
 --evalSingle  (Return ls) = sizedMapM (\ x -> do  (y :* SLNil) <- evalB (x :* SLNil); return y ) ls
-evalSingle (HasType x prox _)  =  do res <- evalB x ;
-                                     case res of
-                                        (v :* SLNil) -> return v ;
-                                        (_ :* _) -> throwSTE "bad bad arity"
+evalSingle (HasType x prox ty)  =  do
+        res <- evalB x
+        case res of
+            (v :* SLNil) -> return v
+            (_ :* _) -> throwSTE "bad bad arity for HastypeExpr in evalSingle"
 evalSingle (Delay resArity resExp ) =  undefined
 evalSingle (Force proxyRes resExp ) = undefined
 evalSingle (LetExp argExp bodyBind) = undefined
-evalSingle (Case scrutinee _resTy casesMap) = undefined
+evalSingle (CaseCon scrutinee _resTy casesMap) = undefined
