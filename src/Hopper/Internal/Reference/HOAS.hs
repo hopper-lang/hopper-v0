@@ -26,6 +26,8 @@
 module Hopper.Internal.Reference.HOAS(
   Exp(..)
   ,evalB -- TODO: implement this, Carter
+  ,reify
+  ,reflect
   ,Sort(..)
   ,PrimType(..)
   ,DataDesc --- this will be the data * DECL data type?
@@ -117,6 +119,9 @@ data Literal :: *  where --- this lives in a nother module, but leave empty for 
 
 
 data DataDesc
+{-
+this will be used for defining new data types
+-}
 
 
 
@@ -402,6 +407,9 @@ data Exp :: * -> Nat  -> *  where
         -- TODO, look at sequent calc version
         -> Exp   a m
 
+
+data NominalExp where
+
 {-
 queue
 
@@ -507,3 +515,9 @@ evalSingle (Delay resArity resExp ) =  undefined {- allocate mutable variable et
 evalSingle (Force proxyRes resExp ) =  undefined -- check result arity is one first
 evalSingle (LetExp argExp bodyBind) = undefined
 evalSingle (CaseCon scrutinee _resTy casesMap) = undefined
+
+reflect :: (Value s Neutral) -> STE String s NominalExp
+reflect = undefined
+
+reify :: NominalExp -> STE String s (Exp (Value s Neutral) 1)
+reify = undefined
