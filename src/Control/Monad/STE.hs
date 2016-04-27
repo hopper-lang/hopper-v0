@@ -132,7 +132,7 @@ unsafeIOToSTE (IO io) = STE (unsafeCoerce io)
 runBasicSTE :: (forall s. STE e s a) -> a
 runBasicSTE (STE st_rep) = case runRW# st_rep of (# _, a #) -> a
 #else
-{-# INLINE runBasicSTE#-}
+{-# INLINE runBasicSTE #-}
 runBasicSTE :: (forall s. STE e s a) -> a
 runBasicSTE st = runSTRep (case st of { STE st_rep -> st_rep })
 {-# NOINLINE runSTERep #-}
