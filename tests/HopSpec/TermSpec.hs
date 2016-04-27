@@ -144,4 +144,13 @@ spec =
                                                        , v1_0])])
           in abstract (V.fromList ["x", "y"]) term `shouldBe` term'
 
-    -- TODO: quickcheck tests for instantiate/abstract round trip would be nice
+      -- TODO: quickcheck tests for instantiate/abstract round trip would be nice
+
+      describe "ensureClosed" $ do
+        it "converts the variable rep from Variable to Bound" $
+          let varRep   = Lam (infos 1) v0
+              boundRep = Lam (infos 1) $ V $ Local (Depth 0) (Slot 0)
+          in ensureClosed varRep `shouldBe` Just boundRep
+
+        it "returns Nothing if there's a free variable" $
+          ensureClosed (Let (infos 1) lit (V $ Atom "x")) `shouldBe` Nothing

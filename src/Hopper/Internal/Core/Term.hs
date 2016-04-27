@@ -113,8 +113,9 @@ instantiate names = go $ Depth 0
       Lam infos body -> Lam infos $ go (succ k) body
       Let infos rhs body -> Let infos (go k rhs) $ go (succ k) body
 
--- | Close the term, converting a free variable whose name appears in @names@ to
--- a variable bound to the slot with corresponding index.
+-- | Close the term with respect to the provided free variable names, converting
+-- free variables with those names to variables bound with the corresponding
+-- slot indices.
 abstract :: V.Vector T.Text -> Term Variable -> Term Variable
 abstract names = go $ Depth 0
   where
@@ -137,6 +138,22 @@ abstract names = go $ Depth 0
       PrimApp primId ts -> PrimApp primId $ go k <$> ts
       Lam infos body -> Lam infos $ go (succ k) body
       Let infos rhs body -> Let infos (go k rhs) $ go (succ k) body
+
+-- | Converts a 'Term' from locally-nameless to (simply) bound variables.
+-- Returns @Nothing@ if the term contains a free variable.
+ensureClosed :: Term Variable -> Maybe (Term Bound)
+ensureClosed t = case t of
+  V (Atom _) -> Nothing
+  V (Bound b) -> Just $ V b
+  BinderLevelShiftUP _ _ -> ensureClosed $ removeBinderShifts t
+  ELit lit -> Just $ ELit lit
+  Return ts -> Return <$> V.mapM ensureClosed ts
+  EnterThunk t' -> EnterThunk <$> ensureClosed t'
+  Delay t' -> Delay <$> ensureClosed t'
+  App ft ats -> App <$> ensureClosed ft <*> V.mapM ensureClosed ats
+  PrimApp primId ats -> PrimApp primId <$> V.mapM ensureClosed ats
+  Lam infos body -> Lam infos <$> ensureClosed body
+  Let infos rhs body -> Let infos <$> ensureClosed rhs <*> ensureClosed body
 
 --- NOTE: USE STE MONAD ONCE WE MIGRATE TO HSUM DESIGN
 --- this is kinda only for "inlining" on debruijin variables for now
