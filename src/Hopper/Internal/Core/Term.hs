@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
-module  Hopper.Internal.Core.Term where
+module Hopper.Internal.Core.Term where
 
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
@@ -12,7 +12,7 @@ import Data.Word (Word32)
 import qualified Data.Vector as V
 
 data Term =
-  V  Variable
+  V Variable
   | BinderLevelShiftUP Word32 Term  --
   | ELit !Literal
   | Return !(V.Vector Term)  -- explicit multiple return values
