@@ -30,7 +30,7 @@ module Hopper.Internal.Reference.HOAS(
   ,PrimType(..)
   ,DataDesc --- this will be the data * DECL data type?
   ,Relevance(..)
-  ,ValueNoThunk(..)
+  ,ValueCanCase(..)
   ,Value(..)
   ,Neutral(..)
   ,Literal(..)
@@ -56,9 +56,10 @@ module Hopper.Internal.Reference.HOAS(
 import qualified GHC.TypeLits as GT
 import Data.Primitive.MutVar
 import Data.Map.Strict (Map)
+import Data.Type.Equality
 --import qualified Data.Map.Strict as Map
 --import Control.Monad.Primitive
-import GHC.TypeLits (Nat,KnownNat)
+import GHC.TypeLits (Nat,KnownNat,natVal,sameNat)
 #if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
 --import GHC.Exts (Constraint, Type )
 import Data.Kind (type (*))
@@ -158,9 +159,10 @@ data Neutral :: *  -> * where
 --- Values are either in Normal form, or Neutral, or a Thunk
 ---
 data Value :: * -> ( * -> * )  -> * where
-    VNormal :: ValueCanCase s neut -> Value  s neut
+    VCanCase :: ValueCanCase s neut -> Value  s neut
+    -- Normal is the wrong word
     VThunk :: ThunkValue s neut -> Value s neut
-    VFunk :: (RawFunction n m a (Exp (Value s neut))) -> Value s neut
+    VFunk :: (RawFunction n m (Value s neut) (Exp (Value s neut))) -> Value s neut
     VNeutral :: neut s  -> Value s neut
 
 
@@ -275,11 +277,11 @@ data SizedList ::  Nat -> * -> * where
   SLNil :: SizedList 0 a
   (:*) :: a -> SizedList n a -> SizedList (n GT.+ 1) a
 sizedFmap :: forall n a b . (a -> b) -> SizedList n a -> SizedList n b
-sizedFmap f SLNil = SLNil
+sizedFmap _f SLNil = SLNil
 sizedFmap f (a :* as) = f a :* (sizedFmap f as )
 
 sizedMapM :: forall n a b m . Monad m  => (a -> m b) -> SizedList n a ->  m (SizedList n b)
-sizedMapM f SLNil = return SLNil
+sizedMapM _f SLNil = return SLNil
 sizedMapM f (a :* as) = do tl <- (sizedMapM f as ) ; hd <- f a ; return (hd :* tl)
 
 
@@ -425,49 +427,83 @@ FunctionSpaceExp Proxy Proxy
   :: Exp a
 -}
 
-evalB ::   Exp  (Value s Neutral) n -> STE String  s (SizedList n (Value s Neutral))
-evalB  (App parg pres funExp argExp) = undefined
-evalB  (FunctionSpaceTypeExp _ _ _) = undefined
+evalB ::   Exp  (Value s Neutral) n -> STE String  s (Either (Neutral s) (SizedList n (Value s Neutral)))
+evalB (App parg pres funExp argExp) =
+  do  maybFunk <- evalSingle funExp
+      case maybFunk of
+        (VThunk _) -> throwSTE "thunks shouldn't appear in argument positon"
+        (VCanCase _) -> throwSTE "got a literal or constructor in function position "
+        (VFunk (RawFunk pfrom pto theFun)) ->
+            do  argsM <- evalB argExp ;
+                args <- case argsM of
+                        (Right ls) -> return ls ;
+                         _ -> throwSTE "bad neutral arg to function"
+                case (sameNat parg pfrom , sameNat pres pto) of
+                 (Just argEq,Just resEq ) -> evalB $ gcastWith argEq (gcastWith resEq (theFun args))
+                 _ -> throwSTE "mismatched arities in function application "
+        (VNeutral neut) ->
+            do  args <- evalB argExp
+                case (args) of
+                    Right realArgs -> return $ Left $ NeutApp neut parg (Proxy) realArgs
+                    Left _ -> throwSTE "argument position is always normal"
+
+evalB (FunctionSpaceTypeExp _ _ _) = undefined
 evalB (DelayType _ _) = undefined
 evalB (BaseType _) = undefined
 evalB (Sorts s) = undefined
-evalB (Pure val) = return $ val :* SLNil
-evalB (Abs f) = return $ (  VFunk f ) :* SLNil
-evalB  (Return ls) = sizedMapM evalSingle ls
+evalB (Pure val) = return $ Right $ val :* SLNil
+evalB (Abs f) = return $ Right  $ (  VFunk f ) :* SLNil
+evalB (Return ls) = fmap Right $ sizedMapM evalSingle ls
 evalB (HasType x prox  _) = evalB x
 evalB (Delay _resArity resExp ) =  undefined
 evalB (Force _proxyRes _resExp ) = undefined
-evalB (LetExp argExp (RawFunk parg pres funk)) = do args <- evalB argExp ; evalB (funk args)
+evalB (LetExp argExp (RawFunk parg pres funk)) =
+            do args <- evalB argExp ;
+               case args of
+                  (Right theArgs )-> evalB (funk theArgs)
+                  (Left _) -> throwSTE "woops, RHS of a let expression should never be Neutral"
 evalB (CaseCon scrutinee _resTy casesMap) = do
   valScrutinee <- evalSingle scrutinee
   case valScrutinee of
+    (VCanCase (VLit _)) -> throwSTE "casing on literals isn't supported yet "
+    (VNeutral neut ) -> return $ Left $ NeutCase neut {-resTy-} casesMap
+    (VCanCase (VConstructor tag vals)) -> undefined
     (VThunk _v) -> throwSTE "error :  case analysis of thunk/closures isn't allowed"
     (VFunk _v) -> throwSTE "error : case analysis of function values/closures isn't allowed"
-    (VNeutral neut) -> return $ ( VNeutral $!  NeutCase neut {- _resTy here? -} casesMap) :* SLNil
+    --(VNeutral neut) -> return $ ( VNeutral $!  NeutCase neut {- _resTy here? -} casesMap) :* SLNil
                         ---- WOAH, this is a mismatch in arity wrt normalization ... gah
 
 
 
 
-evalSingle ::   Exp  (Value s Neutral) 1 -> STE String  s  (Value s Neutral)
-evalSingle  (App parg pres funExp argExp) = undefined
-evalSingle  (FunctionSpaceTypeExp _ _ _) = undefined ---
+evalSingle ::   Exp  (Value s Neutral) 1 -> STE String  s   (Value s Neutral)
+evalSingle (App parg pres funExp argExp) = if GT.natVal pres == 1
+                                            then undefined
+                                            else throwSTE "report a GHC bug"
+                        --  | GT.natVal pres == 1 = undefined
+                        --  | otherwise || GT.natVal pres /= 1 = throwSTE "WAT, we hosed"
+evalSingle (Abs fun ) = return $  VFunk fun
+evalSingle (FunctionSpaceTypeExp _ _ _) = undefined ---
 evalSingle (DelayType _ _) = undefined --- see BaseType and FunctionSpace
 evalSingle (BaseType _) = undefined --- need normalized type expressions
 evalSingle (Sorts s) = undefined --- need normalized type expressions
 evalSingle (Pure v) = return v
-evalSingle (Abs f) = return $ (VNormal $! VFunk f )
+--evalSingle (Abs f) = return $ (VNormal $! VFunk f )
+--evalSingle (Return (x :*  _ )) = evalSingle x
+--evalSingle (Return (x :* _ :* _ )) = evalSingle x --- rejects
 evalSingle (Return (x :* SLNil)) = evalSingle x
 evalSingle (Return (_ :* _ )) = throwSTE "error: impossible branch for evalSingle of Return"
                       ---  This second case shouldnt be needed
                       --- if the type nat solver also helped the coverage checker
+                        --- is that a gap in type solver <--- > new coverage checker??
 --evalSingle  (Return ls) = sizedMapM (\ x -> do  (y :* SLNil) <- evalB (x :* SLNil); return y ) ls
 evalSingle (HasType x prox ty)  =  do
         res <- evalB x
         case res of
-            (v :* SLNil) -> return v
-            (_ :* _) -> throwSTE "bad bad arity for HastypeExpr in evalSingle"
-evalSingle (Delay resArity resExp ) =  undefined
-evalSingle (Force proxyRes resExp ) = undefined
+            (Right (v :* SLNil)) -> return v
+            (Right (_ :* _)) -> throwSTE "bad bad arity for HastypeExpr in evalSingle"
+            (Left neut) -> return (VNeutral neut) {- not sure if this is right, audit!! TODO  -}
+evalSingle (Delay resArity resExp ) =  undefined {- allocate mutable variable etc -}
+evalSingle (Force proxyRes resExp ) =  undefined -- check result arity is one first
 evalSingle (LetExp argExp bodyBind) = undefined
 evalSingle (CaseCon scrutinee _resTy casesMap) = undefined
