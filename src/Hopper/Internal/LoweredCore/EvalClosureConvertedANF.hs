@@ -251,20 +251,22 @@ allocateRHSCC symbolReg envStk stack@(LetBinderCC _ _ _ _ newStack) alloc =
         then continue
         else throwEvalError err
   in case alloc of
-    SharedLiteralCC lit -> V.singleton <$> allocLit lit
+    SharedLiteralCC lit -> do
+      litRef <- allocLit lit
+      enterControlStackCC symbolReg stack (V.singleton litRef)
     -- TODO(joel) - there's a silly amount of duplication here
     ConstrAppCC constrId vars -> localGuard vars $ do
       refVect <- mapM (envLookup symbolReg envStk stack) vars
       ref <- heapAllocate (ConstructorCC constrId refVect)
-      enterControlStackCC symbolReg newStack (V.singleton ref)
+      enterControlStackCC symbolReg stack (V.singleton ref)
     AllocateThunkCC vars thunkId -> localGuard vars $ do
       refVect <- mapM (envLookup symbolReg envStk stack) vars
       ref <- heapAllocate (ThunkCC refVect thunkId)
-      enterControlStackCC symbolReg newStack (V.singleton ref)
+      enterControlStackCC symbolReg stack (V.singleton ref)
     AllocateClosureCC vars _ closureId -> localGuard vars $ do
       refVect <- mapM (envLookup symbolReg envStk stack) vars
       ref <- heapAllocate (ClosureCC refVect closureId)
-      enterControlStackCC symbolReg newStack (V.singleton ref)
+      enterControlStackCC symbolReg stack (V.singleton ref)
 allocateRHSCC _symbolReg _envStk stack _alloc = throwEvalError $ \step ->
   let errMsg = "`allocateRHSCC` can only handle let binding"
   in PanicMessageConstructor(stack, 1, InterpreterStepCC step, errMsg)
@@ -493,8 +495,9 @@ enterPrimAppCC symreg envstack stack (opId, args)
   | allLocalVars args
   = do nextVect <- mapM (envLookup symreg envstack stack) args
        case opId of
-         (TotalMathOpGmp mathOpId) ->
-           enterTotalMathPrimopSimple stack (mathOpId, nextVect)
+         (TotalMathOpGmp mathOpId) -> do
+           refs <- enterTotalMathPrimopSimple stack (mathOpId, nextVect)
+           enterControlStackCC symreg stack refs
          PrimopIdGeneral name ->
            let errMsg = "Unsupported opcode referenced: `" ++ show name ++ "`."
                err step = PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg)

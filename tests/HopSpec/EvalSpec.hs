@@ -52,7 +52,7 @@ spec = describe "Evaluation Spec" $ do
          Right (results', CounterAndHeap _ _ _ (Heap _ _ heap)) -> do
            assertBool "returns right number of results" $ V.length results' == 1
            assertBool "has right result" $
-             (heap Map.! (results' V.! 0)) == makeInt 2
+             (heap Map.! (V.head results')) == makeInt 2
 
 
   it "throws a hard fault when a primop is not given enough args" $
@@ -126,7 +126,7 @@ spec = describe "Evaluation Spec" $ do
                IndirectionCC _ -> True
                _ -> False
            assertEqual "has right result"
-             (heap Map.! (results' V.! 0)) (makeInt 1)
+             (heap Map.! (V.head results')) (makeInt 1)
 
 
 -- We don't actually expect any exceptions in these tests so just use this
