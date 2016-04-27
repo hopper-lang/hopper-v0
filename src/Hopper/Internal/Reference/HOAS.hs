@@ -61,7 +61,7 @@ import Data.Map.Strict (Map)
 import Data.Type.Equality
 --import qualified Data.Map.Strict as Map
 --import Control.Monad.Primitive
-import GHC.TypeLits (Nat,KnownNat,natVal,sameNat)
+import GHC.TypeLits (Nat,KnownNat,sameNat)
 #if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
 --import GHC.Exts (Constraint, Type )
 import Data.Kind (type (*))
@@ -69,7 +69,7 @@ import Data.Kind (type (*))
 -- and * = Type as a magic synonym for compat
 -- and Type = TYPE LiftedPointer rep
 #elif MIN_VERSION_GLASGOW_HASKELL(7,10,3,0)
-import GHC.Exts (Constraint)
+--import GHC.Exts (Constraint)
 #else
 #error "unsupported GHC version thats less than 7.10.3"
 #endif
