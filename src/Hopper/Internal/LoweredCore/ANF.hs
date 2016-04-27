@@ -9,7 +9,7 @@
 --
 -- The function 'toAnf' lowers a 'Term' AST to 'Anf'. This is achieved by an
 -- adaptation of Olivier Danvy's algorithm from "A New One-Pass Transformation
--- into Monadic Normal Form" (2002) to our 2D De Bruijn 'Variable'
+-- into Monadic Normal Form" (2002) to our 2D de Bruijn 'Bound' variable
 -- representation.
 ----------------------------------------------------------------------------
 
@@ -25,7 +25,8 @@ module Hopper.Internal.LoweredCore.ANF
   , toAnf
   ) where
 
-import Hopper.Utils.LocallyNameless
+import Hopper.Utils.LocallyNameless (Bound(..), localDepth, Depth(..),
+                                     depthLevel, Slot(..))
 import Hopper.Internal.Core.Literal
 import Hopper.Internal.Core.Term
 import Hopper.Internal.Type.BinderInfo
@@ -52,7 +53,7 @@ import qualified Data.Map.Strict as Map
 -- once we have some unboxed values.
 
 data Anf
-  = AnfReturn !(V.Vector Variable) -- indices into the current env stack
+  = AnfReturn !(V.Vector Bound) -- indices into the current env stack
   | AnfLet !(V.Vector BinderInfo)
            -- !(Maybe SourcePos)
            !Rhs
@@ -61,10 +62,10 @@ data Anf
   deriving (Eq,Ord,Read,Show)
 
 data App
-  = AppFun !Variable
-           !(V.Vector Variable)
-  | AppPrim !PrimOpId !(V.Vector Variable)
-  | AppThunk !Variable
+  = AppFun !Bound
+           !(V.Vector Bound)
+  | AppPrim !PrimOpId !(V.Vector Bound)
+  | AppThunk !Bound
   deriving (Eq,Ord,Read,Show)
 
 data Alloc
@@ -84,8 +85,8 @@ data Rhs
 --------------------------
 
 -- | The first slot in the most recent binder
-v0 :: Variable
-v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
+v0 :: Bound
+v0 = Local (Depth 0) (Slot 0)
 
 -- | A linear (single-use) reference to a(n existing/term or new/anf) binder. If
 -- two source variables refer to the same binder, they are tracked via separate
@@ -100,9 +101,9 @@ instance Enum AnfRef where
   toEnum = AnfRef . toEnum
   fromEnum = fromEnum . _refId
 
--- | Bookkeeping structure that corresponds to a binder scope in the 'Term' AST.
--- Conversion to ANF begins with a single empty 'BindingLevel' (not an empty
--- 'BindingStack').
+-- | Bookkeeping structure that corresponds to a binder scope in the
+-- @'Term' 'Bound'@ AST. Conversion to ANF begins with a single empty
+-- 'BindingLevel' (not an empty 'BindingStack').
 --
 -- In converting the following (pseudo 'Term') program,
 --
@@ -130,7 +131,7 @@ instance Enum AnfRef where
 --    we encounter the future variable @y@, because this let-introduction will
 --    necessitate that this source variable be bumped.
 --    - bump all references to "ANF variables" (from intro'd lets, as opposed to
---    existing 'Term' 'Variable's) that are "open", or being "tracked" in
+--    existing 'Term' 'Bound's) that are "open", or being "tracked" in
 --    @_levelRefs@.
 --    - start tracking the 'AnfRef' for the future ANF variable that refers to
 --    this allocated literal. we start "tracking" because any futher-introduced
@@ -144,16 +145,15 @@ instance Enum AnfRef where
 --    across these 'BindingLevel's.
 -- ...
 data BindingLevel
-  = BindingLevel { _levelRefs :: Map.Map AnfRef Variable
+  = BindingLevel { _levelRefs :: Map.Map AnfRef Bound
                  -- ^ Linear references (to both existing/term and new/anf
-                 -- binders) to the 'Variable's they will be realized as when
-                 -- used. These variables are bumped as new 'AnfLet's are
-                 -- introduced.
+                 -- binders) to the 'Bound's they will be realized as when used.
+                 -- These variables are bumped as new 'AnfLet's are introduced.
                  , _levelIntros :: Word32
                  -- ^ The number of binders introduced since the last source
                  -- binder. We keep this in addition to '_levelRefs' because we
                  -- remove refs from the map once they've been used.
-                 , _levelIndirections :: Maybe (V.Vector Variable)
+                 , _levelIndirections :: Maybe (V.Vector Bound)
                  -- ^ Set when the source binder(s) corresponding to this
                  -- 'BindingLevel' point to an earlier variable. e.g. in
                  -- translating 'Let's with 'V' or a 'Return' on the right-hand
@@ -166,12 +166,12 @@ makeLenses ''BindingLevel
 emptyLevel :: BindingLevel
 emptyLevel = BindingLevel Map.empty 0 Nothing
 
-emptyIndirectionLevel :: [Variable] -> BindingLevel
+emptyIndirectionLevel :: [Bound] -> BindingLevel
 emptyIndirectionLevel vars = BindingLevel Map.empty 0 (Just $ V.fromList vars)
 
 -- The bottom 'BindingLevel' of this stack does not necessarily correspond to a
--- 'Term' binding level (i.e. 'Let' or 'Lam') -- consider a toplevel 'Let' with
--- RHS global var applied to a global var. See 'toAnf'.
+-- @'Term' 'Bound'@ binding level (i.e. 'Let' or 'Lam') -- consider a toplevel
+-- 'Let' with RHS global var applied to a global var. See 'toAnf'.
 type BindingStack = [BindingLevel]
 
 newtype LoweringState
@@ -183,7 +183,7 @@ newtype LoweringState
 
 makeLenses ''LoweringState
 
--- | Monad transformer stack for lowering from 'Term' to 'Anf'.
+-- | Monad transformer stack for lowering from @'Term' 'Bound'@ to 'Anf'.
 --
 -- Instead of using Reader to thread 'BindingStack' state around, we could
 -- pass around explicit stacks through @convert*@ and continuations; but by
@@ -193,17 +193,18 @@ makeLenses ''LoweringState
 -- route.
 type LoweringM = ReaderT BindingStack (State LoweringState)
 
--- | Dispenses an 'AnfRef' to track the usage of a 'Term' or newly-introduced
--- ("anf") variable to let-name a subexpression.
+-- | Dispenses an 'AnfRef' to track the usage of a 'Term' variable, or
+-- newly-introduced ("anf") variable to let-name a subexpression.
 allocRef :: LoweringM AnfRef
 allocRef = do
   curr <- use nextRef
   nextRef.refId %= succ
   return curr
 
--- | In converting a 'Term' to ANF, specifies whether the allocated value or
--- result of (prim/fun/thunk) application should be bound to an 'AnfLet'
--- corresponding to an existing ('Let') 'TermBinding' or a new 'AnfBinding'.
+-- | In converting a @'Term' 'Bound'@ to ANF, specifies whether the allocated
+-- value or result of (prim/fun/thunk) application should be bound to an
+-- 'AnfLet' corresponding to an existing ('Let') 'TermBinding' or a new
+-- 'AnfBinding'.
 data Binding
   = TermBinding
   | AnfBinding [AnfRef] -- A list because we use unboxed tuples and 2D binders.
@@ -211,19 +212,17 @@ data Binding
 
 -- | Bumps the provided source variable by the number of intermediate lets that
 -- have been introduced since the source binder this variable points to.
-translateTermVar :: Variable -> BindingStack -> Variable
-translateTermVar var@(GlobalVarSym _) _ = var
-translateTermVar var@(LocalVar lnv) stack =
+translateTermVar :: Bound -> BindingStack -> Bound
+translateTermVar var@(Global _) _ = var
+translateTermVar var@(Local (Depth depth) (Slot slot)) stack =
   case mIndirections of
     Nothing ->
-      adjust displacement var
+      var & localDepth.depthLevel +~ displacement
     Just indirections ->
-      adjust (displacement + depth) $ indirections V.! slot
+      let indirection = indirections V.! fromIntegral slot
+      in indirection & localDepth.depthLevel +~ displacement + depth
 
   where
-    depth = lnv ^. lnDepth
-    slot  = lnv ^. lnSlot.slotIndex.to fromIntegral
-
     levels :: [BindingLevel]
     levels  = take (fromIntegral $ depth + 1) stack
 
@@ -232,13 +231,10 @@ translateTermVar var@(LocalVar lnv) stack =
     (displacement, mIndirections) = (getSum *** join . getLast) . mconcat $
       (Sum . _levelIntros &&& Last . Just . view levelIndirections) <$> levels
 
-    adjust :: Word32 -> Variable -> Variable
-    adjust offset = localNameless.lnDepth +~ offset
-
 -- | Updates the top of the 'BindingStack' to account for the existing
--- (pre-translated) 'Term' 'Variable's.
+-- (pre-translated) 'Term' variables.
 trackVariables :: Binding
-               -> [Variable]
+               -> [Bound]
                -- ^ Existing source variables that've already been translated to
                -- point an appropriate number of binders up in ANF land.
                -> BindingStack
@@ -257,7 +253,7 @@ trackBinding :: Binding -> BindingStack -> BindingStack
 trackBinding (AnfBinding refs) stack = stack & _head %~ updateLevel
   where
     updateLevel = (levelRefs                              %~ addRefs)
-                . (levelRefs.mapped.localNameless.lnDepth +~ 1)
+                . (levelRefs.mapped.localDepth.depthLevel +~ 1)
                 . (levelIntros                            +~ 1)
     addRefs = Map.union $ Map.fromList $ zip refs $ repeat v0
 trackBinding TermBinding stack = emptyLevel:stack
@@ -269,12 +265,12 @@ dropRefs refs stack = stack & _head.levelRefs %~ deleteRefs
   where
     deleteRefs m = foldl' (flip Map.delete) m refs
 
--- | Resolves 'Variables' in 'BindingLevel' for the provided 'AnfRef's. Assumes
--- the refs are all present in the 'Map' of the 'BindingLevel'.
+-- | Resolves 'Bound's in 'BindingLevel' for the provided 'AnfRef's. Assumes the
+-- refs are all present in the 'Map' of the 'BindingLevel'.
 resolveRefs :: (Foldable t, Functor t)
             => t AnfRef
             -> BindingStack
-            -> t Variable
+            -> t Bound
 resolveRefs refs stack = (varMap Map.!) <$> refs
   where
     varMap = fromMaybe (error "unexpected binding stack underrun") $
@@ -301,7 +297,7 @@ returnAllocated alloc = AnfLet (V.singleton $ BinderInfoData Omega () Nothing)
 
 -- | A convenience function for converting a 'Lam'- or 'Delay'-guarded RHS of a
 -- 'AnfLet'.
-convertGuarded :: Term -> LoweringM Anf
+convertGuarded :: Term Bound -> LoweringM Anf
 convertGuarded t = local (emptyLevel:) $ convertTail t
 
 -- | The total number of binders in the levels of the first stack not shared by
@@ -324,11 +320,11 @@ bindersAddedSince extended base = sum $ height <$> extended `levelsSince` base
 withBinderIncreasesPer :: BindingStack -> BindingStack -> BindingStack
 withBinderIncreasesPer base extended =
   base & _head.levelIntros                            +~ numBinders
-       & _head.levelRefs.mapped.localNameless.lnDepth +~ numBinders
+       & _head.levelRefs.mapped.localDepth.depthLevel +~ numBinders
   where
     numBinders = extended `bindersAddedSince` base
 
--- | Lowering a sequence of "sibling" 'Term's, and providing 'Variable's for the
+-- | Lowering a sequence of "sibling" 'Term's, and providing 'Bound's for the
 -- lowering of the rest of the program. This function helps remove boilerplate
 -- from our two main functions, 'convertTail' and 'convertWithCont' in
 -- situations where they need to convert multiple terms from left-to-right (e.g.
@@ -350,14 +346,14 @@ withBinderIncreasesPer base extended =
 -- @
 --
 -- where 'synthesize' will provide the body of the inner-most continuation.
-convertToVars :: [Term]
+convertToVars :: [Term Bound]
               -- ^ A sequence of 'Terms' to lower in order, e.g. for prim or
               -- function or thunk application, or returning multiple values.
-              -> ([Variable] -> StackTransform -> LoweringM Anf)
+              -> ([Bound] -> StackTransform -> LoweringM Anf)
               -- ^ Continuation for synthesizing the lowering for the rest of
-              -- the program from 'Variable's for each of the terms and a
+              -- the program from 'Bound's for each of the terms and a
               -- 'StackTransform' for cleaning up the 'AnfRef's that tracked the
-              -- 'Variable's.
+              -- 'Bound's.
               -> LoweringM Anf
 convertToVars terms synthesize = do
   refs <- replicateM (length terms) allocRef
@@ -384,17 +380,16 @@ convertToVars terms synthesize = do
 -- Form" (2002).
 ----------------------------------------------------------------------------
 
--- | Converts a 'Term' in tail position to ANF. This function corresponds to
--- Danvy's function "E".
-convertTail :: Term -> LoweringM Anf
+-- | Converts a @'Term' 'Bound'@ in tail position to ANF. This function
+-- corresponds to Danvy's function "E".
+convertTail :: Term Bound -> LoweringM Anf
 convertTail term = case term of
   V v -> do
     translatedVar <- reader $ translateTermVar v
     return $ AnfReturn $ V.singleton translatedVar
 
   BinderLevelShiftUP _ _ ->
-    -- TODO(bts): expose this using proper error machinery
-    error "unexpected binder shift in convertTail during ANF conversion"
+    convertTail $ removeBinderShifts term
 
   ELit lit ->
     return $ returnAllocated $ AllocLit lit
@@ -430,9 +425,9 @@ convertTail term = case term of
     convertWithCont rhs TermBinding $ \trackRhs ->
       local trackRhs $ convertTail body
 
--- | Converts a 'Term' in nontail position to ANF. This function corresponds to
--- Danvy's function "E_c".
-convertWithCont :: Term
+-- | Converts a @'Term' 'Bound'@ in nontail position to ANF. This function
+-- corresponds to Danvy's function "E_c".
+convertWithCont :: Term Bound
                 -- ^ The term to be lowered
                 -> Binding
                 -- ^ The binding to be used, with which future computation will
@@ -448,8 +443,7 @@ convertWithCont term binding k = case term of
     k $ trackVariables binding [translatedVar]
 
   BinderLevelShiftUP _ _ ->
-    -- TODO(bts): expose this using proper error machinery
-    error "unexpected binder shift in convertWithCont during ANF conversion"
+    convertWithCont (removeBinderShifts term) binding k
 
   ELit l -> do
     body <- k $ trackBinding binding
@@ -539,8 +533,8 @@ convertWithCont term binding k = case term of
         let rollback letStack = beforeStack `withBinderIncreasesPer` letStack
         in local rollback $ k trackBody
 
--- | Converts a 'Term' to Administrative Normal Form.
-toAnf :: Term -> Anf
+-- | Converts a @'Term' 'Bound'@ to Administrative Normal Form.
+toAnf :: Term Bound -> Anf
 toAnf term = evalState (runReaderT (convertTail term) emptyStack) initialState
   where
     -- We provide a initial bottom level of the 'BindingStack' that doesn't

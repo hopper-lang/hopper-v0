@@ -19,16 +19,16 @@ spec :: Spec
 spec =
   describe "ANF" $
     describe "toAnf" $ do
-      let v0 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 0
+      let v0 = Local (Depth 0) $ Slot 0
           v0_0 = v0
-          v0_1 = LocalVar $ LocalNamelessVar 0 $ BinderSlot 1
-          v1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 0
-          v1_1 = LocalVar $ LocalNamelessVar 1 $ BinderSlot 1
-          v2 = LocalVar $ LocalNamelessVar 2 $ BinderSlot 0
-          add = GlobalVarSym $ GlobalSymbol "add"
-          abs = GlobalVarSym $ GlobalSymbol "abs"
-          neg = GlobalVarSym $ GlobalSymbol "neg"
-          id_ = GlobalVarSym $ GlobalSymbol "id"
+          v0_1 = Local (Depth 0) $ Slot 1
+          v1 = Local (Depth 1) $ Slot 0
+          v1_1 = Local (Depth 1) $ Slot 1
+          v2 = Local (Depth 2) $ Slot 0
+          add = Global $ GlobalSymbol "add"
+          abs = Global $ GlobalSymbol "abs"
+          neg = Global $ GlobalSymbol "neg"
+          id_ = Global $ GlobalSymbol "id"
           ten = LInteger 10
           twenty = LInteger 20
           dummyBI = BinderInfoData Omega () Nothing
@@ -41,7 +41,10 @@ spec =
               anf = AnfReturn $ V.singleton v0
           in toAnf term `shouldBe` anf
 
-        -- TODO(bts): add test for throwing errors upon binder shifts
+        it "handles binder shifts" $
+          let term = BinderLevelShiftUP 1 $ V v1
+              anf = AnfReturn $ V.singleton v2
+          in toAnf term `shouldBe` anf
 
         it "converts literals" $
           let lit = LInteger 42
@@ -148,16 +151,22 @@ spec =
                            (AnfTailCall $ AppFun v1 $ V.singleton v0)
           in toAnf term `shouldBe` anf
 
-        -- TODO(bts): add test for throwing errors upon binder shifts
+        it "handles binder shifts" $
+          let lit = LInteger 5
+              term = App (BinderLevelShiftUP 1 $ V v0) $ V.singleton $ ELit lit
+              anf = AnfLet infos1
+                           (RhsAlloc $ AllocLit lit)
+                           (AnfTailCall $ AppFun v1 $ V.singleton v0)
+          in toAnf term `shouldBe` anf
 
         it "converts returns on the RHS of a let" $
-           let term = Let (V.replicate 2 dummyBI)
-                          (Return $ V.fromList [ELit ten, V v0])
-                          (Return $ V.fromList [V v0_1, V v0_0])
-               anf  = AnfLet infos1
-                             (RhsAlloc $ AllocLit ten)
-                             (AnfReturn $ V.fromList [v1, v0])
-           in toAnf term `shouldBe` anf
+          let term = Let (V.replicate 2 dummyBI)
+                         (Return $ V.fromList [ELit ten, V v0])
+                         (Return $ V.fromList [V v0_1, V v0_0])
+              anf  = AnfLet infos1
+                            (RhsAlloc $ AllocLit ten)
+                            (AnfReturn $ V.fromList [v1, v0])
+          in toAnf term `shouldBe` anf
 
         it "converts delays" $
           let -- (1) (delay ((0) (0)))

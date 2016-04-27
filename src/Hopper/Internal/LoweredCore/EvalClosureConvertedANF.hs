@@ -29,13 +29,14 @@ import Hopper.Internal.Runtime.Heap (
   )
 import Hopper.Internal.Runtime.HeapRef (Ref)
 import Hopper.Internal.Type.BinderInfo (BinderInfo)
+import Hopper.Utils.LocallyNameless (Bound(..), Depth(..), Slot(..),
+                                     GlobalSymbol(..))
 import Data.HopperException
 import Control.Lens.Prism
 import Control.Monad.Reader
 import Control.Monad.STE
 import Data.Data
 import qualified Data.Map as Map
-import Data.Word(Word32)
 import GHC.Generics
 import Numeric.Natural
 import qualified Data.Vector as V
@@ -106,17 +107,17 @@ TODO: add code location and stack trace meta data
 TODO: refactor duplicated fields into an outer ADT?-}
 data EvalErrorCC val =
     BadVariableCC
-                      {eeCCOffendingOpenLocalVariable :: !Variable
+                      {eeCCOffendingOpenLocalVariable :: !Bound
                       , eeCCcontrolStackAtError:: !ControlStackCC
                       , eeCCReductionStepAtError :: !InterpreterStepCC}
    |  UnexpectedNotAClosureInFunctionPosition
-                      {eeCCOffendingClosureLocalVariable :: !Variable
+                      {eeCCOffendingClosureLocalVariable :: !Bound
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
                       ,eeCCReductionStepAtError:: !InterpreterStepCC }
    | UnexpectedNotThunkInForcePosition
-                      {eeCCOffendingClosureLocalVariable :: !Variable
+                      {eeCCOffendingClosureLocalVariable :: !Bound
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
@@ -133,7 +134,7 @@ data EvalErrorCC val =
                       -- TODO: add filename and line of haskell source
                       }
    | UnexpectedNotLiteral
-                      {eeCCOffendingClosureLocalVariable :: !Variable
+                      {eeCCOffendingClosureLocalVariable :: !Bound
                       ,eeCCOffendingNotAClosure :: !val
                       ,eeCCcontrolStackAtError :: !ControlStackCC
                       ,eeCCHeapLookupStepOffset :: !Natural --
@@ -164,41 +165,42 @@ panic :: forall s val result. (Natural -> EvalErrorCC (ValueRepCC Ref))
       -> HeapStepCounterM val (STE SomeHopperException s) result
 panic = throwHeapErrorWithStepInfoSTE
 
--- | Are all the Variables in this structure local?
-allLocalVars :: Foldable t => t Variable -> Bool
-allLocalVars = all (\case { LocalVar _ -> True; GlobalVarSym _ -> False })
+-- | Are all the 'Bound's in this structure local?
+allLocalVars :: Foldable t => t Bound -> Bool
+allLocalVars = all (\case { Local _ _ -> True; Global _ -> False })
 
 -- | Allocate a literal.
 allocLit :: Literal -> EvalCC s Ref
 allocLit x = heapAllocate (ValueLitCC x)
 
--- | Get a Ref from a Variable
+-- | Get a Ref from a Bound variable
 envLookup
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> Variable
+  -> Bound
   -> EvalCC s Ref
-envLookup _registry env control (LocalVar lv) = localEnvLookup env control lv
-envLookup registry _env _control (GlobalVarSym global) =
+envLookup _registry env control (Local depth slot) =
+  localEnvLookup env control depth slot
+envLookup registry _env _control (Global global) =
   lookupStaticValue registry global
 
 localEnvLookup
   :: EnvStackCC
   -> ControlStackCC
-  -> LocalNamelessVar
+  -> Depth
+  -> Slot
   -> EvalCC s Ref
-localEnvLookup env controlStack var@(LocalNamelessVar depth (BinderSlot slot))
-  = go env depth
+localEnvLookup env control depth0 slot@(Slot slotIdx) = go env depth0
   where
-    go :: EnvStackCC -> Word32 -> EvalCC s Ref
+    go :: EnvStackCC -> Depth -> EvalCC s Ref
     go EnvEmptyCC _n = throwEvalError $ \step ->
-      BadVariableCC (LocalVar var) controlStack (InterpreterStepCC step)
-    go (EnvConsCC theRefVect _) 0
-      | Just val <- theRefVect V.!? fromIntegral slot = return val
+      BadVariableCC (Local depth0 slot) control (InterpreterStepCC step)
+    go (EnvConsCC refs _) (Depth 0)
+      | Just val <- refs V.!? fromIntegral slotIdx = return val
       | otherwise = throwEvalError $ \step ->
-          BadVariableCC (LocalVar var) controlStack (InterpreterStepCC step)
-    go (EnvConsCC _ rest) w = go rest (w - 1)
+          BadVariableCC (Local depth0 slot) control (InterpreterStepCC step)
+    go (EnvConsCC _ rest) depth = go rest (pred depth)
 
 
 -- | Evaluate a some term with the given environment and stack
@@ -293,14 +295,14 @@ enterClosureCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> (Variable, V.Vector Variable)
+  -> (Bound, V.Vector Bound)
   -> EvalCC s (V.Vector Ref)
-enterClosureCC _symbolReg _env stack (GlobalVarSym gvsym, _) = do
+enterClosureCC _symbolReg _env stack (Global gvsym, _) = do
   errMsg <- return $
     "`enterClosureCC` expected a local ref, received a global: "++ show gvsym
   throwEvalError (\step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
-enterClosureCC symbolReg env stack (LocalVar localvar, args) = do
-  ref <- localEnvLookup env stack localvar
+enterClosureCC symbolReg env stack (Local depth slot, args) = do
+  ref <- localEnvLookup env stack depth slot
   (lookups, val) <- transitiveHeapLookup ref
   argRefs <- mapM (envLookup symbolReg env stack) args
   case val of
@@ -335,15 +337,15 @@ enterOrResolveThunkCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> Variable
+  -> Bound
   -> forall s. EvalCC s (V.Vector Ref)
-enterOrResolveThunkCC _symbolReg _env stack (GlobalVarSym gvsym) = do
+enterOrResolveThunkCC _symbolReg _env stack (Global gvsym) = do
   errMsg <- return $
     "`enterOrResolveThunkCC` expected a local ref, received a global: "++ show gvsym
   throwEvalError (\step -> PanicMessageConstructor(stack, 0, InterpreterStepCC step, errMsg))
 
-enterOrResolveThunkCC symbolReg env stack (LocalVar localvar) = do
-  ref <- localEnvLookup env stack localvar
+enterOrResolveThunkCC symbolReg env stack (Local depth slot) = do
+  ref <- localEnvLookup env stack depth slot
   (lookups, val) <- transitiveHeapLookup ref
   case val of
     BlackHoleCC -> do
@@ -388,7 +390,7 @@ compatibleEnv envRefs rec = refCount == V.length (codeEnvBinderInfos rec)
 lookupHeapClosure
   :: SymbolRegistryCC
   -> ControlStackCC
-  -> Variable
+  -> Bound
   -> Ref
   -> EvalCC s (V.Vector Ref, ClosureCodeId, ClosureCodeRecordCC)
 lookupHeapClosure (SymbolRegistryCC _thunk closureMap _valueTable) stack var initialRef = do
@@ -420,7 +422,7 @@ lookupHeapClosure (SymbolRegistryCC _thunk closureMap _valueTable) stack var ini
 lookupHeapThunk
   :: SymbolRegistryCC
   -> ControlStackCC
-  -> Variable
+  -> Bound
   -> Ref
   -> EvalCC s (V.Vector Ref, ThunkCodeId, ThunkCodeRecordCC)
 lookupHeapThunk (SymbolRegistryCC thunks _closures _values) stack var initialRef = do
@@ -451,7 +453,7 @@ lookupHeapLiteral
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> Variable
+  -> Bound
   -> EvalCC s Literal
 lookupHeapLiteral symreg envStack controlStack var = do
   initRef <- envLookup symreg envStack controlStack var
@@ -487,7 +489,7 @@ enterPrimAppCC
   :: SymbolRegistryCC
   -> EnvStackCC
   -> ControlStackCC
-  -> (PrimOpId, V.Vector Variable)
+  -> (PrimOpId, V.Vector Bound)
   -> EvalCC s (V.Vector Ref)
 enterPrimAppCC symreg envstack stack (opId, args)
   | allLocalVars args

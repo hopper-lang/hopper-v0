@@ -4,21 +4,33 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-
+-- | An adaptation of the locally nameless representation (See Charguéraud's
+-- "The Locally Nameless Representation" for more information) allowing bound
+-- global variables in addition to bound 2D de Bruijn variables.
 
 module Hopper.Utils.LocallyNameless
-  ( BinderSlot(..),slotIndex
+  ( Depth(..),depthLevel
+  , Slot(..),slotIndex
   , GlobalSymbol(..),gsText
-  , LocalNamelessVar(..),lnDepth,lnSlot
-  , Variable(..),localNameless,globalSymbol
-  ) where
+  , Bound(..),localDepth,localSlot,globalSymbol
+  , Variable(..),boundVar,freeName
+  , HasBound(..)
+  )
+  where
 
 import Control.Lens
 import Data.Word
 import Data.Data
 import GHC.Generics
-import qualified Data.Text as T (Text )
+
+import qualified Data.Text as T
+
+-- NOTE: it could make sense to look into using bidirection pattern synonyms for
+--       variables
+
+-- TODO: add smart constructors, add least for creating a local var
 
 --- | GlobalSymbol should correspond to the fully qualified name
 --- of a reachable value that is induced UNIQUELY by a module's name and
@@ -26,7 +38,7 @@ import qualified Data.Text as T (Text )
 --- NB: this might be more subtle in the presence of linearity, but let's table
 --- that for now
 ---
---- this may or may not actually need to just be a functory parametery in the
+--- this may or may not actually need to just be a functory parameter in the
 --- AST but let's keep it simple for now
 newtype GlobalSymbol
   = GlobalSymbol { _gsText :: T.Text }
@@ -34,29 +46,43 @@ newtype GlobalSymbol
 
 makeLenses ''GlobalSymbol
 
-newtype BinderSlot
-  = BinderSlot { _slotIndex :: Word32 }
+-- | The distance in binding levels between a variable and its binder. The
+-- "first dimension" in our 2D de Bruijn scheme.
+newtype Depth
+  = Depth { _depthLevel :: Word32 }
+  deriving (Eq,Show,Enum,Data,Ord,Read,Typeable,Generic)
+
+makeLenses ''Depth
+
+-- | A binder slot. The second dimension in our 2D de Bruijn scheme.
+newtype Slot
+  = Slot { _slotIndex :: Word32 }
   deriving (Eq,Show,Data,Ord,Read,Typeable,Generic)
 
-makeLenses ''BinderSlot
+makeLenses ''Slot
 
--- instance Enum BinderSlot where
---   toEnum = BinderSlot . toEnum
---   fromEnum = fromEnum . unBinderSlot
-
-data LocalNamelessVar
-  = LocalNamelessVar { _lnDepth :: {-# UNPACK #-} !Word32
-                     , _lnSlot  :: {-# UNPACK #-} !BinderSlot }
+-- | 'Bound' is either a local env variable or a globally fixed symbol (think:
+-- linkers and object code).
+data Bound
+  = Local  { _localDepth   :: {-# UNPACK #-} !Depth
+           , _localSlot    :: {-# UNPACK #-} !Slot }
+  | Global { _globalSymbol :: {-# UNPACK #-} !GlobalSymbol }
   deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
 
-makeLenses ''LocalNamelessVar
+makeLenses ''Bound
 
--- | VariableCC is either a local env variable or a globally fixed symbol (think like linkers and object code)
--- TODO: later lowering passes will induce register / stack placements and
--- veer into forcing specification of caller/callee saving conventions on code control tranfers
+-- | A locally nameless variable, which is either a bound variable, or a named
+-- free variable.
 data Variable
-  = LocalVar     { _localNameless :: {-# UNPACK #-} !LocalNamelessVar }
-  | GlobalVarSym { _globalSymbol  :: {-# UNPACK #-} !GlobalSymbol }
-  deriving (Eq,Ord,Read,Show,Typeable,Data,Generic)
+  = Bound { _boundVar :: Bound }
+  | Atom  { _freeName :: T.Text }
+  -- ^ The name "atom" for a free variable is per Charguéraud
+  deriving (Eq,Ord,Show)
 
 makeLenses ''Variable
+
+class HasBound v where
+  bound :: Traversal' v Bound
+
+instance HasBound Bound    where bound = ($)
+instance HasBound Variable where bound = boundVar
