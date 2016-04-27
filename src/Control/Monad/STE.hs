@@ -14,7 +14,12 @@ module Control.Monad.STE
 
   where
 
+#if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
 import GHC.Prim (State#, raiseIO#, catch#)
+#else
+import GHC.Prim (State#, raiseIO#, catch#, realWorld#)
+#endif
+
 import Control.Exception as Except
 import Control.Monad (ap)
 import Control.Monad.Primitive
@@ -128,17 +133,18 @@ unsafeIOToSTE (IO io) = STE (unsafeCoerce io)
 
 --- this results in WAY better perf when available
 #if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
-{-# INLINE runBasicSTE #-}
 runBasicSTE :: (forall s. STE e s a) -> a
 runBasicSTE (STE st_rep) = case runRW# st_rep of (# _, a #) -> a
-#else
 {-# INLINE runBasicSTE #-}
+#else
 runBasicSTE :: (forall s. STE e s a) -> a
-runBasicSTE st = runSTRep (case st of { STE st_rep -> st_rep })
-{-# NOINLINE runSTERep #-}
+runBasicSTE st = runSTERep (case st of { STE st_rep -> st_rep })
+{-# INLINE runBasicSTE #-}
+
 runSTERep :: (forall s. STERep  s a) -> a
 runSTERep st_rep = case st_rep realWorld# of
                         (# _, r #) -> r
+{-# NOINLINE runSTERep #-}
 #endif
 
 
