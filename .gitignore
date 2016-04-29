@@ -36,3 +36,7 @@ presentations/2016jan-examples/hopper-examples-design.tdo
 presentations/2016jan-examples/missfont.log
 hopper-examples-design.pdf
 report.html
+dist-newstyle/cache
+dist-newstyle/tmp
+dist-newstyle/packagedb
+dist-newstyle/build
