@@ -40,3 +40,4 @@ dist-newstyle/cache
 dist-newstyle/tmp
 dist-newstyle/packagedb
 dist-newstyle/build
+cabal.project.local
