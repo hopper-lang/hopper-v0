@@ -29,7 +29,7 @@ matrix:
 
 before_install:
  - unset CC
- - export PATH=$HOME/.cabal/bin:/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
+ - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
 
 install:
  - cabal --version
@@ -43,8 +43,11 @@ install:
    fi
  - travis_retry cabal update -v
  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
- - cabal new-build ${TEST} ${BENCH} --dep
  - cabal install hspec-discover
+ - export PATH=$HOME/.cabal/bin:$PATH
+ - which hspec-discover
+ - cabal new-build ${TEST} ${BENCH} --dep
+
 
 # Here starts the actual work to be performed for the package under test;
 # any command which exits with a non-zero exit code causes the build to fail.
