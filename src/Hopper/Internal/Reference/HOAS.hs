@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE LambdaCase #-}
 
 #if MIN_VERSION_GLASGOW_HASKELL(8,0,0,0)
 {-# LANGUAGE StrictData #-}
@@ -133,6 +134,8 @@ data ValueCanCase :: * -> ( * -> * )  -> * where
 
 
   --VFunction :: (SomeArityValFun resultArity (Value  s neut )) -> ValueNoThunk s neut
+
+  -- tag name / arity / value of each subexpression
   VConstructor :: KnownNat m => Text -> Proxy m -> SizedList m (Value s neut)   -> ValueCanCase s  neut
 
   --VPseudoUnboxedTuple :: [Value s neut] -> ValueNoThunk s neut
@@ -359,7 +362,7 @@ data Exp :: * -> Nat  -> *  where
       -- TODO: figure out better note convention, Carter
       Exp  a 1
       -- ^ Functions / Types  are a single value!
-      --
+
   DelayType :: (KnownNat sigSize) =>
       Proxy sigSize ->
       SigmaTel sigSize {-(Exp  a 1) -} a (Exp  a 1) ->
@@ -416,6 +419,42 @@ data Exp :: * -> Nat  -> *  where
 
 
 data NominalExp where
+  FunctionSpaceTypeNom
+    :: (KnownNat piSize, KnownNat sigSize)
+    => Proxy piSize
+    -> Proxy sigSize
+    -> PiTel piSize NominalExp NominalExp (SigmaTel sigSize NominalExp NominalExp)
+    -> NominalExp
+
+  DelayTypeNom
+    :: KnownNat sigSize
+    => Proxy sigSize
+    -> SigmaTel sigSize NominalExp NominalExp
+    -> NominalExp
+
+  BaseTypeNom :: PrimType -> NominalExp
+
+  SortsNom :: Sort -> NominalExp
+
+  AbsNom :: Text -> NominalExp -> NominalExp
+
+  AppNom :: NominalExp -> NominalExp -> NominalExp
+
+  -- PureNom :: a -> NominalExp
+
+  -- ReturnNom :: SizedList n NominalExp -> NominalExp
+
+  HasTypeNom :: NominalExp -> NominalExp -> NominalExp
+
+  DelayNom :: NominalExp -> NominalExp
+
+  ForceNom :: NominalExp -> NominalExp
+
+  LetNom :: Text -> NominalExp -> NominalExp -> NominalExp
+
+  ConstructorNom :: KnownNat m => Text -> SizedList m NominalExp -> NominalExp
+  LiteralNom :: Literal -> NominalExp
+  VariableNom :: Text -> NominalExp
 
 {-
 queue
@@ -529,7 +568,6 @@ evalB (CaseCon scrutinee _resTy casesMap) = do
 
 
 
-
 evalSingle :: forall s  . Exp  (Value s Neutral) 1 -> STE String  s   (Value s Neutral)
 evalSingle (App (parg :: Proxy m) pres  funExp argExp) =
     --- sweeeet/subtle use of GADT matching to name the
@@ -567,8 +605,167 @@ evalSingle (Force proxyRes resExp ) =  undefined -- check result arity is one fi
 evalSingle (LetExp argExp bodyBind) = undefined
 evalSingle (CaseCon scrutinee _resTy casesMap) = undefined
 
-reflect :: (Value s Neutral) -> STE String s NominalExp
-reflect = undefined
+reflect :: Value s Neutral -> STE String s NominalExp
+reflect val = case val of
+  VCanCase (VLit lit) -> return $ LiteralNom lit
+  VCanCase (VConstructor text _proxy sList) ->
+    ConstructorNom text <$> sizedMapM reflect sList
+  VThunk (ThunkValue _proxy thunkVar) -> do
+    valuation <- readMutVar thunkVar
+    case valuation of
+      ThunkValueResult (exp :* SLNil) -> DelayNom <$> reflect exp
+      ThunkValueResult _ ->
+        throwSTE "found a thunk of strange arity when reflecting (1)"
+      ThunkMultiNeutralResult _proxy _neut ->
+        throwSTE "found a thunk of strange arity when reflecting (2)"
+      ThunkComputation exp -> do
+        evaled <- evalB exp
+        case evaled of
+          Left neut -> reflectNeut neut
+          Right sList -> case sList of
+            exp :* SLNil -> DelayNom <$> reflect exp
+            _ -> throwSTE "found a thunk of strange arity when reflecting (3)"
+      ThunkBlackHole -> throwSTE "found a thunk blackhole when reflecting"
+
+  -- RawFunk :: (KnownNat domSize, KnownNat codSize ) =>
+  --             Proxy domSize ->
+  --             Proxy codSize ->
+  --             (SizedList domSize domain ->  codomainF codSize) ->
+  --             RawFunction domSize codSize domain codomainF
+  -- VFunk :: (RawFunction n m (Value s neut) (Exp (Value s neut))) -> Value s neut
+  VFunk (RawFunk proxyDomSize proxyCodomSize f) -> do
+    let domSize = natVal proxyDomSize
+    freshNames <- generateFreshNames
+    let -- exp :: Exp (Value s Neutral) m
+        exp = f freshNames
+    exp' <- evalB exp
+    case exp' of
+      Left neut -> reflect $ VNeutral neut
+      Right (exp'' :* SLNil) -> reflect exp''
+      Right _ -> throwSTE "found a function of strage arity when reflecting"
+  VNeutral neut -> reflectNeut neut
+
+generateFreshNames
+  :: forall n s. KnownNat n
+  => STE String s (SizedList n (Value s Neutral))
+generateFreshNames =
+  let i = natVal (Proxy :: Proxy n)
+  undefined
+  -- in case i of
+  --   0 -> return SLNil
+  --   _ -> do
+  --     name <- undefined
+  --     names <- generateFreshNames
+  --     return $ name :* names
+
+reflectNeut :: Neutral s -> STE String s NominalExp
+reflectNeut neut = case neut of
+  NeutVariable text -> return $ VariableNom text
+
+  -- NeutCase :: (Neutral s ) ->
+  --             Map Text (SomeArityExpFun n (Value s Neutral )) ->
+  --             Neutral s
+  NeutCase neut branches -> return (undefined :: NominalExp)
+
+  -- NeutApp :: (KnownNat from, KnownNat to )=>
+  --       Neutral s ->
+  --       Proxy from ->
+  --       Proxy to ->
+  --       SizedList to (Value s Neutral)  ->
+  --       Neutral s
+  -- AppNom :: NominalExp -> NominalExp -> NominalExp
+  NeutApp neutF _proxyFrom _proxyTo sList -> undefined
+
+  NeutForce neut _proxyTo -> ForceNom <$> reflectNeut neut
+
+abstract :: Exp (Value s Neutral) 1
+         -> STE String s (Exp (Value s Neutral) 1 -> Exp (Value s Neutral) 1)
+abstract = undefined
+
+instantiate :: Exp (Value s Neutral) 1
+            -> Value s Neutral
+            -> Exp (Value s Neutral) 1
+instantiate = undefined
 
 reify :: NominalExp -> STE String s (Exp (Value s Neutral) 1)
-reify = undefined
+reify exp = case exp of
+  FunctionSpaceTypeNom _piSize _sigSize tel -> FunctionSpaceTypeExp Proxy Proxy <$> reifyPiTel tel
+    -- PiTel piSize a NominalExp (SigmaTel sigSize a NominalExp)
+  DelayTypeNom proxySize tel -> DelayType proxySize <$> reifySigmaTel tel
+  BaseTypeNom primType -> return $ BaseType primType
+  SortsNom sort -> return $ Sorts sort
+
+  -- AbsNom :: Text -> NominalExp -> NominalExp
+  -- Abs :: RawFunction n m a (Exp a) -> Exp a 1
+  -- RawFunk :: (KnownNat domSize, KnownNat codSize ) =>
+  --             Proxy domSize ->
+  --             Proxy codSize ->
+  --             (SizedList domSize domain ->  codomainF codSize) ->
+  --             RawFunction domSize codSize domain codomainF
+  AbsNom _name exp -> do
+    exp' <- reify exp
+    return $ Abs $ RawFunk (Proxy :: Proxy 1) (Proxy :: Proxy 1) $
+      \(x :* SLNil) -> undefined -- abstract exp' x
+
+  AppNom nom1 nom2 -> App Proxy Proxy <$> reify nom1 <*> reify nom2
+  HasTypeNom tm ty -> HasType <$> reify tm <*> pure Proxy <*> reify ty
+  DelayNom exp -> Delay Proxy <$> reify exp
+  ForceNom exp -> Force <$> reify exp <*> pure Proxy
+
+  -- notes:
+  --
+  -- LetNom :: Text -> NominalExp -> NominalExp -> NominalExp
+  -- LetExp :: Exp  a m -> (RawFunction m h a (Exp a)) -> Exp  a h
+  -- RawFunk :: (KnownNat domSize, KnownNat codSize ) =>
+  --             Proxy domSize ->
+  --             Proxy codSize ->
+  --             (SizedList domSize domain ->  codomainF codSize) ->
+  --             RawFunction domSize codSize domain codomainF
+  -- SizedList 1 a -> Exp a 1
+  LetNom name body rhs -> do
+    body' <- reify body
+    rhs' <- reify rhs
+    return $ LetExp body' $ RawFunk Proxy Proxy $ \(x :* SLNil) ->
+      instantiate rhs' x
+
+  -- notes:
+  --
+  -- ConstructorNom :: Text -> SizedList m NominalExp -> NominalExp
+  -- VConstructor :: KnownNat m
+  --              => Text
+  --              -> Proxy m
+  --              -> SizedList m (Value s neut)
+  --              -> ValueCanCase s  neut
+  -- evalB :: forall s n. Exp (Value s Neutral) n
+  --       -> STE String s (Either (Neutral s) (SizedList n (Value s Neutral)))
+  ConstructorNom name sList -> do
+    sList' <- sizedMapM reify sList
+    sList'' <- sizedMapM evalB sList'
+    sList''' <- flip sizedMapM sList'' $ \case
+      Left _ -> throwSTE "Unhandled neutral term in case reification"
+      Right (x :* SLNil) -> return x
+      Right _ -> throwSTE "found a constructor of strange arity when reifying"
+    return $ Pure $ VCanCase $ VConstructor name (Proxy :: Proxy m) sList'''
+
+  LiteralNom lit -> return $ Pure $ VCanCase $ VLit lit
+  VariableNom name -> return $ Pure $ VNeutral $ NeutVariable name
+
+
+reifyPiTel :: PiTel piSize NominalExp NominalExp (SigmaTel sigSize NominalExp NominalExp)
+           -> STE String s (PiTel piSize a (Exp a 1) (SigmaTel sigSize a (Exp a 1)))
+reifyPiTel (PiZ codomTy) = PiZ <$> reifySigmaTel codomTy
+reifyPiTel (PiSucc domTy relevance f) = undefined {-do
+  domTy' <- reify domTy
+  let -- f' :: a -> STE String s (PiTel (piSize - 1) a (Exp a 1) (SigmaTel sigSize a (Exp a 1)))
+      f' domV = do
+        domV' <- reflect domV
+        reify $ f domV'
+  PiSucc domTy' relevance <$> f
+-}
+
+reifySigmaTel :: SigmaTel size NominalExp NominalExp
+              -> STE String s (SigmaTel size a (Exp a 1))
+reifySigmaTel SigmaZ = return SigmaZ
+reifySigmaTel (SigmaSucc domTy relevance f) = do
+  domTy' <- reify domTy
+  return $ SigmaSucc undefined relevance undefined
