@@ -55,5 +55,8 @@ module TypedTerm where
         RatL : ℚ -> Literal Rat
         StrL : String -> Literal Str
 
-
+module PHOAS where
+  data Exp (a : Set) : Set where
+    Lam : (a -> Exp a) -> Exp a
+    App : (Exp a) -> Exp a -> Exp a 
 
