@@ -47,7 +47,7 @@ module Hopper.Internal.Reference.HOAS(
   ,sizedMapM
   ,PiTel(..)
   ,SigmaTel(..)
-  ,ThunkValuation(..)
+  --,ThunkValuation(..)
   --,TwoFlipF(..)
   -- these reexports are subject to change or delition
   ,MutVar
@@ -110,6 +110,8 @@ data RawFunction :: Nat -> Nat -> * -> (Nat ->  *) -> * where
 {--}
 
 data SomeArityExpFun :: Nat -> * -> * where
+  -- results are always expressions
+  -- which *may* become neutral upon evaluation
   SomeArityExpFun :: (GT.KnownNat n , GT.KnownNat m)=>
                      Proxy n ->
                      Proxy m  ->
@@ -119,7 +121,6 @@ data SomeArityExpFun :: Nat -> * -> * where
 data Literal :: *  where --- this lives in a nother module, but leave empty for now
  LInteger :: Integer -> Literal
 
-
 data DataDesc
 {-
 this will be used for defining new data types
@@ -128,12 +129,15 @@ this will be used for defining new data types
 
 
 -- This factorization is to require
-data ValueCanCase :: * -> ( * -> * )  -> * where
+data ValueCanCase :: * -> ( * -> Nat -> * )  -> * where
   VLit :: Literal ->  ValueCanCase s neut
 
 
   --VFunction :: (SomeArityValFun resultArity (Value  s neut )) -> ValueNoThunk s neut
-  VConstructor :: KnownNat m => Text -> Proxy m -> SizedList m (Value s neut)   -> ValueCanCase s  neut
+  VConstructor :: KnownNat m => Text {- tag -} ->
+                  Proxy m ->
+                  SizedList m (Value s neut)  ->
+                  ValueCanCase s  neut
 
   --VPseudoUnboxedTuple :: [Value s neut] -> ValueNoThunk s neut
   -- unboxed tuples never exist as heap values, but may be the result of
@@ -141,48 +145,68 @@ data ValueCanCase :: * -> ( * -> * )  -> * where
 
 {-
 TODO: add normalized types
-
+TODO : index by "arity",
 -}
-
-data Neutral :: *  -> * where
+{-
+Neutral syntax is a parallel
+-}
+data Neutral :: *  -> Nat  -> * where
   NeutVariable :: Text {- this isn't quite right -} ->
                   --- ^ todo fix up this detail, Carter
-                  Neutral s
-  NeutCase :: (Neutral s ) ->
+                  Neutral s 1
+  NeutCase :: (Neutral s 1) ->
               --( Maybe (Value?)  ) ->
               Map Text (SomeArityExpFun n (Value s Neutral )) ->
-              Neutral s
+              Neutral s n
   NeutApp :: (KnownNat from, KnownNat to )=>
-        Neutral s ->
+  -- ^ when the function is Neutral, the application is neutral
+        Neutral s 1->
         Proxy from ->
         Proxy to ->
-        SizedList to (Value s Neutral)  ->
-        Neutral s
+        SizedList from  (Value s Neutral) ->
+        Neutral s to
+  -- | Neutral Let is introduced if an argument to a function application
+  -- is a nontrivial (!= NeutTrivial  or NeutValue) neutral term
+  -- OR if the RHS (right hand side) of a let binding is a nontrivial neutral term
+  NeutLet :: (KnownNat m, KnownNat h) =>
+            Proxy m ->
+            Proxy h ->
+            Neutral s m ->
+            (RawFunction m h (Value s Neutral) (Exp (Value s Neutral ))) ->
+            Neutral s h
   NeutForce :: KnownNat to =>
-        Neutral s ->
+        Neutral s 1 ->
         Proxy to ->
-        Neutral s
+        Neutral s to
+  NeutTrivial :: KnownNat to =>
+        Proxy to ->
+        SizedList to (Value s Neutral) ->
+        Neutral s to
+
 
 --- Values are either in Normal form, or Neutral, or a Thunk
 ---
-data Value :: * -> ( * -> * )  -> * where
+data Value :: * -> ( * -> Nat  -> * )  -> * where
     VCanCase :: ValueCanCase s neut -> Value  s neut
     -- Normal is the wrong word
-    VThunk :: ThunkValue s neut -> Value s neut
+    VThunk :: KnownNat n => Proxy n -> MutVar s (ThunkValue s n neut ) -> Value s neut
     VFunk :: (RawFunction n m (Value s neut) (Exp (Value s neut))) -> Value s neut
-    VNeutral :: neut s  -> Value s neut
+    {- Q: Should VFUNK be  (RawFunction n m (Value s neut) (Neutral (Value s neut)))   ?
+    That does suggest that Neutral needs a few more cases like multi arity expressions??? -}
+    VNeutral :: neut s 1 -> Value s neut
+    -- ^ only arity 1 neutral terms can embed in values
 
 
-data ThunkValuation :: * -> Nat -> ( * -> * ) -> * where
-  ThunkValueResult :: SizedList n (Value s neut)  ->  ThunkValuation s  n neut
-  ThunkMultiNeutralResult :: KnownNat n =>Proxy n -> neut s -> ThunkValuation s n neut
-  ThunkComputation :: (Exp  (Value s neut) n ) -> ThunkValuation s n neut
-  ThunkBlackHole ::  ThunkValuation s n neut
+data ThunkValue:: * -> Nat -> ( * -> Nat  -> * ) -> * where
+  ThunkValueResult :: SizedList n (Value s neut)  ->  ThunkValue s  n neut
+  ThunkMultiNeutralResult ::  neut s n -> ThunkValue s n neut
+  ThunkComputation :: (Exp  (Value s neut) n ) -> ThunkValue s n neut
+  ThunkBlackHole ::  ThunkValue s n neut
   --- Q: should there be blackholes?
 
-data ThunkValue :: * -> ( * -> * ) -> * where
-  ThunkValue ::KnownNat n => Proxy n -> MutVar s (ThunkValuation s n neut ) -> ThunkValue s neut
---- figure this out, or maybe values need to be ST branded?
+--data ThunkValue :: * -> ( * -> Nat -> * ) -> * where
+--  ThunkValue ::KnownNat n => Proxy n -> MutVar s (ThunkValuation s n neut ) -> ThunkValue s neut
+  {-  do we need this to be seperated out from VThunk? -}
 
 --- this isn't quite right yet
 {-data NeutralTerm :: * -> * where
@@ -199,6 +223,8 @@ data Sort :: *   where
   LubSort :: [Sort ] -> Sort  -- max of a list of sorts
   SuccSort :: Sort -> Sort -- 1 up the other sorts!
   BaseSort :: Natural  -> Sort
+  {- agda then has a sort OMEGA for parametrizing over universe indexes
+  plus some way of having sorts take a variable  arg for concrete universe instantiation  -}
 
 data PrimType :: * where
   PTInteger :: PrimType
@@ -301,6 +327,7 @@ sizedMapM f (a :* as) = do tl <- (sizedMapM f as ) ; hd <- f a ; return (hd :* t
 
 
 
+
 --data HoasType ::  * -> * ) where
 --   --FunctionSpace ::
 
@@ -364,7 +391,10 @@ data Exp :: * -> Nat  -> *  where
       Proxy sigSize ->
       SigmaTel sigSize {-(Exp  a 1) -} a (Exp  a 1) ->
       Exp a 1
+{-
+TODO : ADD CASE CON AND PRIMAPP
 
+-}
   BaseType :: PrimType -> Exp  a 1
   --ExpType :: HoasType (Exp a) -> Exp a
   --FancyAbs ::
@@ -382,7 +412,7 @@ data Exp :: * -> Nat  -> *  where
       -- which needs to be checked by the evaluator
       Exp a from  ->
       Exp a to
-  Pure :: a -> Exp a 1
+  --Pure :: a -> Exp a 1
   Return :: SizedList n (Exp a 1) -> Exp  a n
   HasType :: KnownNat n => Exp  a n-> Proxy n -> Exp  a 1 -> Exp  a n  --- aka CUT
   Delay :: KnownNat n => Proxy n -> Exp  a n -> Exp  a 1
@@ -442,44 +472,65 @@ FunctionSpaceExp Proxy Proxy
   :: Exp a
 -}
 
-evalB :: forall s n .   Exp  (Value s Neutral) n -> STE String  s (Either (Neutral s) (SizedList n (Value s Neutral)))
-evalB (App parg pres funExp argExp) =
+{-
+FIXME : ARITY ZERO EVALB / CHECK THAT WE HANDLE THAT
+-}
+
+evalB :: forall s n .  KnownNat n =>
+                       Exp  (Value s Neutral) n ->
+                         --  STE String  s  (Neutral s {- n -}) might be more true/correct
+                      STE String  s  (Neutral s n)
+                      --(Either (Neutral s {- n -})  -- (SizedList n (Value s Neutral)))
+evalB (App (parg :: Proxy m )
+           (pres :: Proxy n)
+           funExp (argExp :: (Exp (Value s Neutral ) m))) =
   do  maybFunk <- evalSingle funExp
       case maybFunk of
-        (VThunk _) -> throwSTE "thunks shouldn't appear in argument position"
+        (NeutTrivial (Proxy :: Proxy 1) ( v :* _)  ) -> handleFunk v
+
+      where
+    handleFunk :: (Value s Neutral) ->  STE String  s  (Neutral s n)
+    handleFunk mayFunk =  case mayFunk of
+        (VThunk _prox _ ) -> throwSTE "thunks shouldn't appear in argument position"
         (VCanCase _) -> throwSTE "got a literal or constructor in function position "
-        (VFunk (RawFunk pfrom pto theFun)) ->
+        (VFunk (RawFunk (pfrom :: Proxy z) (pto :: Proxy y) theFun)) ->
             do  argsM <- evalB argExp ;
-                args <- case argsM of
-                        (Right ls) -> return ls ;
-                         _ -> throwSTE "bad neutral arg to function" -- make neutral Let
-                case (sameNat parg pfrom , sameNat pres pto) of
-                 (Just argEq,Just resEq ) -> evalB $ gcastWith argEq (gcastWith resEq (theFun args))
-                 _ -> throwSTE "mismatched arities in function application "
+                case (argsM :: Neutral s m,  sameNat parg pfrom , sameNat pto pres) of
+                    (NeutTrivial _ ls , Just eq , Just req) ->
+                        gcastWith req ( gcastWith eq (evalB $ theFun ls))
+
+                    _ -> throwSTE "bad neutral arg to function" -- make neutral Let
+                --case (sameNat parg pfrom , sameNat pto pres) of
+                -- (Just argEq,Just resEq ) ->  (gcastWith argEq (gcastWith resEq (evalB $ theFun args)))
+                 --_ -> throwSTE "mismatched arities in function application "
         (VNeutral neut) ->
-            do  args <- evalB argExp
-                case (args) of
-                    Right realArgs -> return $ Left $ NeutApp neut parg (Proxy) realArgs
-                    Left _ -> throwSTE "argument position is always normal" -- todo let neutral
+          do args <- evalB argExp
+             case args  of
+                      NeutTrivial proxArity realArgs ->
+                           return  $ NeutApp neut  proxArity pres realArgs
+                      _ -> throwSTE "make this a let, todo"
+
 
 evalB (FunctionSpaceTypeExp _ _ _) = undefined
 evalB (DelayType _ _) = undefined
 evalB (BaseType _) = undefined
 evalB (Sorts _s) = undefined
-evalB (Pure val) = return $ Right $ val :* SLNil
-evalB (Abs f) = return $ Right  $ (  VFunk f ) :* SLNil
-evalB (Return ls) = fmap Right $ sizedMapM evalSingle ls
+--evalB (Pure val) = return $ NeutValue val
+evalB (Abs f) = return $ NeutTrivial  Proxy $ (  (VFunk   f) :* SLNil )
+evalB (Return ls) = do res <- sizedMapM evalSingle ls ; return $ NeutTrivial Proxy $ fmap VNeutral res
 evalB (HasType x _prox  _) = evalB x
 evalB (Delay resArity resExp ) =
      do  handle<- PMV.newMutVar   (ThunkComputation resExp)
-         return $  Right $ (VThunk $ ThunkValue resArity handle) :* SLNil
-evalB (Force  (resExp) (proxyRes :: Proxy m) ) = case sameNat proxyRes (Proxy :: Proxy 1) of
-      Just eq -> gcastWith eq (fmap (\x -> Right $ x :* SLNil)  $ evalSingle (Force resExp Proxy) )
-      Nothing ->  do
-          resEvaled <- evalB resExp
+         return $  NeutTrivial (Proxy :: Proxy 1) $ (VThunk  resArity handle) :* SLNil
+evalB (Force  (resExp) (proxyRes :: Proxy m) ) = case sameNat proxyRes (Proxy :: Proxy 1)  of
+      Just eq -> gcastWith eq ( evalSingle (Force resExp Proxy) )
+      Nothing ->  do (throwSTE "fix meeeeeee")
+        {- TODO : THink about proper sharing of Neutral computations -}
+         {- resEvaled <- evalB resExp
           case resEvaled of
             (Left  neutForceArg) -> return $ Left (NeutForce  neutForceArg proxyRes)
-            (Right (VThunk (ThunkValue pr mut) :* SLNil)) ->
+               --- this should be NeutralLet not a NeutForce..., maybe?
+            (Right (VThunk  pr mut) :* SLNil) ->
              case sameNat pr proxyRes  of
                 (Just moreeq) -> gcastWith moreeq $
                   do thunkRep <- readMutVar mut
@@ -497,32 +548,35 @@ evalB (Force  (resExp) (proxyRes :: Proxy m) ) = case sameNat proxyRes (Proxy ::
                               do  writeMutVar mut (ThunkValueResult theValList)
                                   return $ Right theValList
                         ThunkBlackHole -> throwSTE " THERE IS A BLACK HOLE,RUNNNNN, sound the alarms "
-                        ThunkMultiNeutralResult prNeu neu -> return $ Left (NeutForce neu prNeu)
+                        ThunkMultiNeutralResult  neu -> return $ Left (NeutForce neu prNeu)
                 Nothing -> throwSTE "there is a hole in reality, please report a bug"
             (Right _) -> throwSTE "something thats not a thunk is being forced, thats a bug!"
-                                  -- 3 cases, eval, black hole, or value
+                       -}           -- 3 cases, eval, black hole, or value
 evalB (LetExp argExp (RawFunk _parg _pres funk)) =
-            do args <- evalB argExp ;
+            do args <- evalB argExp
                case args of
-                  (Right theArgs )-> evalB (funk theArgs)
-                  (Left _) -> throwSTE "woops, RHS of a let expression should never be Neutral"
+                  (NeutTrivial _prox theArgs ) -> evalB (funk theArgs)
+                  _ ->undefined
+                  --(Left _)  -> throwSTE "woops, RHS of a let expression should never be Neutral"
+                           {-  is that True? AUDIT / FIXME?! thats a multi arity NEutral -}
 evalB (CaseCon scrutinee _resTy casesMap) = do
   valScrutinee <- evalSingle scrutinee
   case valScrutinee of
-    (VCanCase (VLit _)) -> throwSTE "casing on literals isn't supported yet "
-    (VNeutral neut ) -> return $ Left $ NeutCase neut {-resTy-} casesMap
-    (VCanCase (VConstructor tag psize vals)) ->
-      case Map.lookup tag casesMap of
-        (Just (SomeArityExpFun parg _pres (RawFunk _parg2 _pres2 funk))) ->
-            case sameNat psize parg of
-              Just peq ->  evalB $ gcastWith peq (funk vals)
-              Nothing -> throwSTE $ "arity mismatch in case tag:" ++ show tag
-                    ++ "\n branch expects arity " ++ show (natVal parg)
-                    ++ "\n constructor arity was " ++ show (natVal psize)
-        Nothing -> throwSTE  $ "constructor tag undefined in case: " ++ show tag
-
-    (VThunk _v) -> throwSTE "error :  case analysis of thunk/closures isn't allowed"
-    (VFunk _v) -> throwSTE "error : case analysis of function values/closures isn't allowed"
+    (NeutTrivial _p (v :* SLNil) ) ->
+      case v of
+        (VCanCase (VLit _)) ->  throwSTE "casing on literals isn't supported yet "
+        (VCanCase (VConstructor tag psize vals)) ->
+          case Map.lookup tag casesMap of
+            (Just (SomeArityExpFun parg _pres (RawFunk _parg2 _pres2 funk))) ->
+                case sameNat psize parg of
+                  Just peq ->  evalB $ gcastWith peq (funk vals)
+                  Nothing -> throwSTE $ "arity mismatch in case tag:" ++ show tag
+                        ++ "\n branch expects arity " ++ show (natVal parg)
+                        ++ "\n constructor arity was " ++ show (natVal psize)
+            Nothing -> throwSTE  $ "constructor tag undefined in case: " ++ show tag
+        (VThunk _p _v) -> throwSTE "error :  case analysis of thunk/closures isn't allowed"
+        (VFunk _v) -> throwSTE "error : case analysis of function values/closures isn't allowed"
+        (VNeutral neut ) -> return $  NeutCase  neut {-resTy-} casesMap
     --(VNeutral neut) ->
         --return $ ( VNeutral $!  NeutCase neut {- _resTy here? -} casesMap) :* SLNil
                         ---- WOAH, this is a mismatch in arity wrt normalization ... gah
@@ -530,23 +584,31 @@ evalB (CaseCon scrutinee _resTy casesMap) = do
 
 
 
-evalSingle :: forall s  . Exp  (Value s Neutral) 1 -> STE String  s   (Value s Neutral)
-evalSingle (App (parg :: Proxy m) pres  funExp argExp) =
+evalSingle :: forall s  .  Exp  (Value s Neutral) 1 -> STE String  s   (Neutral s 1)
+evalSingle (App (parg :: Proxy m) (pres :: Proxy 1 )  funExp argExp) =
     --- sweeeet/subtle use of GADT matching to name the
   case sameNat pres (Proxy :: Proxy 1) of
-    Nothing -> throwSTE "impossible error, arity 1 app with >1 arity, please report bug"
+    Nothing -> throwSTE "impossible error, result arity 1 app with >1 result  arity, please report bug"
     (Just _) -> do
-      funVal <- evalSingle funExp
-      (argVal :: (Either (Neutral s) (SizedList m (Value s Neutral))) ) <- evalB argExp
-      return (error "")
-                        --  | GT.natVal pres == 1 = undefined
+      (funVal :: Neutral s 1 ) <- evalSingle funExp
+      (argVal :: (Neutral s m))  <- evalB argExp
+      case (funVal,argVal) of
+        (NeutTrivial  (Proxy :: Proxy 1) (VFunk (RawFunk proxArg  proxyRes  theFun) :* SLNil ),
+         (NeutTrivial proxArgsList argsL )  )
+           ->
+             case (sameNat (Proxy :: Proxy 1) proxyRes, sameNat proxArg  proxArgsList) of
+                (Just resEq, Just argEq{-, Just moreargseq-}) ->
+      {-gcastWith  moreargseq -} (gcastWith resEq (gcastWith argEq (evalSingle (theFun argsL))))
+                            --  | GT.natVal pres == 1 = undefined
                         --  | otherwise || GT.natVal pres /= 1 = throwSTE "WAT, we hosed"
-evalSingle (Abs fun ) = return $  VFunk fun
+evalSingle (Abs fun ) = return $ NeutTrivial Proxy $  (VFunk fun :* SLNil)
 evalSingle (FunctionSpaceTypeExp _ _ _) = undefined ---
 evalSingle (DelayType _ _) = undefined --- see BaseType and FunctionSpace
-evalSingle (BaseType _) = undefined --- need normalized type expressions
-evalSingle (Sorts s) = undefined --- need normalized type expressions
-evalSingle (Pure v) = return v
+evalSingle (BaseType _bt) = undefined --- need normalized type expressions
+evalSingle (Sorts _s) = undefined --- need normalized type expressions
+--evalSingle (Pure v) = case v of
+--                        VNeutral n -> return n
+--                        _ -> return $ NeutTrivial (Proxy :: Proxy 1) (v :* SLNil)
 --evalSingle (Abs f) = return $ (VNormal $! VFunk f )
 --evalSingle (Return (x :*  _ )) = evalSingle x
 --evalSingle (Return (x :* _ :* _ )) = evalSingle x --- rejects
@@ -556,13 +618,29 @@ evalSingle (Return (_ :* _ )) = throwSTE "error: impossible branch for evalSingl
                       --- if the type nat solver also helped the coverage checker
                         --- is that a gap in type solver <--- > new coverage checker??
 --evalSingle  (Return ls) = sizedMapM (\ x -> do  (y :* SLNil) <- evalB (x :* SLNil); return y ) ls
-evalSingle (HasType x prox ty)  =  do
+evalSingle (HasType x _prox _ty {- type should be normalized too -} )  =  do
         res <- evalB x
         case res of
-            (Right (v :* SLNil)) -> return v
-            (Right (_ :* _)) -> throwSTE "bad bad arity for HastypeExpr in evalSingle"
-            (Left neut) -> return (VNeutral neut) {- not sure if this is right, audit!! TODO  -}
-evalSingle (Delay resArity resExp ) =  undefined {- allocate mutable variable etc -}
+            (NeutTrivial (Proxy :: Proxy 1 )((VNeutral v) :* SLNil)) -> return v
+            (NeutTrivial (Proxy :: Proxy 1 )(v :* SLNil)) -> return res
+            (NeutTrivial Proxy (_ :* _)) -> throwSTE "bad bad arity for HastypeExpr in evalSingle"
+            neut -> return res  {- not sure if this is right, audit!! TODO  -}
+evalSingle (Delay (resArity :: Proxy n) (resExp :: (Exp (Value s Neutral) n)) ) =
+   {- just copy the code from evalB of Delay, thats simpler ... -}
+ case sameNat (Proxy :: Proxy n ) (Proxy :: Proxy 1) of
+    Nothing -> throwSTE  $ "bad arity in delay result, expect arity 1, got "  ++ show (natVal resArity)
+    Just eqProof -> gcastWith eqProof
+          (do
+            theRes <- evalB resExp
+            case theRes of
+              (NeutTrivial (Proxy :: Proxy 1) (theVal :* SLNil)) -> return $ theRes
+              (NeutTrivial Proxy   _) ->
+                  throwSTE "literally impossible branch happened, report a bug in ghc and hopper both"
+              neut {- arity 1!! -} -> return $  theRes
+
+                )
+ --    undefined {- allocate mutable variable etc -}
+
 evalSingle (Force proxyRes resExp ) =  undefined -- check result arity is one first
 evalSingle (LetExp argExp bodyBind) = undefined
 evalSingle (CaseCon scrutinee _resTy casesMap) = undefined
