@@ -55,7 +55,7 @@ flag fullprofiling
 library
   -- Modules exported by the library.
   exposed-modules:
-                    Control.Monad.STE
+
                     Data.Hop.Or
                     Data.HopperException
                     Hopper.HBound
@@ -86,6 +86,7 @@ library
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.8.1 && <4.10
                       -- ,bound >= 1.0 && < 1.1
+                      ,monad-ste== 0.1.*
                       ,containers >= 0.5 && < 0.6
                       ,transformers >= 0.3 && < 0.6
                       ,profunctors >= 5.1 && < 5.3
@@ -121,7 +122,6 @@ library
 source-repository head
   type:     git
   location: https://github.com/hopper-lang/hopper
-  -- todo: once opened update this to the real URL
 
 test-suite hspec
   type: exitcode-stdio-1.0
@@ -137,6 +137,7 @@ test-suite hspec
       ,hspec >= 2.1 && < 2.3
       ,HUnit
       ,mtl
+      ,monad-ste
       ,hspec-expectations >= 0.7.2 && < 0.8
       ,vector
       ,hopper
