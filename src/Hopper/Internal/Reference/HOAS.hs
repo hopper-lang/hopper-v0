@@ -19,7 +19,7 @@
 
 
 --- all downstream clients of this module might need this plugin too?
-{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
+--{-# OPTIONS_GHC -fplugin GHC.TypeLits.Normalise #-}
 --
 -- {-# LANGUAGE TypeInType #-}
 
@@ -82,6 +82,7 @@ import Hopper.Internal.Type.Relevance
 import Control.Monad.STE
 import Numeric.Natural
 
+
 {- A Higher Order  abstract syntax model of the term AST
 There will be a few infelicities to simplify / leverage the use
 of metalanguage (haskell) lambdas/binders
@@ -125,6 +126,7 @@ data DataDesc
 {-
 this will be used for defining new data types
 -}
+
 
 
 
@@ -504,6 +506,7 @@ evalB (App (parg :: Proxy m )
                 -- (Just argEq,Just resEq ) ->  (gcastWith argEq (gcastWith resEq (evalB $ theFun args)))
                  --_ -> throwSTE "mismatched arities in function application "
         (VNeutral neut) ->
+        --- this is kinda weird
           do args <- evalB argExp
              case args  of
                       NeutTrivial proxArity realArgs ->
@@ -552,6 +555,7 @@ evalB (Force  (resExp) (proxyRes :: Proxy m) ) = case sameNat proxyRes (Proxy ::
                 Nothing -> throwSTE "there is a hole in reality, please report a bug"
             (Right _) -> throwSTE "something thats not a thunk is being forced, thats a bug!"
                        -}           -- 3 cases, eval, black hole, or value
+
 evalB (LetExp argExp (RawFunk _parg _pres funk)) =
             do args <- evalB argExp
                case args of
@@ -583,7 +587,6 @@ evalB (CaseCon scrutinee _resTy casesMap) = do
 
 
 
-
 evalSingle :: forall s  .  Exp  (Value s Neutral) 1 -> STE String  s   (Neutral s 1)
 evalSingle (App (parg :: Proxy m) (pres :: Proxy 1 )  funExp argExp) =
     --- sweeeet/subtle use of GADT matching to name the
@@ -599,6 +602,7 @@ evalSingle (App (parg :: Proxy m) (pres :: Proxy 1 )  funExp argExp) =
              case (sameNat (Proxy :: Proxy 1) proxyRes, sameNat proxArg  proxArgsList) of
                 (Just resEq, Just argEq{-, Just moreargseq-}) ->
       {-gcastWith  moreargseq -} (gcastWith resEq (gcastWith argEq (evalSingle (theFun argsL))))
+                ( _result  ,  _inputArglist ) -> throwSTE "error: bad arity in runtime function application"
                             --  | GT.natVal pres == 1 = undefined
                         --  | otherwise || GT.natVal pres /= 1 = throwSTE "WAT, we hosed"
 evalSingle (Abs fun ) = return $ NeutTrivial Proxy $  (VFunk fun :* SLNil)
