@@ -56,11 +56,8 @@ library
   -- Modules exported by the library.
   exposed-modules:
 
-                    Data.Hop.Or
                     Data.HopperException
-                    Hopper.HBound
                     Hopper.Utils.Swap
-                    Hopper.Utils.Closed
                     Hopper.Utils.BigMath
                     Hopper.Utils.LocallyNameless
                     Hopper.Internal.Reference.HOAS
@@ -69,11 +66,7 @@ library
                     Hopper.Internal.Runtime.TaggedValueSelector
                     Hopper.Internal.Type.BinderInfo
                     Hopper.Internal.Type.Relevance
-                    Hopper.Internal.Core.Term
-                    Hopper.Internal.Core.Type
                     Hopper.Internal.Core.Literal
-                    Hopper.Internal.Core.ShiftRemoval
-                    Hopper.Internal.LoweredCore.ANF
                     Hopper.Internal.LoweredCore.ClosureConvertedANF
                     Hopper.Internal.LoweredCore.EvalClosureConvertedANF
 
