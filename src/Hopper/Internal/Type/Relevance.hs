@@ -26,7 +26,7 @@ what are some Laws that instances must have?
 module Hopper.Internal.Type.Relevance where
 
 import qualified Prelude as P  -- (Eq(..),Read,Show,Num(..),Integer,Bool)
-import Prelude (Eq(..), Maybe(..),Bool(..),Ord,Num,Show,Read,($),not,(&&), (||))
+import Prelude (Eq(..), Maybe(..),Bool(..),Ord,Num,Show,Read,($),not,(&&), (||),div)
 import Numeric.Natural
 import GHC.Integer.GMP.Internals (gcdInteger)
 import GHC.Generics
@@ -45,12 +45,15 @@ data GCD a = GCD {extractGCD :: !a, leftCoprime :: !a, rightCoprime :: !a }
 --ched
 gcdNat :: Natural -> Natural -> Maybe  (GCD Natural)
 gcdNat a b  |  (a== 0 ||  b == 0) =  Nothing -- if either factor is zero, gcd is zero
-gcdNat a b  = Just $ P.undefined theGCD
+gcdNat a b  = Just $ GCD  theGCD  (a `div` theGCD) (b `div` theGCD)
   where
    theGCD :: Natural
    theGCD = P.fromInteger $ gcdInteger (P.fromIntegral a ) (P.fromIntegral b)
+
+
 -- NB: can't make Integer an instance of Rig because we want
 --- x <= 0 to imply zero
+
 class Rig a where
   zero :: a
   default zero :: Num a => a
@@ -114,7 +117,7 @@ instance PartialOrd Relevance where
 {- question: CAN i just do (== zero) -}
 {-# SPECIALIZE isZero :: Relevance -> Bool #-}
 isZero :: (Rig a,PartialOrd a)=> a -> Bool
-isZero a = if a `leq` zero
+isZero a = if a `leq` zero  --do we need this too? -- && (zero `leq` a)
             &&  (a `leq` a)
               -- this is to guard against hypothetical Nan like elements
               -- which might arise if we complete the set theoretic lattice
@@ -126,6 +129,8 @@ isZero a = if a `leq` zero
 {-
 our "Relevance type" kinda is a subset of the lattice induced by
 the collection of sets {}, {1}, {0}, and {0,1}, but without {}
+
+notice that  {} \neq Zero  but in the partial order of subsets {} \leq {0}
 
 ie our partial order is the one modeled by the collection of sets
 {0}, {1}, {0,1} with ordering by the subset relation and the Join operator

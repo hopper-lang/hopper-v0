@@ -26,6 +26,7 @@
 module Hopper.Internal.Reference.HOAS(
   Exp(..)
   ,evalB -- TODO: implement this, Carter
+  ,evalSingle
   ,reify
   ,reflect
   ,Sort(..)
@@ -230,6 +231,7 @@ data Sort :: *   where
 
 data PrimType :: * where
   PTInteger :: PrimType
+ deriving(Show)
 
 --- this is in some sense
 {-
