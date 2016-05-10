@@ -529,9 +529,11 @@ evalB (Delay resArity resExp ) =
          return $  NeutTrivial (Proxy :: Proxy 1) $ (VThunk  resArity handle) :* SLNil
 evalB (Force  (resExp) (proxyRes :: Proxy m) ) = case sameNat proxyRes (Proxy :: Proxy 1)  of
       Just eq -> gcastWith eq ( evalSingle (Force resExp Proxy) )
-      Nothing ->  do (throwSTE "fix meeeeeee")
-        {- TODO : THink about proper sharing of Neutral computations -}
-         {- resEvaled <- evalB resExp
+      Nothing ->  do
+        {- TODO  !!: THink about proper sharing of Neutral computations -}
+        {-  Because that is ignored for now, wil -}
+
+          resEvaled <- evalB resExp
           case resEvaled of
             (Left  neutForceArg) -> return $ Left (NeutForce  neutForceArg proxyRes)
                --- this should be NeutralLet not a NeutForce..., maybe?
@@ -545,18 +547,19 @@ evalB (Force  (resExp) (proxyRes :: Proxy m) ) = case sameNat proxyRes (Proxy ::
                           writeMutVar mut ThunkBlackHole
                           exprRes <- evalB expr
                           case exprRes  of
+                            NeutTrivial prox theValList ->
+                              do  writeMutVar mut (ThunkValueResult theValList)
+                                  NeutTrivial prox  theValList
                             Left neut ->
                               do  writeMutVar mut (ThunkMultiNeutralResult pr neut)
                                   return $ Left (NeutForce neut pr)
 
-                            Right theValList ->
-                              do  writeMutVar mut (ThunkValueResult theValList)
-                                  return $ Right theValList
+
                         ThunkBlackHole -> throwSTE " THERE IS A BLACK HOLE,RUNNNNN, sound the alarms "
-                        ThunkMultiNeutralResult  neu -> return $ Left (NeutForce neu prNeu)
+                        ThunkMultiNeutralResult  neu -> neu
                 Nothing -> throwSTE "there is a hole in reality, please report a bug"
-            (Right _) -> throwSTE "something thats not a thunk is being forced, thats a bug!"
-                       -}           -- 3 cases, eval, black hole, or value
+            _ -> throwSTE "something thats not a thunk is being forced, thats a bug!"
+                                  -- 3 cases, eval, black hole, or value
 
 evalB (LetExp argExp (RawFunk _parg _pres funk)) =
             do args <- evalB argExp
