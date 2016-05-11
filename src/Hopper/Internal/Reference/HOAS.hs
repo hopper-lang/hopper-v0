@@ -527,38 +527,41 @@ evalB (HasType x _prox  _) = evalB x
 evalB (Delay resArity resExp ) =
      do  handle<- PMV.newMutVar   (ThunkComputation resExp)
          return $  NeutTrivial (Proxy :: Proxy 1) $ (VThunk  resArity handle) :* SLNil
-evalB (Force  (resExp) (proxyRes :: Proxy m) ) = case sameNat proxyRes (Proxy :: Proxy 1)  of
+evalB (Force  (resExp) (proxyRes :: Proxy n) ) = case sameNat proxyRes (Proxy :: Proxy 1)  of
       Just eq -> gcastWith eq ( evalSingle (Force resExp Proxy) )
       Nothing ->  do
         {- TODO  !!: THink about proper sharing of Neutral computations -}
         {-  Because that is ignored for now, wil -}
 
-          resEvaled <- evalB resExp
+          (resEvaled :: Neutral s 1) <- evalSingle resExp
           case resEvaled of
-            (Left  neutForceArg) -> return $ Left (NeutForce  neutForceArg proxyRes)
+
                --- this should be NeutralLet not a NeutForce..., maybe?
-            (Right (VThunk  pr mut) :* SLNil) ->
+            (NeutTrivial (prar :: Proxy 1 ) ((VThunk  (pr :: Proxy m) mut) :* _)) ->
              case sameNat pr proxyRes  of
                 (Just moreeq) -> gcastWith moreeq $
                   do thunkRep <- readMutVar mut
                      case thunkRep of
-                        ThunkValueResult valList -> return $ gcastWith moreeq (Right  valList)
-                        ThunkComputation (expr :: Exp (Value s Neutral) m) -> do
+                        ThunkValueResult valList -> return $ gcastWith moreeq (NeutTrivial Proxy valList)
+                        ThunkComputation (expr :: Exp (Value s Neutral) n) -> do
                           writeMutVar mut ThunkBlackHole
                           exprRes <- evalB expr
                           case exprRes  of
-                            NeutTrivial prox theValList ->
+                            NeutTrivial (prox :: Proxy n) theValList ->
                               do  writeMutVar mut (ThunkValueResult theValList)
-                                  NeutTrivial prox  theValList
-                            Left neut ->
-                              do  writeMutVar mut (ThunkMultiNeutralResult pr neut)
-                                  return $ Left (NeutForce neut pr)
+                                  return $ NeutTrivial  pr  theValList
+                            neut ->
+                              do  writeMutVar mut (ThunkMultiNeutralResult  neut)
+                                  return neut
 
 
                         ThunkBlackHole -> throwSTE " THERE IS A BLACK HOLE,RUNNNNN, sound the alarms "
-                        ThunkMultiNeutralResult  neu -> neu
+                        ThunkMultiNeutralResult  neu -> return neu
                 Nothing -> throwSTE "there is a hole in reality, please report a bug"
-            _ -> throwSTE "something thats not a thunk is being forced, thats a bug!"
+            (NeutTrivial prar ( _  :* _ ) )   ->
+                throwSTE "something thats not a thunk is being forced, thats a bug!"
+            (neutForceArg) -> return $  (NeutForce  neutForceArg proxyRes)
+
                                   -- 3 cases, eval, black hole, or value
 
 evalB (LetExp argExp (RawFunk _parg _pres funk)) =
