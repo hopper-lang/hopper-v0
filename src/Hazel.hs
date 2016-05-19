@@ -35,19 +35,22 @@ import Data.Vector (Vector)
 import qualified Data.Vector as V
 
 
--- infered terms / eliminations / neutral terms
+-- inferred terms / eliminations / neutral terms
 data Computation
   = BVar Int
   | FVar String
   | App Computation Value
   -- questions arise re the eliminator for tuples
   -- * is it case, or was case just the eliminator for sums?
-  -- * is let a suitable eliminator? but let's a checked term, not infered
+  -- * is let a suitable eliminator? but let's a checked term, not inferred
   -- * in a way, eliminating tuples is not computation! whereas functions and
-  --   cases branch (justifying no infered term for eliminating tuples).
+  --   cases branch (justifying no inferred term for eliminating tuples).
   --
   -- ... actually we need case or there is no branching!
-  | Case Computation (Vector String) Type (Vector Value)
+  | Case Computation     -- expression
+         (Vector String) -- label names
+         Type            -- type of the case expr
+         (Vector Value)  -- expressions for each label
   | Annot Value Type
   deriving Show
 
