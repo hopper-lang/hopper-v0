@@ -159,22 +159,22 @@ infer :: Ctx -> Computation -> Either String (Ctx, Type)
 infer ctx t = case t of
   BVar i -> inferVar ctx i
   FVar _name -> throwError "[infer FVar] found unexpected free variable"
-  App iTm appTm -> do
-    (leftovers, iTmTy) <- infer ctx iTm
-    case iTmTy of
+  App cTm vTm -> do
+    (leftovers, cTmTy) <- infer ctx cTm
+    case cTmTy of
       LollyTy inTy outTy -> do
-        leftovers2 <- check leftovers inTy appTm
+        leftovers2 <- check leftovers inTy vTm
         return (leftovers2, outTy)
-      _ -> throwError "[infer App] infered non LollyTy in LHS of application"
-  Case iTm _branches ty cTms -> do
-    (leftovers1, iTmTy) <- infer ctx iTm
+      _ -> throwError "[infer App] inferred non LollyTy in LHS of application"
+  Case cTm _branchLabels ty vTms -> do
+    (leftovers1, cTmTy) <- infer ctx cTm
 
-    -- TODO: check branches (labels) matches the right-hand-sides, iTm matches
+    -- TODO: check branches (labels) matches the right-hand-sides, cTm matches
     -- also
 
-    leftovers2 <- flip execStateT leftovers1 $ forM cTms $ \cTm -> do
-      let subCtx = (iTmTy, Inexhaustible):ctx
-      (_, usage):newCtx <- lift $ check subCtx ty cTm
+    leftovers2 <- flip execStateT leftovers1 $ forM vTms $ \vTm -> do
+      let subCtx = (cTmTy, Inexhaustible):ctx
+      (_, usage):newCtx <- lift $ check subCtx ty vTm
       assert (usage /= UseOnce)
         "[infer Case] must consume linear variable in case branch"
       return newCtx
@@ -182,17 +182,17 @@ infer ctx t = case t of
     assert (allTheSame leftovers2)
       "[infer Case] all branches must consume the same linear variables"
 
---     case iTmTy of
---       LabelsTy _label -> assert (iTmTy == ty) "[infer Case] label mismatch"
+--     case cTmTy of
+--       LabelsTy _label -> assert (cTmTy == ty) "[infer Case] label mismatch"
 --       _ -> throwError "[infer Case] can't case on non-labels"
---       -- PrimTy _prim -> assert (iTmTy == ty) "[infer Case] primitive mismatch"
---       -- TupleTy _values -> assert (iTmTy == ty) "[infer Case] tuple mismatch"
+--       -- PrimTy _prim -> assert (cTmTy == ty) "[infer Case] primitive mismatch"
+--       -- TupleTy _values -> assert (cTmTy == ty) "[infer Case] tuple mismatch"
 --       -- LollyTy _ _ -> throwError "[infer Case] can't case on function"
 
     return (leftovers2, ty)
 
-  Annot cTm ty -> do
-    leftovers <- check ctx ty cTm
+  Annot vTm ty -> do
+    leftovers <- check ctx ty vTm
     return (leftovers, ty)
 
 check :: Ctx -> Type -> Value -> Either String Ctx
@@ -209,26 +209,26 @@ check ctx ty tm = case tm of
     assert (ty == expectedTy) $
       "[check Primop] primop (" ++ show p ++ ") type mismatch"
     return ctx
-  Let pat letTm cTm -> do
+  Let pat letTm vTm -> do
     (leftovers, tmTy) <- infer ctx letTm
     patternTy <- typePattern pat tmTy
     -- XXX do we need to reverse these?
     let freshVars = map (, UseOnce) patternTy
         bodyCtx = freshVars ++ leftovers
         arity = length patternTy
-    newCtx <- check bodyCtx ty cTm
+    newCtx <- check bodyCtx ty vTm
 
     -- Check that the body consumed all the arguments
     let (bodyUsage, leftovers2) = splitAt arity newCtx
     forM_ bodyUsage $ \(_ty, usage) ->
       assert (usage /= UseOnce) "[check Let] must consume linear bound variables"
     return leftovers2
-  Prd cTms -> case ty of
+  Prd vTms -> case ty of
     -- Thread the leftover context through from left to right.
     TupleTy tys ->
       -- Layer on a state transformer for this bit, since we're passing
       -- leftovers from one term to the next
-      let calc = forM (V.zip cTms tys) $ \(tm', ty') -> do
+      let calc = forM (V.zip vTms tys) $ \(tm', ty') -> do
             leftovers <- get
             newLeftovers <- lift $ check leftovers ty' tm'
             put newLeftovers
@@ -251,39 +251,39 @@ check ctx ty tm = case tm of
       return ctx
     _ -> throwError "[check Label] checking Label against non-label-vec"
 
-  Neu iTm -> do
-    (leftovers, iTmTy) <- infer ctx iTm
-    assert (iTmTy == ty) "[check Neu] checking infered neutral type"
+  Neu cTm -> do
+    (leftovers, cTmTy) <- infer ctx cTm
+    assert (cTmTy == ty) "[check Neu] checking inferred neutral type"
     return leftovers
 
 evalC :: [Value] -> Computation -> Either String Value
 evalC env tm = case tm of
   BVar i -> pure (env !! i)
   FVar name -> throwError ("unexpected free var in evaluation: " ++ name)
-  App iTm cTm -> do
-    iTm' <- evalC env iTm
-    cTm' <- evalV env cTm
-    case iTm' of
-      Lam cBody -> evalV (cTm':env) cBody
+  App cTm vTm -> do
+    cTm' <- evalC env cTm
+    vTm' <- evalV env vTm
+    case cTm' of
+      Lam cBody -> evalV (vTm':env) cBody
       -- Note that we're passing in only the current heap value, not the
       -- context, since a primop must be atomic -- it can't capture
-      Primop p -> evalPrimop p cTm'
+      Primop p -> evalPrimop p vTm'
       _ -> throwError "unexpected non lambda in lhs of function application"
-  Case iTm labels _ty cTms -> do
-    iTm' <- evalC env iTm
-    case iTm' of
+  Case cTm labels _ty vTms -> do
+    cTm' <- evalC env cTm
+    case cTm' of
       Label l ->
         let findBranch = do
               branchIx <- V.elemIndex l labels
-              cTms V.!? branchIx
+              vTms V.!? branchIx
         in case findBranch of
-             Just branch -> evalV (iTm':env) branch
+             Just branch -> evalV (cTm':env) branch
              _ -> throwError "[evalC Case] couldn't find branch"
       Primitive _p -> undefined
       Prd _p -> undefined
-      Neu _iTm -> undefined
+      Neu _cTm -> undefined
       _ -> throwError "[evalC Case] unmatchable"
-  Annot cTm _ty -> evalV env cTm
+  Annot vTm _ty -> evalV env vTm
 
 evalPrimop :: Primop -> Value -> Either String Value
 evalPrimop Add (Prd args)
@@ -299,10 +299,10 @@ evalPrimop _ _ = throwError "unexpected arguments to evalPrimop"
 
 evalV :: [Value] -> Value -> Either String Value
 evalV env tm = case tm of
-  Prd cTms -> Prd <$> (mapM (evalV env) cTms)
-  Let _pat iTm cTm -> do
-    iTm' <- evalC env iTm
-    evalV (iTm':env) cTm
+  Prd vTms -> Prd <$> (mapM (evalV env) vTms)
+  Let _pat cTm vTm -> do
+    cTm' <- evalC env cTm
+    evalV (cTm':env) vTm
   Primop _ -> pure tm
   Lam _ -> pure tm
   Primitive _ -> pure tm
@@ -315,22 +315,22 @@ openC :: Int -> String -> Computation -> Computation
 openC k x tm = case tm of
   BVar i -> if i == k then FVar x else tm
   FVar _ -> tm
-  App iTm cTm -> App (openC k x iTm) (openV k x cTm)
-  Case iTm labels ty cTms ->
-    Case (openC k x iTm) labels ty (V.map (openV (k + 1) x) cTms)
-  Annot cTm ty -> Annot (openV k x cTm) ty
+  App cTm vTm -> App (openC k x cTm) (openV k x vTm)
+  Case cTm labels ty vTms ->
+    Case (openC k x cTm) labels ty (V.map (openV (k + 1) x) vTms)
+  Annot vTm ty -> Annot (openV k x vTm) ty
 
 openV :: Int -> String -> Value -> Value
 openV k x tm = case tm of
-  Lam cTm -> Lam (openV (k + 1) x cTm)
-  Prd cTms -> Prd (V.map (openV k x) cTms)
-  Let pat iTm cTm ->
+  Lam vTm -> Lam (openV (k + 1) x vTm)
+  Prd vTms -> Prd (V.map (openV k x) vTms)
+  Let pat cTm vTm ->
     let bindingSize = patternSize pat
-    in Let pat (openC k x iTm) (openV (k + bindingSize) x cTm)
+    in Let pat (openC k x cTm) (openV (k + bindingSize) x vTm)
   Label _ -> tm
   Primitive _ -> tm
   Primop _ -> tm
-  Neu iTm -> Neu (openC k x iTm)
+  Neu cTm -> Neu (openC k x cTm)
 
 typePattern :: Pattern -> Type -> Either String [Type]
 typePattern (MatchVar _) ty = Right [ty]
