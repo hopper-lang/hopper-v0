@@ -208,7 +208,7 @@ check ctx ty tm = case tm of
     return ctx
   Let pat letTm cTm -> do
     (leftovers, tmTy) <- infer ctx letTm
-    let patternTy = typePattern pat tmTy
+    patternTy <- typePattern pat tmTy
     -- XXX do we need to reverse these?
     let freshVars = map (, UseOnce) patternTy
         bodyCtx = freshVars ++ leftovers
@@ -253,56 +253,58 @@ check ctx ty tm = case tm of
     assert (iTmTy == ty) "[check Neu] checking infered neutral type"
     return leftovers
 
-evalC :: [Value] -> Computation -> Value
+evalC :: [Value] -> Computation -> Either String Value
 evalC env tm = case tm of
-  BVar i -> env !! i
-  FVar name -> error ("unexpected free var in evaluation: " ++ name)
-  App iTm cTm ->
-    let iTm' = evalC env iTm
-        cTm' = evalV env cTm
-    in case iTm' of
-         Lam cBody -> evalV (cTm':env) cBody
-         -- Note that we're passing in only the current heap value, not the
-         -- context, since a primop must be atomic -- it can't capture
-         Primop p -> evalPrimop p cTm'
-         _ -> error "unexpected non lambda in lhs of function application"
-  Case iTm labels _ty cTms ->
-    let iTm' = evalC env iTm
-    in case iTm' of
-         Label l ->
-           let findBranch = do
-                 branchIx <- V.elemIndex l labels
-                 cTms V.!? branchIx
-           in case findBranch of
-                Just branch -> evalV (iTm':env) branch
-                _ -> error "[evalC Case] couldn't find branch"
-         Primitive _p -> undefined
-         Prd _p -> undefined
-         Neu _iTm -> undefined
-         _ -> error "[evalC Case] unmatchable"
+  BVar i -> pure (env !! i)
+  FVar name -> throwError ("unexpected free var in evaluation: " ++ name)
+  App iTm cTm -> do
+    iTm' <- evalC env iTm
+    cTm' <- evalV env cTm
+    case iTm' of
+      Lam cBody -> evalV (cTm':env) cBody
+      -- Note that we're passing in only the current heap value, not the
+      -- context, since a primop must be atomic -- it can't capture
+      Primop p -> evalPrimop p cTm'
+      _ -> throwError "unexpected non lambda in lhs of function application"
+  Case iTm labels _ty cTms -> do
+    iTm' <- evalC env iTm
+    case iTm' of
+      Label l ->
+        let findBranch = do
+              branchIx <- V.elemIndex l labels
+              cTms V.!? branchIx
+        in case findBranch of
+             Just branch -> evalV (iTm':env) branch
+             _ -> throwError "[evalC Case] couldn't find branch"
+      Primitive _p -> undefined
+      Prd _p -> undefined
+      Neu _iTm -> undefined
+      _ -> throwError "[evalC Case] unmatchable"
   Cut cTm _ty -> evalV env cTm
 
-evalPrimop :: Primop -> Value -> Value
+evalPrimop :: Primop -> Value -> Either String Value
 evalPrimop Add (Prd args)
   | [NatV x, NatV y] <- V.toList args
-  = NatV (x + y)
-evalPrimop PrintNat (NatV i) = StrV (show i)
+  = pure (NatV (x + y))
+evalPrimop PrintNat (NatV i) = pure (StrV (show i))
 evalPrimop ConcatString (Prd args)
   | [StrV l, StrV r] <- V.toList args
-  = StrV (l ++ r)
-evalPrimop ToUpper (StrV s) = StrV (map toUpper s)
-evalPrimop ToLower (StrV s) = StrV (map toLower s)
-evalPrimop _ _ = error "unexpected arguments to evalPrimop"
+  = pure (StrV (l ++ r))
+evalPrimop ToUpper (StrV s) = pure (StrV (map toUpper s))
+evalPrimop ToLower (StrV s) = pure (StrV (map toLower s))
+evalPrimop _ _ = throwError "unexpected arguments to evalPrimop"
 
-evalV :: [Value] -> Value -> Value
+evalV :: [Value] -> Value -> Either String Value
 evalV env tm = case tm of
-  Prd cTms -> Prd (V.map (evalV env) cTms)
-  Let _pat iTm cTm -> evalV (evalC env iTm:env) cTm
-  Primop _ -> tm
-  Lam _ -> tm
-  Primitive _ -> tm
-  Label _ -> tm
-  Neu _ -> tm
+  Prd cTms -> Prd <$> (mapM (evalV env) cTms)
+  Let _pat iTm cTm -> do
+    iTm' <- evalC env iTm
+    evalV (iTm':env) cTm
+  Primop _ -> pure tm
+  Lam _ -> pure tm
+  Primitive _ -> pure tm
+  Label _ -> pure tm
+  Neu _ -> pure tm
 
 -- TODO we don't actually use the implementation of opening -- I had just
 -- pre-emptively defined it thinking it would be used.
@@ -327,13 +329,19 @@ openV k x tm = case tm of
   Primop _ -> tm
   Neu iTm -> Neu (openC k x iTm)
 
-typePattern :: Pattern -> Type -> [Type]
-typePattern (MatchVar _) ty = [ty]
--- TODO check these line up
-typePattern (MatchTuple subPats) (TupleTy subTys) =
+typePattern :: Pattern -> Type -> Either String [Type]
+typePattern (MatchVar _) ty = Right [ty]
+-- TODO check these line up (subPats / subTys)
+--
+-- example:
+-- (MatchVar, MatchTuple (MatchVar, MatchVar))
+--           v
+-- [[ty0], [ty1, ty2]]
+typePattern (MatchTuple subPats) (TupleTy subTys) = do
   let zipped = V.zip subPats subTys
-  in concatMap (uncurry typePattern) zipped
-typePattern _ _ = error "[typePattern] misaligned pattern"
+  twoLevelTypes <- mapM (uncurry typePattern) zipped
+  return (concat twoLevelTypes)
+typePattern _ _ = throwError "[typePattern] misaligned pattern"
 
 patternSize :: Pattern -> Int
 patternSize (MatchVar _0) = 1
