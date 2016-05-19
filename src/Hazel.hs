@@ -48,7 +48,7 @@ data Computation
   --
   -- ... actually we need case or there is no branching!
   | Case Computation (Vector String) Type (Vector Value)
-  | Cut Value Type
+  | Annot Value Type
   deriving Show
 
 -- checked terms / introductions / values
@@ -188,7 +188,7 @@ infer ctx t = case t of
 
     return (leftovers2, ty)
 
-  Cut cTm ty -> do
+  Annot cTm ty -> do
     leftovers <- check ctx ty cTm
     return (leftovers, ty)
 
@@ -280,7 +280,7 @@ evalC env tm = case tm of
       Prd _p -> undefined
       Neu _iTm -> undefined
       _ -> throwError "[evalC Case] unmatchable"
-  Cut cTm _ty -> evalV env cTm
+  Annot cTm _ty -> evalV env cTm
 
 evalPrimop :: Primop -> Value -> Either String Value
 evalPrimop Add (Prd args)
@@ -315,7 +315,7 @@ openC k x tm = case tm of
   App iTm cTm -> App (openC k x iTm) (openV k x cTm)
   Case iTm labels ty cTms ->
     Case (openC k x iTm) labels ty (V.map (openV (k + 1) x) cTms)
-  Cut cTm ty -> Cut (openV k x cTm) ty
+  Annot cTm ty -> Annot (openV k x cTm) ty
 
 openV :: Int -> String -> Value -> Value
 openV k x tm = case tm of

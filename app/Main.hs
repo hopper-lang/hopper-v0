@@ -14,14 +14,14 @@ swap = Lam (Let
 
 illTyped = Let
   (MatchTuple (V.fromList [MatchVar UseOnce, MatchVar UseOnce]))
-  (Cut (Lam (Neu (BVar 0))) (LollyTy (PrimTy NatTy) (PrimTy NatTy)))
+  (Annot (Lam (Neu (BVar 0))) (LollyTy (PrimTy NatTy) (PrimTy NatTy)))
   (Prd (V.fromList [Neu (BVar 0), Neu (BVar 1)]))
 
 diagonal = Lam (Prd (V.fromList [Neu (BVar 0), Neu (BVar 0)]))
 
 caseExample :: Computation
 caseExample = Case
-  (Cut (Label "x") (LabelsTy (V.fromList ["x", "y"])))
+  (Annot (Label "x") (LabelsTy (V.fromList ["x", "y"])))
   (V.fromList ["x", "y"])
   (PrimTy NatTy)
   (V.fromList
@@ -37,7 +37,7 @@ primopExample :: Computation
 primopExample =
   let pair :: Value -> Value -> Value
       pair x y = Prd (V.fromList [x, y])
-  in App (Cut (Primop ConcatString) (inferPrimop ConcatString))
+  in App (Annot (Primop ConcatString) (inferPrimop ConcatString))
          (pair (StrV "abc") (StrV "xyz"))
 
 main :: IO ()
