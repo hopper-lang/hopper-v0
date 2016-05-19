@@ -1,0 +1,45 @@
+name:                hazel
+version:             0.1.0.0
+synopsis:            Initial project template from stack
+description:         Please see README.md
+homepage:            https://github.com/hopper-lang/hopper/tree/hazel#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Joel Burget
+maintainer:          joelburget@gmail.com
+copyright:           Copyright (c) 2016 Joel Burget
+category:            Web
+build-type:          Simple
+-- extra-source-files:
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Hazel
+  build-depends:       base >= 4.7 && < 5
+                     , vector
+                     , mtl
+                     , lens
+  default-language:    Haskell2010
+
+executable hazel-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , vector
+                     , hazel
+  default-language:    Haskell2010
+
+test-suite hazel-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , hazel
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/hopper-lang/hopper/tree/hazel
