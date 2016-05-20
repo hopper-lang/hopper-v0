@@ -7,7 +7,6 @@ module Hazel where
 -- Significant features of this treatment include:
 -- * n-tuples as a generalization of 2-tuples. This is an easy optimization
 --   win for little extra work.
--- * labels (as a branching mechanism)
 -- * bidirectional checking. we're following the treatment from Guillaume
 --   Allais' "Typing with Leftovers" with modifications.
 -- * linearity
@@ -48,7 +47,6 @@ data Computation
   --
   -- ... actually we need case or there is no branching!
   | Case Computation     -- expression
-         (Vector String) -- label names
          Type            -- type of the case expr
          (Vector Value)  -- expressions for each label
   | Annot Value Type
@@ -60,7 +58,7 @@ data Value
   | Primop Primop
   | Prd (Vector Value)
   | Let Pattern Computation Value
-  | Label String
+  | Index Int
   | Primitive Primitive
   | Neu Computation
   deriving Show
@@ -166,7 +164,7 @@ infer ctx t = case t of
         leftovers2 <- check leftovers inTy vTm
         return (leftovers2, outTy)
       _ -> throwError "[infer App] inferred non LollyTy in LHS of application"
-  Case cTm _branchLabels ty vTms -> do
+  Case cTm ty vTms -> do
     (leftovers1, cTmTy) <- infer ctx cTm
 
     -- TODO: check branches (labels) matches the right-hand-sides, cTm matches
@@ -244,12 +242,13 @@ check ctx ty tm = case tm of
         "[check Primitive] trying to match nat against non-nat type"
     return ctx
 
-  Label name -> case ty of
+  -- XXX(joel) This doesn't make sense -- think about removing / replacing
+  Index i -> case ty of
     LabelsTy names -> do
-      assert (name `V.elem` names)
-        "[check Label] didn't find label in label vec"
+      assert (V.length names >= i)
+        "[check Index] didn't find index in label vec"
       return ctx
-    _ -> throwError "[check Label] checking Label against non-label-vec"
+    _ -> throwError "[check Index] checking Index against non-LabelsTy"
 
   Neu cTm -> do
     (leftovers, cTmTy) <- infer ctx cTm
@@ -269,16 +268,13 @@ evalC env tm = case tm of
       -- context, since a primop must be atomic -- it can't capture
       Primop p -> evalPrimop p vTm'
       _ -> throwError "unexpected non lambda in lhs of function application"
-  Case cTm labels _ty vTms -> do
+  Case cTm _ty vTms -> do
     cTm' <- evalC env cTm
     case cTm' of
-      Label l ->
-        let findBranch = do
-              branchIx <- V.elemIndex l labels
-              vTms V.!? branchIx
-        in case findBranch of
-             Just branch -> evalV (cTm':env) branch
-             _ -> throwError "[evalC Case] couldn't find branch"
+      Index branchIx ->
+        case vTms V.!? branchIx of
+          Just branch -> evalV (cTm':env) branch
+          _ -> throwError "[evalC Case] couldn't find branch"
       Primitive _p -> undefined
       Prd _p -> undefined
       Neu _cTm -> undefined
@@ -306,7 +302,7 @@ evalV env tm = case tm of
   Primop _ -> pure tm
   Lam _ -> pure tm
   Primitive _ -> pure tm
-  Label _ -> pure tm
+  Index _ -> pure tm
   Neu _ -> pure tm
 
 -- TODO we don't actually use the implementation of opening -- I had just
@@ -316,8 +312,8 @@ openC k x tm = case tm of
   BVar i -> if i == k then FVar x else tm
   FVar _ -> tm
   App cTm vTm -> App (openC k x cTm) (openV k x vTm)
-  Case cTm labels ty vTms ->
-    Case (openC k x cTm) labels ty (V.map (openV (k + 1) x) vTms)
+  Case cTm ty vTms ->
+    Case (openC k x cTm) ty (V.map (openV (k + 1) x) vTms)
   Annot vTm ty -> Annot (openV k x vTm) ty
 
 openV :: Int -> String -> Value -> Value
@@ -327,7 +323,7 @@ openV k x tm = case tm of
   Let pat cTm vTm ->
     let bindingSize = patternSize pat
     in Let pat (openC k x cTm) (openV (k + bindingSize) x vTm)
-  Label _ -> tm
+  Index _ -> tm
   Primitive _ -> tm
   Primop _ -> tm
   Neu cTm -> Neu (openC k x cTm)
