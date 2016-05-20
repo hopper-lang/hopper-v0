@@ -29,6 +29,7 @@ module Hazel where
 
 import Control.Lens hiding (Const)
 import Control.Monad.Error.Class
+import Control.Monad.Reader
 import Control.Monad.State
 import Data.Char (toUpper, toLower)
 import Data.Vector (Vector)
@@ -63,6 +64,26 @@ data Value
   | Label String
   | Primitive Primitive
   | Neu Computation
+  deriving Show
+
+data Deriv
+  -- computation
+  = BVar'
+  | FVar'
+  | App1
+  | App2
+  | CaseArg
+  | CaseBranch Int
+  | Annot'
+  -- value
+  | Lam'
+  | Primop'
+  | Prd' Int
+  | Let1
+  | Let2
+  | Label'
+  | Primitive'
+  | Neu'
   deriving Show
 
 -- Match nested n-tuples.
@@ -109,31 +130,50 @@ data Type
 data Usage = Inexhaustible | UseOnce | Exhausted
   deriving (Eq, Show)
 
-useVar :: Usage -> Either String Usage
-useVar Inexhaustible = Right Inexhaustible
-useVar UseOnce = Right Exhausted
-useVar Exhausted = Left "[useVar] used exhausted variable"
+useVar :: MonadError String m => LocationDirections -> Usage -> m Usage
+useVar _ Inexhaustible = pure Inexhaustible
+useVar _ UseOnce = pure Exhausted
+useVar dirs Exhausted = throwStackError dirs "[useVar] used exhausted variable"
 
+-- | Directions pointing to a location in the syntax tree.
+--
+-- This is used primarily error reporting -- we want to be able to show exactly
+-- where errors appear.
+--
+-- This shows up in both type and linearity- checking.
+type LocationDirections = [Deriv]
+
+-- | The type and usage of each currently bound variable.
+--
+-- Unlike in "Typing with Leftovers" we bundle typing and usage together in the
+-- same data structure. This list is de-bruijn indexed, so to get the type and
+-- usage of `BVar i` we access `ctx !! i`.
 type Ctx = [(Type, Usage)]
+
+type CheckM = ReaderT LocationDirections (Either String)
 
 -- I (Joel) made the explicit choice to not use the state monad to track
 -- leftovers, since I want to take a little more care with tracking linearity.
 -- We layer it on in some places where it's helpful.
 --
+-- Similarly, I made the choice to not use the reader monad to handle
+-- LocationDirections. By handling the directions parameter manually, we need
+-- to consciously think about that parameter in every recursive call.
+--
 -- TODO do we need to check all linear variables have been consumed here?
 -- * we should just fix this so it passes in the empty context to the checker
-runChecker :: Either String Ctx -> String
-runChecker checker = either id (const "success!") checker
+runChecker :: CheckM Ctx -> String
+runChecker checker = either id (const "success!") (runReaderT checker [])
 
-assert :: MonadError String m => Bool -> String -> m ()
-assert True _ = return ()
-assert False str = throwError str
+assert :: MonadError String m => Bool -> LocationDirections -> String -> m ()
+assert True _ _ = return ()
+assert False dirs str = throwStackError dirs str
 
-inferVar :: Ctx -> Int -> Either String (Ctx, Type)
-inferVar ctx k = do
+inferVar :: LocationDirections -> Ctx -> Int -> CheckM (Ctx, Type)
+inferVar dirs ctx k = do
   -- find the type, count this as a usage
   let (ty, usage) = ctx !! k
-  usage' <- useVar usage
+  usage' <- useVar dirs usage
   -- TODO(joel) this is the only line that uses lens -- remove it?
   return (ctx & ix k . _2 .~ usage', ty)
 
@@ -155,31 +195,44 @@ allTheSame :: (Eq a) => [a] -> Bool
 allTheSame [] = True
 allTheSame (x:xs) = and $ map (== x) xs
 
-infer :: Ctx -> Computation -> Either String (Ctx, Type)
-infer ctx t = case t of
-  BVar i -> inferVar ctx i
-  FVar _name -> throwError "[infer FVar] found unexpected free variable"
+throwStackError :: MonadError String m => LocationDirections -> String -> m a
+throwStackError dirs str =
+  -- Note: we reverse dirs since we're using the list as a stack and we want
+  -- the outermost to appear at the top and innermost to appear at the bottom.
+  let stackStr = unlines (map show (reverse dirs))
+  in throwError $ stackStr ++ "\n" ++ str
+
+infer :: LocationDirections -> Ctx -> Computation -> CheckM (Ctx, Type)
+infer dirs ctx t = case t of
+  BVar i -> inferVar (BVar':dirs) ctx i
+  FVar _name -> throwStackError (FVar':dirs)
+    "[infer FVar] found unexpected free variable"
   App cTm vTm -> do
-    (leftovers, cTmTy) <- infer ctx cTm
+    (leftovers, cTmTy) <- infer (App1:dirs) ctx cTm
     case cTmTy of
       LollyTy inTy outTy -> do
-        leftovers2 <- check leftovers inTy vTm
+        leftovers2 <- check (App2:dirs) leftovers inTy vTm
         return (leftovers2, outTy)
-      _ -> throwError "[infer App] inferred non LollyTy in LHS of application"
+      _ -> throwStackError (App1:dirs)
+        "[infer App] inferred non LollyTy in LHS of application"
   Case cTm _branchLabels ty vTms -> do
-    (leftovers1, cTmTy) <- infer ctx cTm
+    (leftovers1, cTmTy) <- infer (CaseArg:dirs) ctx cTm
 
     -- TODO: check branches (labels) matches the right-hand-sides, cTm matches
     -- also
 
-    leftovers2 <- flip execStateT leftovers1 $ forM vTms $ \vTm -> do
-      let subCtx = (cTmTy, Inexhaustible):ctx
-      (_, usage):newCtx <- lift $ check subCtx ty vTm
-      assert (usage /= UseOnce)
-        "[infer Case] must consume linear variable in case branch"
-      return newCtx
+    leftovers2 <- flip execStateT leftovers1 $ imapM
+      (\i vTm -> do
+        let subCtx = (cTmTy, Inexhaustible):ctx
+            dirs' = CaseBranch i:dirs
+        (_, usage):newCtx <- lift $ check dirs' subCtx ty vTm
+        assert (usage /= UseOnce) dirs'
+          "[infer Case] must consume linear variable in case branch"
+        return newCtx
+      )
+      vTms
 
-    assert (allTheSame leftovers2)
+    assert (allTheSame leftovers2) dirs
       "[infer Case] all branches must consume the same linear variables"
 
 --     case cTmTy of
@@ -192,69 +245,82 @@ infer ctx t = case t of
     return (leftovers2, ty)
 
   Annot vTm ty -> do
-    leftovers <- check ctx ty vTm
+    leftovers <- check (Annot':dirs) ctx ty vTm
     return (leftovers, ty)
 
-check :: Ctx -> Type -> Value -> Either String Ctx
-check ctx ty tm = case tm of
+check :: LocationDirections -> Ctx -> Type -> Value -> CheckM Ctx
+check dirs ctx ty tm = case tm of
   Lam body -> case ty of
     LollyTy argTy tau -> do
       let bodyCtx = (argTy, UseOnce):ctx
-      (_, usage):leftovers <- check bodyCtx tau body
-      assert (usage /= UseOnce) "[check Lam] must consume linear bound variable"
+      (_, usage):leftovers <- check (Lam':dirs) bodyCtx tau body
+      assert (usage /= UseOnce) (Lam':dirs)
+        "[check Lam] must consume linear bound variable"
       return leftovers
-    _ -> throwError "[check Lam] checking lambda against non-lolly type"
+    _ -> throwStackError (Lam':dirs)
+      "[check Lam] checking lambda against non-lolly type"
   Primop p -> do
     let expectedTy = inferPrimop p
-    assert (ty == expectedTy) $
+    assert (ty == expectedTy) dirs $
       "[check Primop] primop (" ++ show p ++ ") type mismatch"
     return ctx
   Let pat letTm vTm -> do
-    (leftovers, tmTy) <- infer ctx letTm
+    (leftovers, tmTy) <- infer (Let1:dirs) ctx letTm
     patternTy <- typePattern pat tmTy
     -- XXX do we need to reverse these?
     let freshVars = map (, UseOnce) patternTy
         bodyCtx = freshVars ++ leftovers
         arity = length patternTy
-    newCtx <- check bodyCtx ty vTm
+    newCtx <- check (Let2:dirs) bodyCtx ty vTm
 
     -- Check that the body consumed all the arguments
     let (bodyUsage, leftovers2) = splitAt arity newCtx
     forM_ bodyUsage $ \(_ty, usage) ->
-      assert (usage /= UseOnce) "[check Let] must consume linear bound variables"
+      assert (usage /= UseOnce) dirs
+        "[check Let] must consume linear bound variables"
     return leftovers2
   Prd vTms -> case ty of
     -- Thread the leftover context through from left to right.
     TupleTy tys ->
       -- Layer on a state transformer for this bit, since we're passing
       -- leftovers from one term to the next
-      let calc = forM (V.zip vTms tys) $ \(tm', ty') -> do
-            leftovers <- get
-            newLeftovers <- lift $ check leftovers ty' tm'
-            put newLeftovers
+      let calc = V.imapM
+            (\i (tm', ty') -> do
+              let dirs' = (Prd' i):dirs
+              leftovers <- get
+              newLeftovers <- lift $ check dirs' leftovers ty' tm'
+              put newLeftovers
+            )
+            (V.zip vTms tys)
       -- execState gives back the final state
       in execStateT calc ctx
-    _ -> throwError "[check Prd] checking Prd agains non-product type"
+    _ -> throwStackError dirs
+           "[check Prd] checking Prd agains non-product type"
 
   Primitive prim -> do
     case prim of
-      String _ -> assert (ty == PrimTy StringTy)
+      String _ -> assert (ty == PrimTy StringTy) (Primitive':dirs)
         "[check Primitive] trying to match string against non-string type"
-      Nat _ -> assert (ty == PrimTy NatTy)
+      Nat _ -> assert (ty == PrimTy NatTy) (Primitive':dirs)
         "[check Primitive] trying to match nat against non-nat type"
     return ctx
 
   Label name -> case ty of
     LabelsTy names -> do
-      assert (name `V.elem` names)
+      assert (name `V.elem` names) (Label':dirs)
         "[check Label] didn't find label in label vec"
       return ctx
-    _ -> throwError "[check Label] checking Label against non-label-vec"
+    _ -> throwStackError (Label':dirs)
+           "[check Label] checking Label against non-label-vec"
 
   Neu cTm -> do
-    (leftovers, cTmTy) <- infer ctx cTm
-    assert (cTmTy == ty) "[check Neu] checking inferred neutral type"
+    (leftovers, cTmTy) <- infer (Neu':dirs) ctx cTm
+    assert (cTmTy == ty) (Neu':dirs)
+      "[check Neu] checking inferred neutral type"
     return leftovers
+
+checkToplevel :: Type -> Value -> CheckM Ctx
+checkToplevel = check [] []
 
 evalC :: [Value] -> Computation -> Either String Value
 evalC env tm = case tm of
@@ -332,8 +398,8 @@ openV k x tm = case tm of
   Primop _ -> tm
   Neu cTm -> Neu (openC k x cTm)
 
-typePattern :: Pattern -> Type -> Either String [Type]
-typePattern (MatchVar _) ty = Right [ty]
+typePattern :: MonadError String m => Pattern -> Type -> m [Type]
+typePattern (MatchVar _) ty = pure [ty]
 -- TODO check these line up (subPats / subTys)
 --
 -- example:

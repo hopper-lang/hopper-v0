@@ -48,7 +48,7 @@ main = do
             y = PrimTy NatTy
         in LollyTy (TupleTy (V.fromList [x, y])) (TupleTy (V.fromList [y, x]))
   putStrLn "> checking swap"
-  putStrLn $ runChecker $ check [] swapTy swap
+  putStrLn $ runChecker $ checkToplevel swapTy swap
 
 
   -- but this doesn't -- it duplicates its linear variable
@@ -56,12 +56,12 @@ main = do
         let x = PrimTy StringTy
         in LollyTy x (TupleTy (V.fromList [x, x]))
   putStrLn "> checking diagonal (expected failure due to duplicating linear variable)"
-  putStrLn $ runChecker $ check [] diagonalTy diagonal
+  putStrLn $ runChecker $ checkToplevel diagonalTy diagonal
 
   putStrLn "> checking case"
-  putStrLn $ runChecker $ check [] (PrimTy NatTy) caseExample'
+  putStrLn $ runChecker $ checkToplevel (PrimTy NatTy) caseExample'
   print $ evalC [] caseExample
 
   putStrLn "> checking primop"
-  putStrLn $ runChecker $ check [] (PrimTy StringTy) (Neu primopExample)
+  putStrLn $ runChecker $ checkToplevel (PrimTy StringTy) (Neu primopExample)
   print $ evalC [] primopExample
