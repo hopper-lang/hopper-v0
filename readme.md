@@ -5,9 +5,8 @@ The aim of Hopper is to provide a logically-sound language for describing
 ownership, authorization, and transactional interactions thereof. Hopper will
 also be a nice language for programming and theorem proving.
 
-Hopper is being designed to support both standalone execution and safe program
-execution embedded within a host application (such as
-[Juno](https://github.com/buckie/juno)).
+Hopper is being designed to support both standalone execution and also safe program
+execution embedded within a host application.
 
 ## What's where
 
