@@ -1,4 +1,15 @@
-[![Master Build Status](https://travis-ci.org/hopper-lang/hopper.svg?branch=master)](https://travis-ci.org/hopper-lang/hopper)
+## status 
+
+This repo represents a lot of learning experience about runtime semantics and linear logical metatheory 
+(much of which did not make it into this earlier iteration of hopper and thus this repo).
+
+That said, theres a lot of cool design ideas in this early version of the code base both from 
+an engineering perspective and in terms of language theory and semantics, by the lovely contributors.
+
+## where should i look now?
+stay tuned for other interesting activity both on the [Hopper-Lang org](https://github.com/hopper-lang)
+and in various places by the contributors. All open source open science goodness of course, but awesomer :) 
+
 # Hopper: a sound modern language for computation and transactional resource logic
 
 The aim of Hopper is to provide a logically-sound language for describing
@@ -7,6 +18,7 @@ also be a nice language for programming and theorem proving.
 
 Hopper is being designed to support both standalone execution and safe program
 execution embedded within a host application.
+
 
 
 ## What's where
